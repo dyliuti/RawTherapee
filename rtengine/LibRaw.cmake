@@ -11,6 +11,16 @@ else()
     set(SHELL "sh")
 endif()
 
+if(WIN32)
+    # MSYS2 has a broken setup and apparently requires to run shells as login
+    # shell in order to get its emulation layers set up properly so that
+    # auto(re)conf works properly
+    set(SHELLARGS "-l")
+else()
+    # let's not import login stuff to not pollute nor slow down the build
+    set(SHELLARGS "")
+endif()
+
 add_custom_target(
     LibRaw ALL
     DEPENDS ${LIBRAW_PHANTOM_FILE} # Ensures target always executes.
@@ -41,8 +51,15 @@ execute_process(
 if(PROCESS_RESULT AND NOT PROCESS_RESULT EQUAL 0)
     message(FATAL_ERROR "Could not copy LibRaw files into build directory")
 endif()
+
+# Homebrew on macOS packages libtool's commands with a "g" prefixed, so
+# let's try glibtoolize as fallback.
+find_program(LIBTOOLIZE libtoolize glibtoolize REQUIRED)
+
+# Git and autotools don't mix well because Git does not preserve timestamp
+# relations or relations between source and generated files, so regenerate:
 execute_process(
-    COMMAND "${SHELL}" -l -c "autoreconf -v --install"
+    COMMAND "${SHELL}" ${SHELLARGS} -c "env LIBTOOLIZE=${LIBTOOLIZE} autoreconf --verbose --install --force"
     WORKING_DIRECTORY "${LIBRAW_DIR}"
     RESULT_VARIABLE PROCESS_RESULT
     COMMAND_ECHO STDOUT
@@ -50,8 +67,9 @@ execute_process(
 if(PROCESS_RESULT AND NOT PROCESS_RESULT EQUAL 0)
     message(FATAL_ERROR "Could not generate LibRaw configuration script")
 endif()
+
 execute_process(
-    COMMAND "${SHELL}" -l -c "./configure ${CONFIGURE_FLAGS}"
+    COMMAND "${SHELL}" ${SHELLARGS} -c "./configure ${CONFIGURE_FLAGS}"
     WORKING_DIRECTORY "${LIBRAW_DIR}"
     RESULT_VARIABLE PROCESS_RESULT
     COMMAND_ECHO STDOUT
@@ -69,25 +87,25 @@ endif()
 set(LIBRAW_MAKE_FLAGS "")
 # Set number of jobs equal to logical processors count.
 execute_process(
-    COMMAND "${SHELL}" -l -c "nproc"
+    COMMAND "${SHELL}" ${SHELLARGS} -c "nproc"
     OUTPUT_VARIABLE LOGICAL_PROCESSORS
     RESULT_VARIABLE PROCESS_RESULT
     ERROR_QUIET
 )
 if(PROCESS_RESULT AND NOT PROCESS_RESULT EQUAL 0)
     execute_process(
-	COMMAND "${SHELL}" -l -c "sysctl -n hw.ncpu"
-	OUTPUT_VARIABLE LOGICAL_PROCESSORS
-	RESULT_VARIABLE PROCESS_RESULT
-	ERROR_QUIET
+        COMMAND "${SHELL}" ${SHELLARGS} -c "sysctl -n hw.ncpu"
+        OUTPUT_VARIABLE LOGICAL_PROCESSORS
+        RESULT_VARIABLE PROCESS_RESULT
+        ERROR_QUIET
     )
 endif()
 if(PROCESS_RESULT AND NOT PROCESS_RESULT EQUAL 0)
     execute_process(
-	COMMAND "${SHELL}" -l -c "getconf _NPROCESSORS_ONLN"
-	OUTPUT_VARIABLE LOGICAL_PROCESSORS
-	RESULT_VARIABLE PROCESS_RESULT
-	ERROR_QUIET
+        COMMAND "${SHELL}" ${SHELLARGS} -c "getconf _NPROCESSORS_ONLN"
+        OUTPUT_VARIABLE LOGICAL_PROCESSORS
+        RESULT_VARIABLE PROCESS_RESULT
+        ERROR_QUIET
     )
 endif()
 if(PROCESS_RESULT AND NOT PROCESS_RESULT EQUAL 0)
@@ -113,7 +131,7 @@ set(LIBRAW_MAKE_COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/LibRaw-make.sh")
 add_custom_command(
     OUTPUT "${LIBRAW_PHANTOM_FILE}" "${LIBRAW_LIB_DIR}/.libs/libraw_r.a"
     COMMAND cp -p -R "${CMAKE_CURRENT_SOURCE_DIR}/libraw" ..
-    COMMAND "${SHELL}" -l "${LIBRAW_MAKE_COMMAND}" "${CMAKE_MAKE_PROGRAM}" "${LOGICAL_PROCESSORS}" ${LIBRAW_MAKE_FLAGS}
+    COMMAND "${SHELL}" "${LIBRAW_MAKE_COMMAND}" "${CMAKE_MAKE_PROGRAM}" "${LOGICAL_PROCESSORS}" ${LIBRAW_MAKE_FLAGS}
     COMMENT "Building LibRaw"
     WORKING_DIRECTORY libraw
     VERBATIM
