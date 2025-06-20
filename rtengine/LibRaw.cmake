@@ -67,47 +67,53 @@ endif()
 
 # Build flags.
 set(LIBRAW_MAKE_FLAGS "")
-if(CMAKE_GENERATOR MATCHES ".*Makefiles.*")
-    set(LIBRAW_MAKE_COMMAND "$(MAKE)")
-else()
-    # If not using Makefiles, set number of jobs equal to logical processors
-    # count. Not necessary for make because of the jobserver.
+# Set number of jobs equal to logical processors count.
+execute_process(
+    COMMAND "${SHELL}" -l -c "nproc"
+    OUTPUT_VARIABLE LOGICAL_PROCESSORS
+    RESULT_VARIABLE PROCESS_RESULT
+    ERROR_QUIET
+)
+if(PROCESS_RESULT AND NOT PROCESS_RESULT EQUAL 0)
     execute_process(
-        COMMAND "${SHELL}" -l -c "nproc"
-        OUTPUT_VARIABLE LOGICAL_PROCESSORS
-        RESULT_VARIABLE PROCESS_RESULT
-        ERROR_QUIET
+	COMMAND "${SHELL}" -l -c "sysctl -n hw.ncpu"
+	OUTPUT_VARIABLE LOGICAL_PROCESSORS
+	RESULT_VARIABLE PROCESS_RESULT
+	ERROR_QUIET
     )
-    if(PROCESS_RESULT AND NOT PROCESS_RESULT EQUAL 0)
-        execute_process(
-            COMMAND "${SHELL}" -l -c "sysctl -n hw.ncpu"
-            OUTPUT_VARIABLE LOGICAL_PROCESSORS
-            RESULT_VARIABLE PROCESS_RESULT
-            ERROR_QUIET
-        )
-    endif()
-    if(PROCESS_RESULT AND NOT PROCESS_RESULT EQUAL 0)
-        execute_process(
-            COMMAND "${SHELL}" -l -c "getconf _NPROCESSORS_ONLN"
-            OUTPUT_VARIABLE LOGICAL_PROCESSORS
-            RESULT_VARIABLE PROCESS_RESULT
-            ERROR_QUIET
-        )
-    endif()
-    if(PROCESS_RESULT AND NOT PROCESS_RESULT EQUAL 0)
-        set(LOGICAL_PROCESSORS "1")
-    endif()
-    string(STRIP "${LOGICAL_PROCESSORS}" LOGICAL_PROCESSORS)
-    set(LIBRAW_MAKE_FLAGS "${LIBRAW_MAKE_FLAGS} -j${LOGICAL_PROCESSORS}")
-
-    set(LIBRAW_MAKE_COMMAND "make")
 endif()
+if(PROCESS_RESULT AND NOT PROCESS_RESULT EQUAL 0)
+    execute_process(
+	COMMAND "${SHELL}" -l -c "getconf _NPROCESSORS_ONLN"
+	OUTPUT_VARIABLE LOGICAL_PROCESSORS
+	RESULT_VARIABLE PROCESS_RESULT
+	ERROR_QUIET
+    )
+endif()
+if(PROCESS_RESULT AND NOT PROCESS_RESULT EQUAL 0)
+    set(LOGICAL_PROCESSORS "1")
+endif()
+string(STRIP "${LOGICAL_PROCESSORS}" LOGICAL_PROCESSORS)
+
+# $(MAKE) or ${CMAKE_MAKE_PROGRAM} may be unsuitable for automake-
+# generated Makefile sets, for instance, if MAKE is nmake.
+# It might also be unset, or ninja.
+
+# We can't solve this easily in cmake itself. Specifically, we cannot use
+# anything that might leave a $ behind, f.i.$(MAKE),
+# because that breaks Ninja due to long-standing bug in cmake,
+# unfixed as of 2025-07-28, which fails to escape $ properly for Ninja,
+# see <https://gitlab.kitware.com/cmake/cmake/-/issues/18062>.
+# Work around this cmake bug by using a shell helper script instead,
+# which parses the make's name and the number of processors we pass it,
+# and passes remaining flags through (we don't have any at the moment):
+set(LIBRAW_MAKE_COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/LibRaw-make.sh")
 
 # Build commands.
 add_custom_command(
     OUTPUT "${LIBRAW_PHANTOM_FILE}" "${LIBRAW_LIB_DIR}/.libs/libraw_r.a"
     COMMAND cp -p -R "${CMAKE_CURRENT_SOURCE_DIR}/libraw" ..
-    COMMAND "${SHELL}" -l -c "${LIBRAW_MAKE_COMMAND} ${LIBRAW_MAKE_FLAGS}"
+    COMMAND "${SHELL}" -l "${LIBRAW_MAKE_COMMAND}" "${CMAKE_MAKE_PROGRAM}" "${LOGICAL_PROCESSORS}" ${LIBRAW_MAKE_FLAGS}
     COMMENT "Building LibRaw"
     WORKING_DIRECTORY libraw
     VERBATIM
@@ -124,4 +130,3 @@ add_custom_target(
     COMMAND rm -rf lib
     WORKING_DIRECTORY libraw
 )
-
