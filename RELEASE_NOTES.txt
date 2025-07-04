@@ -33,7 +33,7 @@ NEW FEATURES SINCE 5.12
 NEWS RELEVANT TO PACKAGE MAINTAINERS
 
 New since 5.12:
-- TODO
+- Add LunaSVG as alternate SVG rendering backend
 
 In general:
 - To get the source code, either clone from git or use the tarball from https://rawtherapee.com/shared/source/. Do not use the auto-generated GitHub release tarballs.
@@ -46,6 +46,10 @@ In general:
 - Use -O3, it will make RawTherapee faster with no known side-effects.
 - For stable releases use -DCACHE_NAME_SUFFIX=""
 - For development builds and release-candidates use -DCACHE_NAME_SUFFIX="5-dev"
+
+To avoid Rust dependencies:
+- Build using LunaSVG rendering backend
+    - Use -DSVG_BACKEND="lunasvg" and -DWITH_SYSTEM_LUNASVG="ON|OFF"
 
 
 
