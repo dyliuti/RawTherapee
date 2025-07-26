@@ -21,6 +21,7 @@ set(RT_GUI_TOOL_PANEL_SOURCES
     tools/colortoning.cc
     tools/compressgamut.cc
     tools/crop.cc
+    tools/cropguide.cc
     tools/darkframe.cc
     tools/defringe.cc
     tools/dehaze.cc
@@ -102,6 +103,7 @@ set(NONCLISOURCEFILES
     curveeditorgroup.cc
     diagonalcurveeditorsubgroup.cc
     dirbrowser.cc
+    drawcropguide.cc
     dynamicprofilepanel.cc
     editbuffer.cc
     editcallbacks.cc

@@ -23,6 +23,7 @@
 
 #include "cropguilistener.h"
 #include "cursormanager.h"
+#include "drawcropguide.h"
 #include "guiutils.h"
 #include "inspector.h"
 #include "rtsurface.h"

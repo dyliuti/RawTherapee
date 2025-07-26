@@ -31,20 +31,6 @@
 #include "rtengine/coord.h"
 #include "rtengine/noncopyable.h"
 
-namespace rtengine
-{
-
-namespace procparams
-{
-
-class ProcParams;
-
-struct CropParams;
-
-}
-
-}
-
 class Adjuster;
 class RTImage;
 class ToolPanel;
@@ -53,12 +39,6 @@ Glib::ustring escapeHtmlChars(const Glib::ustring &src);
 bool removeIfThere (Gtk::Container* cont, Gtk::Widget* w, bool increference = true);
 bool confirmOverwrite (Gtk::Window& parent, const std::string& filename);
 void writeFailed (Gtk::Window& parent, const std::string& filename);
-void drawCrop (const Cairo::RefPtr<Cairo::Context>& cr,
-               double imx, double imy, double imw, double imh,
-               double clipWidth, double clipHeight,
-               double startx, double starty, double scale,
-               const rtengine::procparams::CropParams& cparams,
-               bool drawGuide = true, bool useBgColor = true, bool fullImageVisible = true);
 gboolean acquireGUI(void* data);
 void setExpandAlignProperties(Gtk::Widget *widget, bool hExpand, bool vExpand, enum Gtk::Align hAlign, enum Gtk::Align vAlign);
 Gtk::Border getPadding(const Glib::RefPtr<Gtk::StyleContext> style);

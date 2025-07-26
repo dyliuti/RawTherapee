@@ -24,6 +24,7 @@
 #include "cropwindow.h"
 
 #include "cursormanager.h"
+#include "drawcropguide.h"
 #include "guiutils.h"
 #include "imagearea.h"
 #include "lockablecolorpicker.h"
