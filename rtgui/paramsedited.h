@@ -402,6 +402,17 @@ struct CropParamsEdited {
     bool guide;
 };
 
+struct CropGuideParamsEdited {
+    struct Preset {
+        bool rotate;
+        bool mirror;
+        bool enabled;
+    };
+    std::array<Preset, 9> presets;
+    bool enabled;
+    bool override;
+};
+
 struct CoarseTransformParamsEdited {
     bool rotate;
     bool hflip;
@@ -1745,6 +1756,7 @@ struct ParamsEdited {
     
     ToneEqualizerParamsEdited toneEqualizer;
     CropParamsEdited crop;
+    CropGuideParamsEdited cropGuide;
     CoarseTransformParamsEdited coarse;
     CommonTransformParamsEdited commonTrans;
     RotateParamsEdited rotate;

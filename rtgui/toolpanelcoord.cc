@@ -193,6 +193,10 @@ const std::vector<ToolTree> TRANSFORM_PANEL_TOOLS = {
         .children = {},
     },
     {
+        .id = Tool::CROP_GUIDE,
+        .children = {},
+    },
+    {
         .id = Tool::RESIZE_TOOL,
         .children = {
             {
@@ -382,6 +386,7 @@ ToolPanelCoordinator::ToolPanelCoordinator (bool batch) : ipc (nullptr), favorit
     resize              = Gtk::manage(new Resize());
     prsharpening        = Gtk::manage(new PrSharpening());
     framing             = Gtk::manage(new Framing());
+    cropGuide           = Gtk::manage(new CropGuide());
     crop                = Gtk::manage(new Crop());
     icm                 = Gtk::manage(new ICMPanel());
     metadata            = Gtk::manage(new MetaDataPanel());
@@ -698,6 +703,8 @@ std::string ToolPanelCoordinator::getToolName(Tool tool)
             return PrSharpening::TOOL_NAME;
         case Tool::FRAMING:
             return Framing::TOOL_NAME;
+        case Tool::CROP_GUIDE:
+            return CropGuide::TOOL_NAME;
         case Tool::CROP_TOOL:
             return Crop::TOOL_NAME;
         case Tool::ICM:
@@ -2067,6 +2074,8 @@ FoldableToolPanel *ToolPanelCoordinator::getFoldableToolPanel(Tool tool) const
             return prsharpening;
         case Tool::FRAMING:
             return framing;
+        case Tool::CROP_GUIDE:
+            return cropGuide;
         case Tool::CROP_TOOL:
             return crop;
         case Tool::ICM:

@@ -84,6 +84,12 @@ void drawCropGuides(const Cairo::RefPtr<Cairo::Context>& cr,
                 break;
             }
 
+            case rtengine::procparams::CropParams::Guide::CROSSHAIR: {
+                horiz_ratios.push_back(1.0 / 2.0);
+                vert_ratios.push_back(1.0 / 2.0);
+                break;
+            }
+
             case rtengine::procparams::CropParams::Guide::GRID: {
                 // To have even distribution, normalize it a bit
                 const int longSideNumLines = 10;

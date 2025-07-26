@@ -900,6 +900,8 @@ struct ToneEqualizerParams {
   * Parameters of the cropping
   */
 struct CropParams {
+    // Always add to end of enum list to maintain backwards compatibility!
+    // Keep number of non-NONE entries in sync with CropGuideParams preset array size.
     enum class Guide {
         NONE,
         FRAME,
@@ -910,7 +912,8 @@ struct CropParams {
         GOLDEN_TRIANGLE_1,
         GOLDEN_TRIANGLE_2,
         EPASSPORT,
-        CENTERED_SQUARE
+        CENTERED_SQUARE,
+        CROSSHAIR
     };
 
     bool enabled;
@@ -929,6 +932,49 @@ struct CropParams {
     bool operator !=(const CropParams& other) const;
 
     void mapToResized(int resizedWidth, int resizedHeight, int scale, int& x1, int& x2, int& y1, int& y2) const;
+};
+
+struct CropGuideParams {
+    // 0 is along positive-X axis and 90 along positive-Y axis
+    // (i.e. rotate in counter-clockwise direction starting from 3 o'clock)
+    enum class Rotate { BY_0, BY_90, BY_180, BY_270 };
+    struct Mirror {
+        enum AboutAxis {
+            X = 0b01,
+            Y = 0b10,
+            NONE = 0,
+            ALL = X | Y
+        };
+    };
+
+    struct Preset {
+        Rotate rotate = Rotate::BY_0;
+        Mirror::AboutAxis mirror = Mirror::AboutAxis::NONE;
+        bool enabled = false;
+
+        bool operator==(const Preset& other) const;
+        bool operator!=(const Preset& other) const { return !(*this == other); }
+    };
+
+    std::array<Preset, 9> presets;
+    bool enabled;
+    // Maintain backwards compatibility with older versions by overriding the
+    // existing CropParams.guide param if CropGuideParams is available.
+    bool override;
+
+    CropGuideParams();
+
+    const Preset& getPreset(CropParams::Guide guide) const
+    {
+        return presets.at(static_cast<size_t>(guide));
+    }
+    Preset& getPreset(CropParams::Guide guide)
+    {
+        return presets.at(static_cast<size_t>(guide));
+    }
+
+    bool operator==(const CropGuideParams& other) const;
+    bool operator!=(const CropGuideParams& other) const { return !(*this == other); }
 };
 
 /**
@@ -2871,6 +2917,7 @@ public:
     CGParams                cg;              ///< Compression gamut
     ToneEqualizerParams     toneEqualizer;   ///< Tone equalizer parameters
     CropParams              crop;            ///< Crop parameters
+    CropGuideParams         cropGuide;       ///< Crop guide parameters
     CoarseTransformParams   coarse;          ///< Coarse transformation (90, 180, 270 deg rotation, h/v flipping) parameters
     CommonTransformParams   commonTrans;     ///< Common transformation parameters (autofill)
     RotateParams            rotate;          ///< Rotation parameters
@@ -2941,11 +2988,11 @@ public:
       * @param pp a pointer to the ProcParams instance to destroy. */
     static void destroy(ProcParams* pp);
 
-    static void init();
-    static void cleanup();
+    static void init() {}
+    static void cleanup() {}
 
     bool operator ==(const ProcParams& other) const;
-    bool operator !=(const ProcParams& other) const;
+    bool operator !=(const ProcParams& other) const { return !(*this == other); }
 
 private:
     /** Write the ProcParams's text in the file of the given name.

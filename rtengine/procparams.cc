@@ -2167,6 +2167,24 @@ void CropParams::mapToResized(int resizedWidth, int resizedHeight, int scale, in
     }
 }
 
+bool CropGuideParams::Preset::operator==(const Preset& other) const
+{
+    return rotate == other.rotate && mirror == other.mirror && enabled == other.enabled;
+}
+
+// Override set to false to detect old crop guide format.
+// If the new format is read from pp3, then override is set to true.
+CropGuideParams::CropGuideParams() : enabled(true), override(false)
+{
+}
+
+bool CropGuideParams::operator==(const CropGuideParams& other) const
+{
+    return enabled == other.enabled
+        && override == other.override
+        && presets == other.presets;
+}
+
 CoarseTransformParams::CoarseTransformParams() :
     rotate(0),
     hflip(false),
@@ -6673,6 +6691,7 @@ void ProcParams::setDefaults()
     toneEqualizer = {};
 
     crop = {};
+    cropGuide = {};
 
     coarse = {};
 
@@ -7156,6 +7175,7 @@ int ProcParams::save(const Glib::ustring& fname, const Glib::ustring& fname2, bo
                 {CropParams::Guide::GOLDEN_TRIANGLE_2, "Golden Triangle 2"},
                 {CropParams::Guide::EPASSPORT, "ePassport"},
                 {CropParams::Guide::CENTERED_SQUARE, "Centered square"},
+                {CropParams::Guide::CROSSHAIR, "Crosshair"},
             },
             crop.guide,
             keyFile
@@ -11977,6 +11997,7 @@ bool ProcParams::operator ==(const ProcParams& other) const
         && sh == other.sh
         && toneEqualizer == other.toneEqualizer
         && crop == other.crop
+        && cropGuide == other.cropGuide
         && coarse == other.coarse
         && rotate == other.rotate
         && commonTrans == other.commonTrans
@@ -12005,19 +12026,6 @@ bool ProcParams::operator ==(const ProcParams& other) const
         && metadata == other.metadata
         && dehaze == other.dehaze
         && filmNegative == other.filmNegative;
-}
-
-bool ProcParams::operator !=(const ProcParams& other) const
-{
-    return !(*this == other);
-}
-
-void ProcParams::init()
-{
-}
-
-void ProcParams::cleanup()
-{
 }
 
 int ProcParams::write(const Glib::ustring& fname, const Glib::ustring& content) const
