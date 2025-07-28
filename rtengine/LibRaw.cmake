@@ -113,6 +113,9 @@ add_custom_command(
     VERBATIM
 )
 
+# make sure that "make clean-libraw && make" works:
+add_dependencies(rtengine LibRaw)
+
 # Add a `make clean-libraw` command because there's no good way to automatically
 # clean the LibRaw build with `make`clean`.
 add_custom_target(
