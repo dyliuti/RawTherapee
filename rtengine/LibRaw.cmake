@@ -142,7 +142,7 @@ add_dependencies(rtengine LibRaw)
 
 # Add a `make clean-libraw` command because there's no good way to automatically
 # clean the LibRaw build with `make clean`.
-# Also, strip the recursive-make environment variables because if cmake runs with 
+# Also, strip the recursive-make environment variables because if cmake runs with
 # a different make that's incompatible with "make", older MFLAGS or current MAKEFLAGS
 # might break the build. GNU make doesn't like BSD's -J option, and BSD
 # requires a number after -j and might not cope with --jobserver in MAKEFLAGS.

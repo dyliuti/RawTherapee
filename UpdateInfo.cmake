@@ -28,19 +28,19 @@ if(REL_INFO_FILE STREQUAL REL_INFO_FILE-NOTFOUND)
     endif()
 
     if(SHELL STREQUAL SHELL-NOTFOUND)
-	message(FATAL_ERROR "No suitable SHELL found!")
+        message(FATAL_ERROR "No suitable SHELL found!")
     else()
-	message(STATUS "using SHELL: ${SHELL}")
+        message(STATUS "using SHELL: ${SHELL}")
     endif()
 
     execute_process(COMMAND ${GIT_CMD} status --porcelain --untracked-files=no OUTPUT_VARIABLE GIT_STATUS OUTPUT_STRIP_TRAILING_WHITESPACE)
     if("${GIT_STATUS}" STREQUAL "")
-	# no changes to tracked files -> work directory clean -> try 
-	# reproducible build
+        # no changes to tracked files -> work directory clean
+        # -> try reproducible build
         execute_process(COMMAND ${GIT_CMD} log -1 --pretty=%ct OUTPUT_VARIABLE SOURCE_DATE_EPOCH OUTPUT_STRIP_TRAILING_WHITESPACE)
         message(STATUS "Obtained SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH} from Git log for reproducible build.")
     else()
-	message(STATUS "Git status did not come up clean, not trying reproducible build.")
+        message(STATUS "Git status did not come up clean, not trying reproducible build.")
     endif()
 
     # Get version description.
@@ -87,22 +87,22 @@ if(REL_INFO_FILE STREQUAL REL_INFO_FILE-NOTFOUND)
     endif()
 
     if (DEFINED ENV{SOURCE_DATE_EPOCH} AND NOT ENV{SOURCE_DATE_EPOCH} STREQUAL "")
-	# override from environment
-	set(SOURCE_DATE_EPOCH "$ENV{SOURCE_DATE_EPOCH}")
-	message(STATUS "SOURCE_DATE_EPOCH overriden from environment to ${SOURCE_DATE_EPOCH}")
+        # override from environment
+        set(SOURCE_DATE_EPOCH "$ENV{SOURCE_DATE_EPOCH}")
+        message(STATUS "SOURCE_DATE_EPOCH overriden from environment to ${SOURCE_DATE_EPOCH}")
     endif()
 
     if (SOURCE_DATE_EPOCH)
-	# reproducible build path
+        # reproducible build path
         execute_process(COMMAND uname -ms OUTPUT_VARIABLE BUILDINFO_OS OUTPUT_STRIP_TRAILING_WHITESPACE)
-	execute_process(COMMAND "${SHELL}" -c "LC_ALL=C ; LANG= ; export LC_ALL LANG ; DATE_FMT=\"+%a, %d %b %Y %T %z\"; date -u -d \"@${SOURCE_DATE_EPOCH}\" \"\$DATE_FMT\" 2>/dev/null || date -u -r \"${SOURCE_DATE_EPOCH}\" \"\$DATE_FMT\"" OUTPUT_VARIABLE BUILDINFO_DATE OUTPUT_STRIP_TRAILING_WHITESPACE)
-	set(BUILDINFO_EPOCH "${SOURCE_DATE_EPOCH}")
-	set(BUILDINFO_UUID "git-${GIT_COMMIT_FULL}")  # use GIT_COMMIT instead of a UUID
+        execute_process(COMMAND "${SHELL}" -c "LC_ALL=C ; LANG= ; export LC_ALL LANG ; DATE_FMT=\"+%a, %d %b %Y %T %z\"; date -u -d \"@${SOURCE_DATE_EPOCH}\" \"\$DATE_FMT\" 2>/dev/null || date -u -r \"${SOURCE_DATE_EPOCH}\" \"\$DATE_FMT\"" OUTPUT_VARIABLE BUILDINFO_DATE OUTPUT_STRIP_TRAILING_WHITESPACE)
+        set(BUILDINFO_EPOCH "${SOURCE_DATE_EPOCH}")
+        set(BUILDINFO_UUID "git-${GIT_COMMIT_FULL}")  # use GIT_COMMIT instead of a UUID
     else()
         execute_process(COMMAND uname -mrs OUTPUT_VARIABLE BUILDINFO_OS OUTPUT_STRIP_TRAILING_WHITESPACE)
-	execute_process(COMMAND "${SHELL}" -c "LC_ALL=C ; LANG= ; export LC_ALL LANG ; date -u \"+%a, %d %b %Y %T %z\"" OUTPUT_VARIABLE BUILDINFO_DATE OUTPUT_STRIP_TRAILING_WHITESPACE)
-	execute_process(COMMAND date +%s OUTPUT_VARIABLE BUILDINFO_EPOCH OUTPUT_STRIP_TRAILING_WHITESPACE)
-	execute_process(COMMAND uuidgen COMMAND tr "A-Z" "a-z" OUTPUT_VARIABLE BUILDINFO_UUID OUTPUT_STRIP_TRAILING_WHITESPACE)
+        execute_process(COMMAND "${SHELL}" -c "LC_ALL=C ; LANG= ; export LC_ALL LANG ; date -u \"+%a, %d %b %Y %T %z\"" OUTPUT_VARIABLE BUILDINFO_DATE OUTPUT_STRIP_TRAILING_WHITESPACE)
+        execute_process(COMMAND date +%s OUTPUT_VARIABLE BUILDINFO_EPOCH OUTPUT_STRIP_TRAILING_WHITESPACE)
+        execute_process(COMMAND uuidgen COMMAND tr "A-Z" "a-z" OUTPUT_VARIABLE BUILDINFO_UUID OUTPUT_STRIP_TRAILING_WHITESPACE)
     endif()
 
     message(STATUS "Git checkout information:")
