@@ -17,9 +17,15 @@ shift
 _gmake="$(set +e; type >/dev/null gmake && echo gmake)"  # gmake if on PATH, else empty
 case "${_make##*/}" in
     gmake|make) printf '%s\n' >&2 "-- ${0##*/} is using inherited $_make"
+        _make_arg=
         ;;
-    *)  _make="${_gmake:-make} -j${LOGICAL_PROCESSORS}"
+    *)  _make="${_gmake:-make}"
+        _make_arg="-j${LOGICAL_PROCESSORS}"
         printf '%s\n' >&2 "-- ${0##*/} is using generated $_make"
         ;;
 esac
-exec ${_make}  "$@" # $_make unquoted, need to split away the -jN arg
+if [ -n "${_make_arg}" ] ; then
+    exec "${_make}" "${_make_arg}" "$@"
+else
+    exec "${_make}" "$@"
+fi
