@@ -20,8 +20,11 @@ case "${_make##*/}" in
         _make_arg=
         ;;
     *)  _make="${_gmake:-make}"
-        _make_arg="-j${LOGICAL_PROCESSORS}"
-        printf '%s\n' >&2 "-- ${0##*/} is using generated $_make"
+	case "$MAKEFLAGS" in
+            *--jobserver-auth*) ;;
+            *)                  _make_arg="-j${LOGICAL_PROCESSORS}" ;;
+        esac
+        printf '%s\n' >&2 "-- ${0##*/} is using generated $_make $_make_arg"
         ;;
 esac
 if [ -n "${_make_arg}" ] ; then
