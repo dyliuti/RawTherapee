@@ -105,7 +105,7 @@ void PreviewWindow::updatePreviewImage ()
         auto cropGuideOverride = []() {
             switch (options.cropGuides) {
                 case Options::CROP_GUIDE_NONE:
-                    return CropGuideOverride::NONE;
+                    return CropGuideOverride::NO_GUIDES;
                 case Options::CROP_GUIDE_FRAME:
                     return CropGuideOverride::FRAME;
                 default:
@@ -114,8 +114,10 @@ void PreviewWindow::updatePreviewImage ()
         }();
 
         drawCrop(cc, 0, 0, imgW, imgH, imgW, imgH, 0, 0, zoom,
-                 cparams, previewHandler->getCropGuideParams(), cropGuideOverride,
-                 true, false);
+                 cparams,
+                 previewHandler->getCropGuideParams(),
+                 cropGuideOverride,
+                 false);
     }
 }
 

@@ -28,7 +28,7 @@ struct CropParams;
 }
 }
 
-enum class CropGuideOverride { NONE, FRAME, DONT_TOUCH };
+enum class CropGuideOverride { NO_GUIDES, FRAME, DONT_TOUCH };
 
 void drawCrop(const Cairo::RefPtr<Cairo::Context>& cr,
               double imx, double imy, double imw, double imh,
@@ -37,5 +37,5 @@ void drawCrop(const Cairo::RefPtr<Cairo::Context>& cr,
               const rtengine::procparams::CropParams& cropParams,
               const rtengine::procparams::CropGuideParams& cropGuideParams,
               CropGuideOverride cropGuideOverride,
-              bool drawGuide = true, bool useBgColor = true,
+              bool useBgColor = true,
               bool fullImageVisible = true);

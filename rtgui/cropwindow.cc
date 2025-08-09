@@ -1986,6 +1986,10 @@ void CropWindow::expose (Cairo::RefPtr<Cairo::Context> cr)
                     std::min<double>(std::ceil(imgSize.height / deviceScale),
                                      imgAreaSize.height - imgPos.y);
 
+                auto cropGuideOverride = (this == iarea->mainCropWindow)
+                    ? CropGuideOverride::DONT_TOUCH
+                    : CropGuideOverride::NO_GUIDES;
+
                 drawCrop(cr, offset.x, offset.y,
                          imgSize.width, imgSize.height,
                          clipWidth, clipHeight,
@@ -1993,8 +1997,8 @@ void CropWindow::expose (Cairo::RefPtr<Cairo::Context> cr)
                          zoomSteps[cropZoom].zoom / deviceScale,
                          cropParams,
                          *cropHandler.cropGuideParams,
-                         CropGuideOverride::DONT_TOUCH,
-                         (this == iarea->mainCropWindow), useBgColor,
+                         cropGuideOverride,
+                         useBgColor,
                          cropHandler.isFullDisplay());
             }
 
@@ -2094,6 +2098,10 @@ void CropWindow::expose (Cairo::RefPtr<Cairo::Context> cr)
                         std::min<double>(std::ceil(roughH / deviceScale),
                                          imgAreaSize.height - imgPos.y);
 
+                    auto cropGuideOverride = (this == iarea->mainCropWindow)
+                        ? CropGuideOverride::DONT_TOUCH
+                        : CropGuideOverride::NO_GUIDES;
+
                     drawCrop(cr, offset.x, offset.y,
                              roughW, roughH,
                              clipWidth, clipHeight,
@@ -2101,8 +2109,8 @@ void CropWindow::expose (Cairo::RefPtr<Cairo::Context> cr)
                              zoomSteps[cropZoom].zoom / deviceScale,
                              cropParams,
                              *cropHandler.cropGuideParams,
-                             CropGuideOverride::DONT_TOUCH,
-                             (this == iarea->mainCropWindow), useBgColor,
+                             cropGuideOverride,
+                             useBgColor,
                              cropHandler.isFullDisplay());
                 }
 

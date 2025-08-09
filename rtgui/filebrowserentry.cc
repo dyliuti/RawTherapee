@@ -193,7 +193,7 @@ void FileBrowserEntry::customBackBufferUpdate (Cairo::RefPtr<Cairo::Context> c)
         double zoom = scale / activeDeviceScale;
         drawCrop(c, prevPos.x, prevPos.y, previewSize.width, previewSize.height,
                  previewSize.width, previewSize.height,
-                 0, 0, zoom, crop, cropGuide, override, true, false);
+                 0, 0, zoom, crop, cropGuide, override, false);
     };
 
     if (state == SCropSelecting || state == SResizeH1 || state == SResizeH2 || state == SResizeW1 || state == SResizeW2 || state == SResizeTL || state == SResizeTR || state == SResizeBL || state == SResizeBR || state == SCropMove) {
@@ -206,7 +206,7 @@ void FileBrowserEntry::customBackBufferUpdate (Cairo::RefPtr<Cairo::Context> c)
             auto cropGuideOverride = []() {
                 switch (options.cropGuides) {
                     case Options::CROP_GUIDE_NONE:
-                        return CropGuideOverride::NONE;
+                        return CropGuideOverride::NO_GUIDES;
                     case Options::CROP_GUIDE_FRAME:
                         return CropGuideOverride::FRAME;
                     default:
