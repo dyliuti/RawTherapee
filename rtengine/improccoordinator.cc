@@ -2492,14 +2492,14 @@ void ImProcCoordinator::updatePreviewImage(int todo, bool panningRelatedChange)
             resultValid = true;
 
             if (imageListener) {
-                imageListener->setImage(previmg, scale, params->crop);
+                imageListener->setImage(previmg, scale, params->crop, params->cropGuide);
             }
         }
 
         if (imageListener)
             // TODO: The WB tool should be advertised too in order to get the AutoWB's temp and green values
         {
-            imageListener->imageReady(params->crop);
+            imageListener->imageReady(params->crop, params->cropGuide);
         }
 
         hist_lrgb_dirty = vectorscope_hc_dirty = vectorscope_hs_dirty = waveform_dirty = true;

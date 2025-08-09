@@ -23,14 +23,16 @@
 
 #include "rtengine/procparams.h"
 
+using namespace rtengine::procparams;
+
 namespace
 {
 
 void drawCropGuides(const Cairo::RefPtr<Cairo::Context>& cr,
                     double rectx1, double recty1, double rectx2, double recty2,
-                    const rtengine::procparams::CropParams& cparams)
+                    const CropParams& params)
 {
-    if (cparams.guide == rtengine::procparams::CropParams::Guide::NONE) return;
+    if (params.guide == CropParams::Guide::NONE) return;
 
     cr->set_line_width (1.0);
     cr->set_source_rgba (1.0, 1.0, 1.0, 0.618);
@@ -51,24 +53,24 @@ void drawCropGuides(const Cairo::RefPtr<Cairo::Context>& cr,
     cr->set_dash (std::valarray<double>(), 0);
 
     if (
-        cparams.guide != rtengine::procparams::CropParams::Guide::RULE_OF_DIAGONALS
-        && cparams.guide != rtengine::procparams::CropParams::Guide::GOLDEN_TRIANGLE_1
-        && cparams.guide != rtengine::procparams::CropParams::Guide::GOLDEN_TRIANGLE_2
+        params.guide != CropParams::Guide::RULE_OF_DIAGONALS
+        && params.guide != CropParams::Guide::GOLDEN_TRIANGLE_1
+        && params.guide != CropParams::Guide::GOLDEN_TRIANGLE_2
     ) {
         // draw guide lines
         std::vector<double> horiz_ratios;
         std::vector<double> vert_ratios;
 
-        switch (cparams.guide) {
-            case rtengine::procparams::CropParams::Guide::NONE:
-            case rtengine::procparams::CropParams::Guide::FRAME:
-            case rtengine::procparams::CropParams::Guide::RULE_OF_DIAGONALS:
-            case rtengine::procparams::CropParams::Guide::GOLDEN_TRIANGLE_1:
-            case rtengine::procparams::CropParams::Guide::GOLDEN_TRIANGLE_2: {
+        switch (params.guide) {
+            case CropParams::Guide::NONE:
+            case CropParams::Guide::FRAME:
+            case CropParams::Guide::RULE_OF_DIAGONALS:
+            case CropParams::Guide::GOLDEN_TRIANGLE_1:
+            case CropParams::Guide::GOLDEN_TRIANGLE_2: {
                 break;
             }
 
-            case rtengine::procparams::CropParams::Guide::RULE_OF_THIRDS: {
+            case CropParams::Guide::RULE_OF_THIRDS: {
                 horiz_ratios.push_back (1.0 / 3.0);
                 horiz_ratios.push_back (2.0 / 3.0);
                 vert_ratios.push_back (1.0 / 3.0);
@@ -76,7 +78,7 @@ void drawCropGuides(const Cairo::RefPtr<Cairo::Context>& cr,
                 break;
             }
 
-            case rtengine::procparams::CropParams::Guide::HARMONIC_MEANS: {
+            case CropParams::Guide::HARMONIC_MEANS: {
                 horiz_ratios.push_back (1.0 - 0.618);
                 horiz_ratios.push_back (0.618);
                 vert_ratios.push_back (0.618);
@@ -84,13 +86,13 @@ void drawCropGuides(const Cairo::RefPtr<Cairo::Context>& cr,
                 break;
             }
 
-            case rtengine::procparams::CropParams::Guide::CROSSHAIR: {
+            case CropParams::Guide::CROSSHAIR: {
                 horiz_ratios.push_back(1.0 / 2.0);
                 vert_ratios.push_back(1.0 / 2.0);
                 break;
             }
 
-            case rtengine::procparams::CropParams::Guide::GRID: {
+            case CropParams::Guide::GRID: {
                 // To have even distribution, normalize it a bit
                 const int longSideNumLines = 10;
 
@@ -122,7 +124,7 @@ void drawCropGuides(const Cairo::RefPtr<Cairo::Context>& cr,
                 break;
             }
 
-            case rtengine::procparams::CropParams::Guide::EPASSPORT: {
+            case CropParams::Guide::EPASSPORT: {
                 /* Official measurements do not specify exact ratios, just min/max measurements within which the eyes and chin-crown distance must lie. I averaged those measurements to produce these guides.
                  * The first horizontal guide is for the crown, the second is roughly for the nostrils, the third is for the chin.
                  * http://www.homeoffice.gov.uk/agencies-public-bodies/ips/passports/information-photographers/
@@ -135,7 +137,7 @@ void drawCropGuides(const Cairo::RefPtr<Cairo::Context>& cr,
                 break;
             }
 
-            case rtengine::procparams::CropParams::Guide::CENTERED_SQUARE: {
+            case CropParams::Guide::CENTERED_SQUARE: {
                 const double w = rectx2 - rectx1, h = recty2 - recty1;
                 double ratio = w / h;
                 if (ratio < 1.0) {
@@ -183,7 +185,7 @@ void drawCropGuides(const Cairo::RefPtr<Cairo::Context>& cr,
             ds.resize (0);
             cr->set_dash (ds, 0);
         }
-    } else if (cparams.guide == rtengine::procparams::CropParams::Guide::RULE_OF_DIAGONALS) {
+    } else if (params.guide == CropParams::Guide::RULE_OF_DIAGONALS) {
         double corners_from[4][2];
         double corners_to[4][2];
         int mindim = std::min(rectx2 - rectx1, recty2 - recty1);
@@ -220,11 +222,11 @@ void drawCropGuides(const Cairo::RefPtr<Cairo::Context>& cr,
             cr->set_dash (ds, 0);
         }
     } else if (
-        cparams.guide == rtengine::procparams::CropParams::Guide::GOLDEN_TRIANGLE_1
-        || cparams.guide == rtengine::procparams::CropParams::Guide::GOLDEN_TRIANGLE_2
+        params.guide == CropParams::Guide::GOLDEN_TRIANGLE_1
+        || params.guide == CropParams::Guide::GOLDEN_TRIANGLE_2
     ) {
         // main diagonal
-        if(cparams.guide == rtengine::procparams::CropParams::Guide::GOLDEN_TRIANGLE_2) {
+        if(params.guide == CropParams::Guide::GOLDEN_TRIANGLE_2) {
             std::swap(rectx1, rectx2);
         }
 
@@ -281,7 +283,9 @@ void drawCrop(const Cairo::RefPtr<Cairo::Context>& cr,
               double imx, double imy, double imw, double imh,
               double clipWidth, double clipHeight,
               double startx, double starty, double scale,
-              const rtengine::procparams::CropParams& cparams,
+              const CropParams& cropParams,
+              const CropGuideParams& cropGuideParams,
+              CropGuideOverride cropGuideOverride,
               bool drawGuide, bool useBgColor, bool fullImageVisible)
 {
     cr->save();
@@ -290,10 +294,10 @@ void drawCrop(const Cairo::RefPtr<Cairo::Context>& cr,
     cr->rectangle(imx, imy, clipWidth, clipHeight);
     cr->clip();
 
-    double c1x = (cparams.x - startx) * scale;
-    double c1y = (cparams.y - starty) * scale;
-    double c2x = (cparams.x + cparams.w - startx) * scale - (fullImageVisible ? 0.0 : 1.0);
-    double c2y = (cparams.y + cparams.h - starty) * scale - (fullImageVisible ? 0.0 : 1.0);
+    double c1x = (cropParams.x - startx) * scale;
+    double c1y = (cropParams.y - starty) * scale;
+    double c2x = (cropParams.x + cropParams.w - startx) * scale - (fullImageVisible ? 0.0 : 1.0);
+    double c2y = (cropParams.y + cropParams.h - starty) * scale - (fullImageVisible ? 0.0 : 1.0);
 
     // crop overlay color, linked with crop windows background
     if (options.bgcolor == 0 || !useBgColor) {
@@ -315,7 +319,7 @@ void drawCrop(const Cairo::RefPtr<Cairo::Context>& cr,
     cr->restore();
 
     // rectangle around the cropped area and guides
-    if (cparams.guide != rtengine::procparams::CropParams::Guide::NONE && drawGuide) {
+    if (cropParams.guide != CropParams::Guide::NONE && drawGuide) {
         double rectx1 = round(c1x) + imx + 0.5;
         double recty1 = round(c1y) + imy + 0.5;
         double rectx2 = round(c2x) + imx + 0.5;
@@ -326,6 +330,6 @@ void drawCrop(const Cairo::RefPtr<Cairo::Context>& cr,
             recty2 = std::min(recty2, imy + imh - 0.5);
         }
 
-        drawCropGuides(cr, rectx1, recty1, rectx2, recty2, cparams);
+        drawCropGuides(cr, rectx1, recty1, rectx2, recty2, cropParams);
     }
 }

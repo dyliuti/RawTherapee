@@ -947,6 +947,18 @@ struct CropGuideParams {
         };
     };
 
+    enum PresetIndex : size_t {
+        RULE_OF_THIRDS = 0,
+        DIAGONALS,
+        HARMONIC_MEANS,
+        CROSSHAIR,
+        GRID,
+        GOLDEN_TRIANGLE_1,
+        GOLDEN_TRIANGLE_2,
+        EPASSPORT,
+        CENTERED_SQUARE
+    };
+
     struct Preset {
         Rotate rotate = Rotate::BY_0;
         Mirror::AboutAxis mirror = Mirror::AboutAxis::NONE;

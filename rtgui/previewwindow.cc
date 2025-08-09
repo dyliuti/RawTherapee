@@ -100,18 +100,22 @@ void PreviewWindow::updatePreviewImage ()
     cc->fill();
 
     if (previewHandler->getCropParams().enabled) {
-        rtengine::procparams::CropParams cparams = previewHandler->getCropParams();
-        switch (options.cropGuides) {
-        case Options::CROP_GUIDE_NONE:
-            cparams.guide = rtengine::procparams::CropParams::Guide::NONE;
-            break;
-        case Options::CROP_GUIDE_FRAME:
-            cparams.guide = rtengine::procparams::CropParams::Guide::FRAME;
-            break;
-        default:
-            break;
-        }
-        drawCrop (cc, 0, 0, imgW, imgH, imgW, imgH, 0, 0, zoom, cparams, true, false);
+        const auto& cparams = previewHandler->getCropParams();
+
+        auto cropGuideOverride = []() {
+            switch (options.cropGuides) {
+                case Options::CROP_GUIDE_NONE:
+                    return CropGuideOverride::NONE;
+                case Options::CROP_GUIDE_FRAME:
+                    return CropGuideOverride::FRAME;
+                default:
+                    return CropGuideOverride::DONT_TOUCH;
+            };
+        }();
+
+        drawCrop(cc, 0, 0, imgW, imgH, imgW, imgH, 0, 0, zoom,
+                 cparams, previewHandler->getCropGuideParams(), cropGuideOverride,
+                 true, false);
     }
 }
 

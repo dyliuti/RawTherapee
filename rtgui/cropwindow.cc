@@ -1990,7 +1990,10 @@ void CropWindow::expose (Cairo::RefPtr<Cairo::Context> cr)
                          imgSize.width, imgSize.height,
                          clipWidth, clipHeight,
                          cropPos.x, cropPos.y,
-                         zoomSteps[cropZoom].zoom / deviceScale, cropParams,
+                         zoomSteps[cropZoom].zoom / deviceScale,
+                         cropParams,
+                         *cropHandler.cropGuideParams,
+                         CropGuideOverride::DONT_TOUCH,
                          (this == iarea->mainCropWindow), useBgColor,
                          cropHandler.isFullDisplay());
             }
@@ -2091,13 +2094,16 @@ void CropWindow::expose (Cairo::RefPtr<Cairo::Context> cr)
                         std::min<double>(std::ceil(roughH / deviceScale),
                                          imgAreaSize.height - imgPos.y);
 
-                    drawCrop (cr, offset.x, offset.y,
-                              roughW, roughH,
-                              clipWidth, clipHeight,
-                              cropPos.x, cropPos.y,
-                              zoomSteps[cropZoom].zoom / deviceScale, cropParams,
-                              (this == iarea->mainCropWindow), useBgColor,
-                              cropHandler.isFullDisplay());
+                    drawCrop(cr, offset.x, offset.y,
+                             roughW, roughH,
+                             clipWidth, clipHeight,
+                             cropPos.x, cropPos.y,
+                             zoomSteps[cropZoom].zoom / deviceScale,
+                             cropParams,
+                             *cropHandler.cropGuideParams,
+                             CropGuideOverride::DONT_TOUCH,
+                             (this == iarea->mainCropWindow), useBgColor,
+                             cropHandler.isFullDisplay());
                 }
 
                 if (observedCropWin) {

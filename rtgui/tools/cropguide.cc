@@ -32,19 +32,6 @@ namespace {
 using CropParams = rtengine::procparams::CropParams;
 using CropGuideParams = rtengine::procparams::CropGuideParams;
 
-struct GuideTypeOptions {
-    enum Index {
-        RULE_OF_THIRDS,
-        DIAGONALS,
-        HARMONIC_MEANS,
-        CROSSHAIR,
-        GRID,
-        GOLDEN_TRIANGLE_1,
-        GOLDEN_TRIANGLE_2,
-        EPASSPORT,
-        CENTERED_SQUARE
-    };
-};
 // clang-format off
 constexpr std::array<const char*, 9> GUIDE_TYPE_OPTIONS = {
     "TP_CROP_GTRULETHIRDS",
@@ -59,10 +46,10 @@ constexpr std::array<const char*, 9> GUIDE_TYPE_OPTIONS = {
 };
 // clang-format on
 
-GuideTypeOptions::Index mapGuideType(CropParams::Guide type)
+CropGuideParams::PresetIndex mapGuideType(CropParams::Guide type)
 {
     using Guide = CropParams::Guide;
-    using Index = GuideTypeOptions::Index;
+    using Index = CropGuideParams::PresetIndex;
 
     switch (type) {
         case Guide::RULE_OF_THIRDS:
@@ -122,7 +109,7 @@ void CropGuide::setupPresets()
 
     size_t curr_row = 0;
     for (size_t i = 0; i < m_presets.size(); i++, curr_row++) {
-        const auto type_index = static_cast<GuideTypeOptions::Index>(i);
+        const auto type_index = static_cast<CropGuideParams::PresetIndex>(i);
         auto& preset = m_presets.at(i);
 
         preset.visible_icon = std::unique_ptr<RTImage>(
@@ -144,7 +131,7 @@ void CropGuide::setupPresets()
         label->set_line_wrap(true);
         grid->attach(*label, 1, curr_row);
 
-        if (type_index == GuideTypeOptions::Index::GOLDEN_TRIANGLE_1) {
+        if (type_index == CropGuideParams::PresetIndex::GOLDEN_TRIANGLE_1) {
             curr_row++;
 
             auto button_box = Gtk::manage(new Gtk::Box());
@@ -208,7 +195,7 @@ void CropGuide::read(const rtengine::procparams::ProcParams* pp,
         } else {
             setEnabled(true);
 
-            GuideTypeOptions::Index type = mapGuideType(pp->crop.guide);
+            CropGuideParams::PresetIndex type = mapGuideType(pp->crop.guide);
             auto& preset = m_presets.at(static_cast<size_t>(type));
 
             ConnectionBlocker block(preset.visibility_conn);
