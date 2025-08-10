@@ -900,8 +900,24 @@ struct ToneEqualizerParams {
   * Parameters of the cropping
   */
 struct CropParams {
-    // Always add to end of enum list to maintain backwards compatibility!
-    // Keep number of non-NONE entries in sync with CropGuideParams preset array size.
+    bool enabled;
+    int x;
+    int y;
+    int w;
+    int h;
+    bool fixratio;
+    Glib::ustring ratio;
+    Glib::ustring orientation;
+
+    CropParams();
+
+    bool operator ==(const CropParams& other) const;
+    bool operator !=(const CropParams& other) const;
+
+    void mapToResized(int resizedWidth, int resizedHeight, int scale, int& x1, int& x2, int& y1, int& y2) const;
+};
+
+struct CropGuideParams {
     enum class Guide {
         NONE,
         FRAME,
@@ -916,25 +932,6 @@ struct CropParams {
         CROSSHAIR
     };
 
-    bool enabled;
-    int x;
-    int y;
-    int w;
-    int h;
-    bool fixratio;
-    Glib::ustring ratio;
-    Glib::ustring orientation;
-    Guide guide;
-
-    CropParams();
-
-    bool operator ==(const CropParams& other) const;
-    bool operator !=(const CropParams& other) const;
-
-    void mapToResized(int resizedWidth, int resizedHeight, int scale, int& x1, int& x2, int& y1, int& y2) const;
-};
-
-struct CropGuideParams {
     // 0 is along positive-X axis and 90 along positive-Y axis
     // (i.e. rotate in counter-clockwise direction starting from 3 o'clock)
     enum class Rotate { BY_0, BY_90, BY_180, BY_270 };
@@ -949,7 +946,7 @@ struct CropGuideParams {
 
     enum PresetIndex : size_t {
         RULE_OF_THIRDS = 0,
-        DIAGONALS,
+        RULE_OF_DIAGONALS,
         HARMONIC_MEANS,
         CROSSHAIR,
         GRID,
@@ -970,17 +967,14 @@ struct CropGuideParams {
 
     std::array<Preset, 9> presets;
     bool enabled;
-    // Maintain backwards compatibility with older versions by overriding the
-    // existing CropParams.guide param if CropGuideParams is available.
-    bool override;
 
     CropGuideParams();
 
-    const Preset& getPreset(CropParams::Guide guide) const
+    const Preset& getPreset(Guide guide) const
     {
         return presets.at(static_cast<size_t>(guide));
     }
-    Preset& getPreset(CropParams::Guide guide)
+    Preset& getPreset(Guide guide)
     {
         return presets.at(static_cast<size_t>(guide));
     }

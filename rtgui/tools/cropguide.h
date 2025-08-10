@@ -79,6 +79,4 @@ private:
 
     rtengine::ProcEvent EvCropGuideEnabled;
     rtengine::ProcEvent EvCropGuidePresetChanged;
-
-    bool m_did_override;
 };

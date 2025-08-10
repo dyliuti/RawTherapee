@@ -46,35 +46,6 @@ constexpr std::array<const char*, 9> GUIDE_TYPE_OPTIONS = {
 };
 // clang-format on
 
-CropGuideParams::PresetIndex mapGuideType(CropParams::Guide type)
-{
-    using Guide = CropParams::Guide;
-    using Index = CropGuideParams::PresetIndex;
-
-    switch (type) {
-        case Guide::RULE_OF_THIRDS:
-            return Index::RULE_OF_THIRDS;
-        case Guide::RULE_OF_DIAGONALS:
-            return Index::DIAGONALS;
-        case Guide::HARMONIC_MEANS:
-            return Index::HARMONIC_MEANS;
-        case Guide::CROSSHAIR:
-            return Index::CROSSHAIR;
-        case Guide::GRID:
-            return Index::GRID;
-        case Guide::GOLDEN_TRIANGLE_1:
-            return Index::GOLDEN_TRIANGLE_1;
-        case Guide::GOLDEN_TRIANGLE_2:
-            return Index::GOLDEN_TRIANGLE_2;
-        case Guide::EPASSPORT:
-            return Index::EPASSPORT;
-        case Guide::CENTERED_SQUARE:
-            return Index::CENTERED_SQUARE;
-        default:
-            return Index::RULE_OF_THIRDS;
-    }
-}
-
 } // namespace
 
 const Glib::ustring CropGuide::TOOL_NAME = "cropguide";
@@ -82,7 +53,6 @@ const Glib::ustring CropGuide::TOOL_NAME = "cropguide";
 CropGuide::CropGuide()
     : FoldableToolPanel(this, TOOL_NAME, M("TP_CROP_GUIDE_LABEL"), false, true)
     , m_presets{}
-    , m_did_override(false)
 {
     setupEvents();
     setupPresets();
@@ -173,71 +143,30 @@ void CropGuide::setupPresets()
 void CropGuide::read(const rtengine::procparams::ProcParams* pp,
                      const ParamsEdited* pedited)
 {
-    if (!pp->cropGuide.override) {
-        m_did_override = true;
+    setEnabled(pp->cropGuide.enabled);
 
-        for (auto& preset : m_presets) {
-            preset.rotate = CropGuideParams::Rotate::BY_0;
-            preset.mirror = CropGuideParams::Mirror::AboutAxis::NONE;
-            preset.is_rotate_dirty = false;
-            preset.is_mirror_dirty = false;
+    for (size_t i = 0; i < m_presets.size(); i++) {
+        auto& from = pp->cropGuide.presets.at(i);
+        auto& preset = m_presets.at(i);
 
-            ConnectionBlocker block(preset.visibility_conn);
-            preset.visibility_button->set_active(false);
-            preset.visibility_button->set_image(*preset.hidden_icon);
-            preset.is_dirty = false;
+        if (pedited) {
+            auto& from_edited = pedited->cropGuide.presets.at(i);
+            preset.is_dirty = from_edited.enabled;
+            preset.is_rotate_dirty = from_edited.rotate;
+            preset.is_mirror_dirty = from_edited.mirror;
         }
 
-        if (pp->crop.guide == CropParams::Guide::NONE) {
-            setEnabled(false);
-        } else if (pp->crop.guide == CropParams::Guide::FRAME) {
-            setEnabled(true);
-        } else {
-            setEnabled(true);
-
-            CropGuideParams::PresetIndex type = mapGuideType(pp->crop.guide);
-            auto& preset = m_presets.at(static_cast<size_t>(type));
-
-            ConnectionBlocker block(preset.visibility_conn);
-            preset.visibility_button->set_active(true);
-            preset.visibility_button->set_image(*preset.visible_icon);
-        }
-    } else {
-        m_did_override = false;
-
-        setEnabled(pp->cropGuide.enabled);
-        for (size_t i = 0; i < m_presets.size(); i++) {
-            auto& from = pp->cropGuide.presets.at(i);
-            auto& preset = m_presets.at(i);
-
-            if (pedited) {
-                auto& from_edited = pedited->cropGuide.presets.at(i);
-                preset.is_dirty = from_edited.enabled;
-                preset.is_rotate_dirty = from_edited.rotate;
-                preset.is_mirror_dirty = from_edited.mirror;
-            }
-
-            ConnectionBlocker block(preset.visibility_conn);
-            preset.visibility_button->set_active(from.enabled);
-            preset.visibility_button->set_image(
-                from.enabled ? *preset.visible_icon : *preset.hidden_icon);
-        }
+        ConnectionBlocker block(preset.visibility_conn);
+        preset.visibility_button->set_active(from.enabled);
+        preset.visibility_button->set_image(
+            from.enabled ? *preset.visible_icon : *preset.hidden_icon);
     }
 }
 
 void CropGuide::write(rtengine::procparams::ProcParams* pp, ParamsEdited* pedited)
 {
-    // Losing a crop guide is a minor inconvenience compared to losing
-    // backwards compatibility
-    pp->crop.guide = getEnabled() ? CropParams::Guide::FRAME : CropParams::Guide::NONE;
-    pp->cropGuide.override = true;
     pp->cropGuide.enabled = getEnabled();
-
     if (pedited) {
-        if (m_did_override) {
-            pedited->crop.guide = true;
-            pedited->cropGuide.override = true;
-        }
         pedited->cropGuide.enabled = !get_inconsistent();
     }
 

@@ -234,7 +234,7 @@ void GuideDrawer::drawCenteredSquare()
 
 void GuideDrawer::drawDiagonals()
 {
-    if (!params.presets.at(PresetIndex::DIAGONALS).enabled) return;
+    if (!params.presets.at(PresetIndex::RULE_OF_DIAGONALS).enabled) return;
 
     double corners_from[4][2];
     double corners_to[4][2];

@@ -1530,19 +1530,23 @@ void CropWindow::expose (Cairo::RefPtr<Cairo::Context> cr)
             drawObservedFrame (cr);
         }
     } else {
-        CropParams cropParams = *cropHandler.cropParams;
-        if (state == SNormal) {
-            switch (options.cropGuides) {
-            case Options::CROP_GUIDE_NONE:
-                cropParams.guide = procparams::CropParams::Guide::NONE;
-                break;
-            case Options::CROP_GUIDE_FRAME:
-                cropParams.guide = procparams::CropParams::Guide::FRAME;
-                break;
-            default:
-                break;
+        const auto& cropParams = *cropHandler.cropParams;
+        const auto cropGuideOverride = [&]() {
+            if (state == SNormal) {
+                switch (options.cropGuides) {
+                case Options::CROP_GUIDE_NONE:
+                    return CropGuideOverride::NO_GUIDES;
+                case Options::CROP_GUIDE_FRAME:
+                    return CropGuideOverride::FRAME;
+                default:
+                    break;
+                }
             }
-        }
+
+            return (this == iarea->mainCropWindow)
+                ? CropGuideOverride::DONT_TOUCH : CropGuideOverride::NO_GUIDES;
+        }();
+
         bool useBgColor = (state == SNormal || state == SDragPicker || state == SDeletePicker || state == SEditDrag1);
 
         if (cropHandler.cropPixbuf) {
@@ -1986,10 +1990,6 @@ void CropWindow::expose (Cairo::RefPtr<Cairo::Context> cr)
                     std::min<double>(std::ceil(imgSize.height / deviceScale),
                                      imgAreaSize.height - imgPos.y);
 
-                auto cropGuideOverride = (this == iarea->mainCropWindow)
-                    ? CropGuideOverride::DONT_TOUCH
-                    : CropGuideOverride::NO_GUIDES;
-
                 drawCrop(cr, offset.x, offset.y,
                          imgSize.width, imgSize.height,
                          clipWidth, clipHeight,
@@ -2097,10 +2097,6 @@ void CropWindow::expose (Cairo::RefPtr<Cairo::Context> cr)
                     double clipHeight =
                         std::min<double>(std::ceil(roughH / deviceScale),
                                          imgAreaSize.height - imgPos.y);
-
-                    auto cropGuideOverride = (this == iarea->mainCropWindow)
-                        ? CropGuideOverride::DONT_TOUCH
-                        : CropGuideOverride::NO_GUIDES;
 
                     drawCrop(cr, offset.x, offset.y,
                              roughW, roughH,

@@ -655,7 +655,7 @@ void loadCropGuideParams(
     };
 
     load(PresetIndex::RULE_OF_THIRDS, RULE_OF_THIRDS);
-    load(PresetIndex::DIAGONALS, RULE_OF_DIAGONALS);
+    load(PresetIndex::RULE_OF_DIAGONALS, RULE_OF_DIAGONALS);
     load(PresetIndex::HARMONIC_MEANS, HARMONIC_MEANS);
     load(PresetIndex::CROSSHAIR, CROSSHAIR);
     load(PresetIndex::GRID, GRID);
@@ -709,7 +709,7 @@ void saveCropGuideParams(
     };
 
     save(PresetIndex::RULE_OF_THIRDS, RULE_OF_THIRDS);
-    save(PresetIndex::DIAGONALS, RULE_OF_DIAGONALS);
+    save(PresetIndex::RULE_OF_DIAGONALS, RULE_OF_DIAGONALS);
     save(PresetIndex::HARMONIC_MEANS, HARMONIC_MEANS);
     save(PresetIndex::CROSSHAIR, CROSSHAIR);
     save(PresetIndex::GRID, GRID);
@@ -2268,8 +2268,7 @@ CropParams::CropParams() :
     h(15000),
     fixratio(true),
     ratio("As Image"),
-    orientation("As Image"),
-    guide(Guide::FRAME)
+    orientation("As Image")
 {
 }
 
@@ -2283,8 +2282,7 @@ bool CropParams::operator ==(const CropParams& other) const
         && h == other.h
         && fixratio == other.fixratio
         && ratio == other.ratio
-        && orientation == other.orientation
-        && guide == other.guide;
+        && orientation == other.orientation;
 }
 
 bool CropParams::operator !=(const CropParams& other) const
@@ -2309,16 +2307,11 @@ bool CropGuideParams::Preset::operator==(const Preset& other) const
     return rotate == other.rotate && mirror == other.mirror && enabled == other.enabled;
 }
 
-// Override set to false to detect old crop guide format.
-// If the new format is read from pp3, then override is set to true.
-CropGuideParams::CropGuideParams() : enabled(true), override(false)
-{
-}
+CropGuideParams::CropGuideParams() : enabled(true) {}
 
 bool CropGuideParams::operator==(const CropGuideParams& other) const
 {
     return enabled == other.enabled
-        && override == other.override
         && presets == other.presets;
 }
 
@@ -7297,26 +7290,6 @@ int ProcParams::save(const Glib::ustring& fname, const Glib::ustring& fname2, bo
         saveToKeyfile(!pedited || pedited->crop.fixratio, "Crop", "FixedRatio", crop.fixratio, keyFile);
         saveToKeyfile(!pedited || pedited->crop.ratio, "Crop", "Ratio", crop.ratio, keyFile);
         saveToKeyfile(!pedited || pedited->crop.orientation, "Crop", "Orientation", crop.orientation, keyFile);
-        saveToKeyfile(
-            !pedited || pedited->crop.guide,
-            "Crop",
-            "Guide",
-            {
-                {CropParams::Guide::NONE, "None"},
-                {CropParams::Guide::FRAME, "Frame"},
-                {CropParams::Guide::RULE_OF_THIRDS, "Rule of thirds"},
-                {CropParams::Guide::RULE_OF_DIAGONALS, "Rule of diagonals"},
-                {CropParams::Guide::HARMONIC_MEANS, "Harmonic means"},
-                {CropParams::Guide::GRID, "Grid"},
-                {CropParams::Guide::GOLDEN_TRIANGLE_1, "Golden Triangle 1"},
-                {CropParams::Guide::GOLDEN_TRIANGLE_2, "Golden Triangle 2"},
-                {CropParams::Guide::EPASSPORT, "ePassport"},
-                {CropParams::Guide::CENTERED_SQUARE, "Centered square"},
-                {CropParams::Guide::CROSSHAIR, "Crosshair"},
-            },
-            crop.guide,
-            keyFile
-        );
 
         saveCropGuideParams(keyFile, cropGuide, pedited);
 
@@ -9576,25 +9549,6 @@ int ProcParams::load(const Glib::ustring& fname, ParamsEdited* pedited)
             }
 
             assignFromKeyfile(keyFile, "Crop", "Orientation", crop.orientation, pedited->crop.orientation);
-            assignFromKeyfile(
-                keyFile,
-                "Crop",
-                "Guide",
-                {
-                    {"None", CropParams::Guide::NONE},
-                    {"Frame", CropParams::Guide::FRAME},
-                    {"Rule of thirds", CropParams::Guide::RULE_OF_THIRDS},
-                    {"Rule of diagonals", CropParams::Guide::RULE_OF_DIAGONALS},
-                    {"Harmonic means", CropParams::Guide::HARMONIC_MEANS},
-                    {"Grid", CropParams::Guide::GRID},
-                    {"Golden Triangle 1", CropParams::Guide::GOLDEN_TRIANGLE_1},
-                    {"Golden Triangle 2", CropParams::Guide::GOLDEN_TRIANGLE_2},
-                    {"ePassport", CropParams::Guide::EPASSPORT},
-                    {"Centered square", CropParams::Guide::CENTERED_SQUARE}
-                },
-                crop.guide,
-                pedited->crop.guide
-            );
         }
 
         loadCropGuideParams(keyFile, cropGuide, pedited->cropGuide);

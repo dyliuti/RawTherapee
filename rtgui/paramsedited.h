@@ -399,7 +399,6 @@ struct CropParamsEdited {
     bool fixratio;
     bool ratio;
     bool orientation;
-    bool guide;
 };
 
 struct CropGuideParamsEdited {
@@ -410,7 +409,6 @@ struct CropGuideParamsEdited {
     };
     std::array<Preset, 9> presets;
     bool enabled;
-    bool override;
 };
 
 struct CoarseTransformParamsEdited {

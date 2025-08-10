@@ -38,7 +38,6 @@ void setAll(CropGuideParamsEdited& guide, bool v)
         p.enabled = v;
     }
     guide.enabled = v;
-    guide.override = v;
 }
 
 void initFrom(CropGuideParamsEdited& edits, const ProcParams& params,
@@ -53,7 +52,6 @@ void initFrom(CropGuideParamsEdited& edits, const ProcParams& params,
         edits.presets[i].enabled &= curr.presets[i].enabled == other.presets[i].enabled;
     }
     edits.enabled &= curr.enabled == other.enabled;
-    edits.override &= curr.override == other.override;
 }
 
 void combine(CropGuideParams& toEdit, const CropGuideParams& mod,
@@ -73,9 +71,6 @@ void combine(CropGuideParams& toEdit, const CropGuideParams& mod,
     }
     if (edits.enabled) {
         toEdit.enabled = mod.enabled;
-    }
-    if (edits.override) {
-        toEdit.override = mod.override;
     }
 }
 
@@ -527,7 +522,6 @@ void ParamsEdited::set(bool v)
     crop.fixratio = v;
     crop.ratio   = v;
     crop.orientation = v;
-    crop.guide   = v;
     ::setAll(cropGuide, v);
     coarse.rotate = v;
     coarse.hflip = v;
@@ -1279,7 +1273,6 @@ void ParamsEdited::initFrom(const std::vector<rtengine::procparams::ProcParams>&
         crop.fixratio = crop.fixratio && p.crop.fixratio == other.crop.fixratio;
         crop.ratio = crop.ratio && p.crop.ratio == other.crop.ratio;
         crop.orientation = crop.orientation && p.crop.orientation == other.crop.orientation;
-        crop.guide = crop.guide && p.crop.guide == other.crop.guide;
         ::initFrom(cropGuide, p, other);
         toneEqualizer.enabled = toneEqualizer.enabled && p.toneEqualizer.enabled == other.toneEqualizer.enabled;
         for (size_t i = 0; i < toneEqualizer.bands.size(); ++i) {
@@ -3735,10 +3728,6 @@ void ParamsEdited::combine(rtengine::procparams::ProcParams& toEdit, const rteng
 
     if (crop.orientation) {
         toEdit.crop.orientation = mods.crop.orientation;
-    }
-
-    if (crop.guide) {
-        toEdit.crop.guide = mods.crop.guide;
     }
 
     ::combine(toEdit.cropGuide, mods.cropGuide, cropGuide);
