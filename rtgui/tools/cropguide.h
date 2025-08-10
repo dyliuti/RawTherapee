@@ -71,7 +71,7 @@ private:
         bool is_dirty = false;
     };
 
-    std::array<Preset, 9> m_presets;
+    std::array<Preset, 8> m_presets;
     bool m_mirror_golden_triangle;
     bool m_dirty_mirror_golden_triangle;
 

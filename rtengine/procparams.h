@@ -919,20 +919,6 @@ struct CropParams {
 };
 
 struct CropGuideParams {
-    enum class Guide {
-        NONE,
-        FRAME,
-        RULE_OF_THIRDS,
-        RULE_OF_DIAGONALS,
-        HARMONIC_MEANS,
-        GRID,
-        GOLDEN_TRIANGLE_1,
-        GOLDEN_TRIANGLE_2,
-        EPASSPORT,
-        CENTERED_SQUARE,
-        CROSSHAIR
-    };
-
     // 0 is along positive-X axis and 90 along positive-Y axis
     // (i.e. rotate in counter-clockwise direction starting from 3 o'clock)
     // enum class Rotate { BY_0, BY_90, BY_180, BY_270 };
@@ -953,13 +939,12 @@ struct CropGuideParams {
         HARMONIC_MEANS,
         CROSSHAIR,
         GRID,
-        GOLDEN_TRIANGLE_1,
-        GOLDEN_TRIANGLE_2,
+        GOLDEN_TRIANGLE,
         EPASSPORT,
         CENTERED_SQUARE
     };
-    static constexpr size_t NUM_PRESETS = 9;
-    static_assert(NUM_PRESETS > PresetIndex::CENTERED_SQUARE);
+    static constexpr size_t NUM_PRESETS = 8;
+    static_assert(NUM_PRESETS == PresetIndex::CENTERED_SQUARE + 1);
 
     std::bitset<NUM_PRESETS> presets;
     bool mirror_golden_triangle;

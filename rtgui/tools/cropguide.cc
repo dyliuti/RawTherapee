@@ -33,14 +33,13 @@ using CropParams = rtengine::procparams::CropParams;
 using CropGuideParams = rtengine::procparams::CropGuideParams;
 
 // clang-format off
-constexpr std::array<const char*, 9> GUIDE_TYPE_OPTIONS = {
+constexpr std::array<const char*, 8> GUIDE_TYPE_OPTIONS = {
     "TP_CROP_GTRULETHIRDS",
     "TP_CROP_GTDIAGONALS",
     "TP_CROP_GTHARMMEANS",
     "TP_CROP_GTCROSSHAIR",
     "TP_CROP_GTGRID",
-    "TP_CROP_GTTRIANGLE1",
-    "TP_CROP_GTTRIANGLE2",
+    "TP_CROP_GTTRIANGLE",
     "TP_CROP_GTEPASSPORT",
     "TP_CROP_GTCENTEREDSQUARE"
 };
@@ -103,7 +102,7 @@ void CropGuide::setupPresets()
         label->set_line_wrap(true);
         grid->attach(*label, 1, curr_row);
 
-        if (type_index == CropGuideParams::PresetIndex::GOLDEN_TRIANGLE_1) {
+        if (type_index == CropGuideParams::PresetIndex::GOLDEN_TRIANGLE) {
             curr_row++;
 
             auto button_box = Gtk::manage(new Gtk::Box());
@@ -227,7 +226,7 @@ void CropGuide::onGoldenTriangleMirror()
 
     if (listener && getEnabled()) {
         listener->panelChanged(EvCropGuidePresetChanged, M(GUIDE_TYPE_OPTIONS.at(
-            CropGuideParams::PresetIndex::GOLDEN_TRIANGLE_1)));
+            CropGuideParams::PresetIndex::GOLDEN_TRIANGLE)));
     }
 }
 
@@ -238,7 +237,7 @@ void CropGuide::onGoldenTriangleReset()
 
     if (listener && getEnabled()) {
         listener->panelChanged(EvCropGuidePresetChanged, M(GUIDE_TYPE_OPTIONS.at(
-            CropGuideParams::PresetIndex::GOLDEN_TRIANGLE_1)));
+            CropGuideParams::PresetIndex::GOLDEN_TRIANGLE)));
     }
 }
 

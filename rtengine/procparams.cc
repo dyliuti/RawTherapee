@@ -442,8 +442,7 @@ namespace CropGuide {
     DEFINE_KEY(HARMONIC_MEANS, "HarmonicMeans");
     DEFINE_KEY(CROSSHAIR, "Crosshair");
     DEFINE_KEY(GRID, "Grid");
-    DEFINE_KEY(GOLDEN_TRIANGLE_1, "GoldenTriangle1");
-    DEFINE_KEY(GOLDEN_TRIANGLE_2, "GoldenTriangle2");
+    DEFINE_KEY(GOLDEN_TRIANGLE, "GoldenTriangle");
     DEFINE_KEY(EPASSPORT, "Epassport");
     DEFINE_KEY(CENTERED_SQUARE, "CenteredSquare");
 
@@ -659,8 +658,7 @@ void loadCropGuideParams(
     load(PresetIndex::HARMONIC_MEANS, HARMONIC_MEANS);
     load(PresetIndex::CROSSHAIR, CROSSHAIR);
     load(PresetIndex::GRID, GRID);
-    load(PresetIndex::GOLDEN_TRIANGLE_1, GOLDEN_TRIANGLE_1);
-    load(PresetIndex::GOLDEN_TRIANGLE_2, GOLDEN_TRIANGLE_2);
+    load(PresetIndex::GOLDEN_TRIANGLE, GOLDEN_TRIANGLE);
     load(PresetIndex::EPASSPORT, EPASSPORT);
     load(PresetIndex::CENTERED_SQUARE, CENTERED_SQUARE);
 
@@ -695,8 +693,7 @@ void saveCropGuideParams(
     save(PresetIndex::HARMONIC_MEANS, HARMONIC_MEANS);
     save(PresetIndex::CROSSHAIR, CROSSHAIR);
     save(PresetIndex::GRID, GRID);
-    save(PresetIndex::GOLDEN_TRIANGLE_1, GOLDEN_TRIANGLE_1);
-    save(PresetIndex::GOLDEN_TRIANGLE_2, GOLDEN_TRIANGLE_2);
+    save(PresetIndex::GOLDEN_TRIANGLE, GOLDEN_TRIANGLE);
     save(PresetIndex::EPASSPORT, EPASSPORT);
     save(PresetIndex::CENTERED_SQUARE, CENTERED_SQUARE);
 

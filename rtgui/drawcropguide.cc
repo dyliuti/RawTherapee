@@ -56,8 +56,7 @@ struct GuideDrawer {
     void drawCenteredSquare();
 
     void drawDiagonals();
-    void drawGoldenTriangle1();
-    void drawGoldenTriangle2();
+    void drawGoldenTriangle();
 
     void drawHorizontal(double ratio);
     void drawVertical(double ratio);
@@ -113,18 +112,19 @@ void drawCropGuides(const Cairo::RefPtr<Cairo::Context>& cr,
 
     GuideDrawer util{cr, rect, params};
 
-    // Horizontal/vertical lines only
-    util.drawRuleOfThirds();
-    util.drawHarmonicMeans();
-    util.drawCrosshair();
-    util.drawGrid();
-    util.drawEpassport();
-    util.drawCenteredSquare();
+    if (params.presets.any()) {
+        // Horizontal/vertical lines only
+        util.drawRuleOfThirds();
+        util.drawHarmonicMeans();
+        util.drawCrosshair();
+        util.drawGrid();
+        util.drawEpassport();
+        util.drawCenteredSquare();
 
-    // Diagonals
-    util.drawDiagonals();
-    util.drawGoldenTriangle1();
-    util.drawGoldenTriangle2();
+        // Diagonals
+        util.drawDiagonals();
+        util.drawGoldenTriangle();
+    }
 }
 
 }  // namespace
@@ -266,9 +266,9 @@ void GuideDrawer::drawDiagonals()
     }
 }
 
-void GuideDrawer::drawGoldenTriangle1()
+void GuideDrawer::drawGoldenTriangle()
 {
-    if (!params.presets[PresetIndex::GOLDEN_TRIANGLE_1]) return;
+    if (!params.presets[PresetIndex::GOLDEN_TRIANGLE]) return;
 
     double x0 = rect.x0;
     double x1 = rect.x1;
@@ -296,33 +296,6 @@ void GuideDrawer::drawGoldenTriangle1()
     x = width - (a * b) / height;
     y = (b * (d - a)) / width;
     drawDashedLine(x1, y0, x0 + x, y0 + y);
-}
-
-void GuideDrawer::drawGoldenTriangle2()
-{
-    if (!params.presets[PresetIndex::GOLDEN_TRIANGLE_2]) return;
-
-    // Swapped
-    const double x0 = rect.x1;
-    const double x1 = rect.x0;
-
-    drawDashedLine(x0, rect.y0, x1, rect.y1);
-
-    const double height = rect.y1 - rect.y0;
-    const double width = x1 - x0;
-    const double d = std::sqrt(height * height + width * width);
-    const double alpha = std::asin(width / d);
-    const double beta = std::asin(height / d);
-    const double a = std::sin(beta) * height;
-    const double b = std::sin(alpha) * height;
-
-    double x = (a * b) / height;
-    double y = height - (b * (d - a)) / width;
-    drawDashedLine(x0, rect.y1, x0 + x, rect.y0 + y);
-
-    x = width - (a * b) / height;
-    y = (b * (d - a)) / width;
-    drawDashedLine(x1, rect.y0, x0 + x, rect.y0 + y);
 }
 
 void GuideDrawer::drawHorizontal(double ratio)
