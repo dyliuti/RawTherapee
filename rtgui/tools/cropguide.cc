@@ -119,20 +119,20 @@ void CropGuide::setupPresets()
                 return button;
             };
 
-            auto rotate_left_button = add_button("rotate-left-small");
-            auto rotate_right_button = add_button("rotate-right-small");
+            // auto rotate_left_button = add_button("rotate-left-small");
+            // auto rotate_right_button = add_button("rotate-right-small");
             auto flip_h_button = add_button("flip-horizontal");
-            auto flip_v_button = add_button("flip-vertical");
+            // auto flip_v_button = add_button("flip-vertical");
             auto undo_button = add_button("undo-small");
 
-            rotate_left_button->signal_clicked().connect(sigc::bind(
-                sigc::mem_fun(this, &CropGuide::onRotateLeft), i));
-            rotate_right_button->signal_clicked().connect(sigc::bind(
-                sigc::mem_fun(this, &CropGuide::onRotateRight), i));
+            // rotate_left_button->signal_clicked().connect(sigc::bind(
+            //     sigc::mem_fun(this, &CropGuide::onRotateLeft), i));
+            // rotate_right_button->signal_clicked().connect(sigc::bind(
+            //     sigc::mem_fun(this, &CropGuide::onRotateRight), i));
             flip_h_button->signal_clicked().connect(sigc::bind(
                 sigc::mem_fun(this, &CropGuide::onFlipHorizontal), i));
-            flip_v_button->signal_clicked().connect(sigc::bind(
-                sigc::mem_fun(this, &CropGuide::onFlipVertical), i));
+            // flip_v_button->signal_clicked().connect(sigc::bind(
+            //     sigc::mem_fun(this, &CropGuide::onFlipVertical), i));
             undo_button->signal_clicked().connect(sigc::bind(
                 sigc::mem_fun(this, &CropGuide::onReset), i));
         }
@@ -160,6 +160,8 @@ void CropGuide::read(const rtengine::procparams::ProcParams* pp,
         preset.visibility_button->set_active(from.enabled);
         preset.visibility_button->set_image(
             from.enabled ? *preset.visible_icon : *preset.hidden_icon);
+        preset.rotate = from.rotate;
+        preset.mirror = from.mirror;
     }
 }
 
@@ -175,6 +177,8 @@ void CropGuide::write(rtengine::procparams::ProcParams* pp, ParamsEdited* pedite
         auto& to = pp->cropGuide.presets.at(i);
 
         to.enabled = preset.visibility_button->get_active();
+        to.rotate = preset.rotate;
+        to.mirror = preset.mirror;
 
         if (pedited) {
             auto& to_edited = pedited->cropGuide.presets.at(i);

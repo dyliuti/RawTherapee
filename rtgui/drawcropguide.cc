@@ -268,14 +268,24 @@ void GuideDrawer::drawDiagonals()
 
 void GuideDrawer::drawGoldenTriangle1()
 {
-    if (!params.presets.at(PresetIndex::GOLDEN_TRIANGLE_1).enabled) return;
+    const auto& preset = params.presets.at(PresetIndex::GOLDEN_TRIANGLE_1);
+    if (!preset.enabled) return;
 
-    const double x0 = rect.x0;
-    const double x1 = rect.x1;
+    double x0 = rect.x0;
+    double x1 = rect.x1;
+    double y0 = rect.y0;
+    double y1 = rect.y1;
 
-    drawDashedLine(x0, rect.y0, x1, rect.y1);
+    if (preset.mirror & CropGuideParams::Mirror::AboutAxis::X) {
+        std::swap(x0, x1);
+    }
+    if (preset.mirror & CropGuideParams::Mirror::AboutAxis::Y) {
+        std::swap(y0, y1);
+    }
 
-    const double height = rect.y1 - rect.y0;
+    drawDashedLine(x0, y0, x1, y1);
+
+    const double height = y1 - y0;
     const double width = x1 - x0;
     const double d = std::sqrt(height * height + width * width);
     const double alpha = std::asin(width / d);
@@ -285,11 +295,11 @@ void GuideDrawer::drawGoldenTriangle1()
 
     double x = (a * b) / height;
     double y = height - (b * (d - a)) / width;
-    drawDashedLine(x0, rect.y1, x0 + x, rect.y0 + y);
+    drawDashedLine(x0, y1, x0 + x, y0 + y);
 
     x = width - (a * b) / height;
     y = (b * (d - a)) / width;
-    drawDashedLine(x1, rect.y0, x0 + x, rect.y0 + y);
+    drawDashedLine(x1, y0, x0 + x, y0 + y);
 }
 
 void GuideDrawer::drawGoldenTriangle2()
