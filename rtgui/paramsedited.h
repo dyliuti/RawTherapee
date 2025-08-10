@@ -19,6 +19,7 @@
 #pragma once
 
 #include <array>
+#include <bitset>
 #include <vector>
 
 namespace rtengine
@@ -402,12 +403,8 @@ struct CropParamsEdited {
 };
 
 struct CropGuideParamsEdited {
-    struct Preset {
-        bool rotate;
-        bool mirror;
-        bool enabled;
-    };
-    std::array<Preset, 9> presets;
+    std::bitset<9> presets;
+    bool mirror_golden_triangle;
     bool enabled;
 };
 

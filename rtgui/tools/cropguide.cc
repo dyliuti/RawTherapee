@@ -53,6 +53,8 @@ const Glib::ustring CropGuide::TOOL_NAME = "cropguide";
 CropGuide::CropGuide()
     : FoldableToolPanel(this, TOOL_NAME, M("TP_CROP_GUIDE_LABEL"), false, true)
     , m_presets{}
+    , m_mirror_golden_triangle(false)
+    , m_dirty_mirror_golden_triangle(false)
 {
     setupEvents();
     setupPresets();
@@ -80,7 +82,7 @@ void CropGuide::setupPresets()
     size_t curr_row = 0;
     for (size_t i = 0; i < m_presets.size(); i++, curr_row++) {
         const auto type_index = static_cast<CropGuideParams::PresetIndex>(i);
-        auto& preset = m_presets.at(i);
+        auto& preset = m_presets[i];
 
         preset.visible_icon = std::unique_ptr<RTImage>(
             new RTImage("power-on-small", Gtk::ICON_SIZE_BUTTON));
@@ -129,12 +131,12 @@ void CropGuide::setupPresets()
             //     sigc::mem_fun(this, &CropGuide::onRotateLeft), i));
             // rotate_right_button->signal_clicked().connect(sigc::bind(
             //     sigc::mem_fun(this, &CropGuide::onRotateRight), i));
-            flip_h_button->signal_clicked().connect(sigc::bind(
-                sigc::mem_fun(this, &CropGuide::onFlipHorizontal), i));
+            flip_h_button->signal_clicked().connect(
+                sigc::mem_fun(this, &CropGuide::onGoldenTriangleMirror));
             // flip_v_button->signal_clicked().connect(sigc::bind(
             //     sigc::mem_fun(this, &CropGuide::onFlipVertical), i));
-            undo_button->signal_clicked().connect(sigc::bind(
-                sigc::mem_fun(this, &CropGuide::onReset), i));
+            undo_button->signal_clicked().connect(
+                sigc::mem_fun(this, &CropGuide::onGoldenTriangleReset));
         }
     }
 
@@ -144,47 +146,45 @@ void CropGuide::read(const rtengine::procparams::ProcParams* pp,
                      const ParamsEdited* pedited)
 {
     setEnabled(pp->cropGuide.enabled);
+    m_mirror_golden_triangle = pp->cropGuide.mirror_golden_triangle;
+
+    if (pedited) {
+        set_inconsistent(multiImage && pedited->cropGuide.enabled);
+        m_dirty_mirror_golden_triangle = pedited->cropGuide.mirror_golden_triangle;
+    };
 
     for (size_t i = 0; i < m_presets.size(); i++) {
-        auto& from = pp->cropGuide.presets.at(i);
-        auto& preset = m_presets.at(i);
-
-        if (pedited) {
-            auto& from_edited = pedited->cropGuide.presets.at(i);
-            preset.is_dirty = from_edited.enabled;
-            preset.is_rotate_dirty = from_edited.rotate;
-            preset.is_mirror_dirty = from_edited.mirror;
-        }
+        auto& preset = m_presets[i];
+        bool is_enabled = pp->cropGuide.presets[i];
 
         ConnectionBlocker block(preset.visibility_conn);
-        preset.visibility_button->set_active(from.enabled);
+        preset.visibility_button->set_active(is_enabled);
         preset.visibility_button->set_image(
-            from.enabled ? *preset.visible_icon : *preset.hidden_icon);
-        preset.rotate = from.rotate;
-        preset.mirror = from.mirror;
+            is_enabled ? *preset.visible_icon : *preset.hidden_icon);
+
+        if (pedited) {
+            preset.is_dirty = pedited->cropGuide.presets[i];
+        }
     }
 }
 
 void CropGuide::write(rtengine::procparams::ProcParams* pp, ParamsEdited* pedited)
 {
     pp->cropGuide.enabled = getEnabled();
+    pp->cropGuide.mirror_golden_triangle = m_mirror_golden_triangle;
+
     if (pedited) {
         pedited->cropGuide.enabled = !get_inconsistent();
+        pedited->cropGuide.mirror_golden_triangle = m_dirty_mirror_golden_triangle;
     }
 
     for (size_t i = 0; i < m_presets.size(); i++) {
-        auto& preset = m_presets.at(i);
-        auto& to = pp->cropGuide.presets.at(i);
+        auto& preset = m_presets[i];
 
-        to.enabled = preset.visibility_button->get_active();
-        to.rotate = preset.rotate;
-        to.mirror = preset.mirror;
+        pp->cropGuide.presets[i] = preset.visibility_button->get_active();
 
         if (pedited) {
-            auto& to_edited = pedited->cropGuide.presets.at(i);
-            to_edited.enabled = preset.is_dirty;
-            to_edited.rotate = preset.is_rotate_dirty;
-            to_edited.mirror = preset.is_mirror_dirty;
+            pedited->cropGuide.presets[i] = preset.is_dirty;
         }
     }
 }
@@ -220,89 +220,111 @@ void CropGuide::onPresetToggled(size_t index)
     }
 }
 
-void CropGuide::onRotateLeft(size_t index)
+void CropGuide::onGoldenTriangleMirror()
 {
-    using Rotate = CropGuideParams::Rotate;
-    auto& preset = m_presets.at(index);
-    switch (preset.rotate) {
-        case Rotate::BY_0:
-            preset.rotate = Rotate::BY_90;
-            break;
-        case Rotate::BY_90:
-            preset.rotate = Rotate::BY_180;
-            break;
-        case Rotate::BY_180:
-            preset.rotate = Rotate::BY_270;
-            break;
-        case Rotate::BY_270:
-            preset.rotate = Rotate::BY_0;
-            break;
-    }
-    preset.is_rotate_dirty = true;
+    m_mirror_golden_triangle = !m_mirror_golden_triangle;
+    m_dirty_mirror_golden_triangle = true;
 
     if (listener && getEnabled()) {
-        listener->panelChanged(EvCropGuidePresetChanged, M(GUIDE_TYPE_OPTIONS.at(index)));
+        listener->panelChanged(EvCropGuidePresetChanged, M(GUIDE_TYPE_OPTIONS.at(
+            CropGuideParams::PresetIndex::GOLDEN_TRIANGLE_1)));
     }
 }
 
-void CropGuide::onRotateRight(size_t index)
+void CropGuide::onGoldenTriangleReset()
 {
-    using Rotate = CropGuideParams::Rotate;
-    auto& preset = m_presets.at(index);
-    switch (preset.rotate) {
-        case Rotate::BY_0:
-            preset.rotate = Rotate::BY_270;
-            break;
-        case Rotate::BY_90:
-            preset.rotate = Rotate::BY_0;
-            break;
-        case Rotate::BY_180:
-            preset.rotate = Rotate::BY_90;
-            break;
-        case Rotate::BY_270:
-            preset.rotate = Rotate::BY_180;
-            break;
-    }
-    preset.is_rotate_dirty = true;
+    m_mirror_golden_triangle = false;
+    m_dirty_mirror_golden_triangle = true;
 
     if (listener && getEnabled()) {
-        listener->panelChanged(EvCropGuidePresetChanged, M(GUIDE_TYPE_OPTIONS.at(index)));
+        listener->panelChanged(EvCropGuidePresetChanged, M(GUIDE_TYPE_OPTIONS.at(
+            CropGuideParams::PresetIndex::GOLDEN_TRIANGLE_1)));
     }
 }
 
-void CropGuide::onFlipHorizontal(size_t index)
-{
-    auto& preset = m_presets.at(index);
-    preset.mirror = static_cast<CropGuideParams::Mirror::AboutAxis>(
-        preset.mirror ^ CropGuideParams::Mirror::AboutAxis::Y);
-    preset.is_mirror_dirty = true;
-
-    if (listener && getEnabled()) {
-        listener->panelChanged(EvCropGuidePresetChanged, M(GUIDE_TYPE_OPTIONS.at(index)));
-    }
-}
-
-void CropGuide::onFlipVertical(size_t index)
-{
-    auto& preset = m_presets.at(index);
-    preset.mirror = static_cast<CropGuideParams::Mirror::AboutAxis>(
-        preset.mirror ^ CropGuideParams::Mirror::AboutAxis::X);
-    preset.is_mirror_dirty = true;
-
-    if (listener && getEnabled()) {
-        listener->panelChanged(EvCropGuidePresetChanged, M(GUIDE_TYPE_OPTIONS.at(index)));
-    }
-}
-
-void CropGuide::onReset(size_t index)
-{
-    auto& preset = m_presets.at(index);
-    preset.rotate = CropGuideParams::Rotate::BY_0;
-    preset.mirror = CropGuideParams::Mirror::NONE;
-    preset.is_rotate_dirty = true;
-    preset.is_mirror_dirty = true;
-
-    if (listener && getEnabled()) {
-        listener->panelChanged(EvCropGuidePresetChanged, M(GUIDE_TYPE_OPTIONS.at(index)));
-    }
-}
+// void CropGuide::onRotateLeft(size_t index)
+// {
+//     using Rotate = CropGuideParams::Rotate;
+//     auto& preset = m_presets.at(index);
+//     switch (preset.rotate) {
+//         case Rotate::BY_0:
+//             preset.rotate = Rotate::BY_90;
+//             break;
+//         case Rotate::BY_90:
+//             preset.rotate = Rotate::BY_180;
+//             break;
+//         case Rotate::BY_180:
+//             preset.rotate = Rotate::BY_270;
+//             break;
+//         case Rotate::BY_270:
+//             preset.rotate = Rotate::BY_0;
+//             break;
+//     }
+//     preset.is_rotate_dirty = true;
+//
+//     if (listener && getEnabled()) {
+//         listener->panelChanged(EvCropGuidePresetChanged, M(GUIDE_TYPE_OPTIONS.at(index)));
+//     }
+// }
+//
+// void CropGuide::onRotateRight(size_t index)
+// {
+//     using Rotate = CropGuideParams::Rotate;
+//     auto& preset = m_presets.at(index);
+//     switch (preset.rotate) {
+//         case Rotate::BY_0:
+//             preset.rotate = Rotate::BY_270;
+//             break;
+//         case Rotate::BY_90:
+//             preset.rotate = Rotate::BY_0;
+//             break;
+//         case Rotate::BY_180:
+//             preset.rotate = Rotate::BY_90;
+//             break;
+//         case Rotate::BY_270:
+//             preset.rotate = Rotate::BY_180;
+//             break;
+//     }
+//     preset.is_rotate_dirty = true;
+//
+//     if (listener && getEnabled()) {
+//         listener->panelChanged(EvCropGuidePresetChanged, M(GUIDE_TYPE_OPTIONS.at(index)));
+//     }
+// }
+//
+// void CropGuide::onFlipHorizontal(size_t index)
+// {
+//     auto& preset = m_presets.at(index);
+//     preset.mirror = static_cast<CropGuideParams::Mirror::AboutAxis>(
+//         preset.mirror ^ CropGuideParams::Mirror::AboutAxis::Y);
+//     preset.is_mirror_dirty = true;
+//
+//     if (listener && getEnabled()) {
+//         listener->panelChanged(EvCropGuidePresetChanged, M(GUIDE_TYPE_OPTIONS.at(index)));
+//     }
+// }
+//
+// void CropGuide::onFlipVertical(size_t index)
+// {
+//     auto& preset = m_presets.at(index);
+//     preset.mirror = static_cast<CropGuideParams::Mirror::AboutAxis>(
+//         preset.mirror ^ CropGuideParams::Mirror::AboutAxis::X);
+//     preset.is_mirror_dirty = true;
+//
+//     if (listener && getEnabled()) {
+//         listener->panelChanged(EvCropGuidePresetChanged, M(GUIDE_TYPE_OPTIONS.at(index)));
+//     }
+// }
+//
+// void CropGuide::onReset(size_t index)
+// {
+//     auto& preset = m_presets.at(index);
+//     preset.rotate = CropGuideParams::Rotate::BY_0;
+//     preset.mirror = CropGuideParams::Mirror::NONE;
+//     preset.is_rotate_dirty = true;
+//     preset.is_mirror_dirty = true;
+//
+//     if (listener && getEnabled()) {
+//         listener->panelChanged(EvCropGuidePresetChanged, M(GUIDE_TYPE_OPTIONS.at(index)));
+//     }
+// }

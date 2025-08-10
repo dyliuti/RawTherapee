@@ -447,18 +447,17 @@ namespace CropGuide {
     DEFINE_KEY(EPASSPORT, "Epassport");
     DEFINE_KEY(CENTERED_SQUARE, "CenteredSquare");
 
-    DEFINE_KEY(GOLDEN_TRIANGLE_ROTATE, "GoldenTriangleRotate");
     DEFINE_KEY(GOLDEN_TRIANGLE_MIRROR, "GoldenTriangleMirror");
 
-    DEFINE_KEY(BY_0, "BY_0");
-    DEFINE_KEY(BY_90, "BY_90");
-    DEFINE_KEY(BY_180, "BY_180");
-    DEFINE_KEY(BY_270, "BY_270");
-
-    DEFINE_KEY(MIRROR_NONE, "None");
-    DEFINE_KEY(MIRROR_X, "X");
-    DEFINE_KEY(MIRROR_Y, "Y");
-    DEFINE_KEY(MIRROR_ALL, "All");
+    // DEFINE_KEY(BY_0, "BY_0");
+    // DEFINE_KEY(BY_90, "BY_90");
+    // DEFINE_KEY(BY_180, "BY_180");
+    // DEFINE_KEY(BY_270, "BY_270");
+    //
+    // DEFINE_KEY(MIRROR_NONE, "None");
+    // DEFINE_KEY(MIRROR_X, "X");
+    // DEFINE_KEY(MIRROR_Y, "Y");
+    // DEFINE_KEY(MIRROR_ALL, "All");
 }  // namespace CropGuide
 
 namespace Framing
@@ -640,8 +639,6 @@ void loadCropGuideParams(
     using namespace ProfileKeys::CropGuide;
 
     using CropGuideParams = rtengine::procparams::CropGuideParams;
-    using Rotate = CropGuideParams::Rotate;
-    using Mirror = CropGuideParams::Mirror;
     using PresetIndex = CropGuideParams::PresetIndex;
 
     const Glib::ustring group{TOOL_NAME};
@@ -650,8 +647,11 @@ void loadCropGuideParams(
     assignFromKeyfile(keyFile, group, TOOL_ENABLED, params.enabled, edited.enabled);
 
     auto load = [&](PresetIndex index, const char* key) {
-        assignFromKeyfile(keyFile, group, key, params.presets.at(index).enabled,
-                          edited.presets.at(index).enabled);
+        bool is_enabled = false;
+        bool is_edited = edited.presets[index];
+        assignFromKeyfile(keyFile, group, key, is_enabled, is_edited);
+        params.presets[index] = is_enabled;
+        edited.presets[index] = is_edited;
     };
 
     load(PresetIndex::RULE_OF_THIRDS, RULE_OF_THIRDS);
@@ -664,24 +664,8 @@ void loadCropGuideParams(
     load(PresetIndex::EPASSPORT, EPASSPORT);
     load(PresetIndex::CENTERED_SQUARE, CENTERED_SQUARE);
 
-    assignFromKeyfile(keyFile, group, GOLDEN_TRIANGLE_ROTATE,
-                      {
-                          {BY_0, Rotate::BY_0},
-                          {BY_90, Rotate::BY_90},
-                          {BY_180, Rotate::BY_180},
-                          {BY_270, Rotate::BY_270}
-                      },
-                      params.presets.at(PresetIndex::GOLDEN_TRIANGLE_1).rotate,
-                      edited.presets.at(PresetIndex::GOLDEN_TRIANGLE_1).rotate);
     assignFromKeyfile(keyFile, group, GOLDEN_TRIANGLE_MIRROR,
-                      {
-                          {MIRROR_NONE, Mirror::AboutAxis::NONE},
-                          {MIRROR_X, Mirror::AboutAxis::X},
-                          {MIRROR_Y, Mirror::AboutAxis::Y},
-                          {MIRROR_ALL, Mirror::AboutAxis::ALL}
-                      },
-                      params.presets.at(PresetIndex::GOLDEN_TRIANGLE_1).mirror,
-                      edited.presets.at(PresetIndex::GOLDEN_TRIANGLE_1).mirror);
+                      params.mirror_golden_triangle, edited.mirror_golden_triangle);
 }
 
 void saveCropGuideParams(
@@ -694,8 +678,6 @@ void saveCropGuideParams(
     using namespace ProfileKeys::CropGuide;
 
     using CropGuideParams = rtengine::procparams::CropGuideParams;
-    using Rotate = CropGuideParams::Rotate;
-    using Mirror = CropGuideParams::Mirror;
     using PresetIndex = CropGuideParams::PresetIndex;
 
     const Glib::ustring group{TOOL_NAME};
@@ -704,8 +686,8 @@ void saveCropGuideParams(
                   params.enabled, keyFile);
 
     auto save = [&](PresetIndex index, const char* key) {
-        saveToKeyfile(!pedited || pedited->cropGuide.presets.at(index).enabled, group,
-                      key, params.presets.at(index).enabled, keyFile);
+        saveToKeyfile(!pedited || pedited->cropGuide.presets[index], group, key,
+                      static_cast<bool>(params.presets[index]), keyFile);
     };
 
     save(PresetIndex::RULE_OF_THIRDS, RULE_OF_THIRDS);
@@ -718,26 +700,8 @@ void saveCropGuideParams(
     save(PresetIndex::EPASSPORT, EPASSPORT);
     save(PresetIndex::CENTERED_SQUARE, CENTERED_SQUARE);
 
-    saveToKeyfile(
-        !pedited || pedited->cropGuide.presets.at(PresetIndex::GOLDEN_TRIANGLE_1).rotate,
-        group, GOLDEN_TRIANGLE_ROTATE,
-        {
-            {Rotate::BY_0, BY_0},
-            {Rotate::BY_90, BY_90},
-            {Rotate::BY_180, BY_180},
-            {Rotate::BY_270, BY_270}
-        },
-        params.presets.at(PresetIndex::GOLDEN_TRIANGLE_1).rotate, keyFile);
-    saveToKeyfile(
-        !pedited || pedited->cropGuide.presets.at(PresetIndex::GOLDEN_TRIANGLE_1).mirror,
-        group, GOLDEN_TRIANGLE_MIRROR,
-        {
-            {Mirror::AboutAxis::NONE, MIRROR_NONE},
-            {Mirror::AboutAxis::X, MIRROR_X},
-            {Mirror::AboutAxis::Y, MIRROR_Y},
-            {Mirror::AboutAxis::ALL, MIRROR_ALL}
-        },
-        params.presets.at(PresetIndex::GOLDEN_TRIANGLE_1).mirror, keyFile);
+    saveToKeyfile(!pedited || pedited->cropGuide.mirror_golden_triangle, group,
+                  GOLDEN_TRIANGLE_MIRROR, params.mirror_golden_triangle, keyFile);
 }
 
 } // namespace
@@ -2302,17 +2266,13 @@ void CropParams::mapToResized(int resizedWidth, int resizedHeight, int scale, in
     }
 }
 
-bool CropGuideParams::Preset::operator==(const Preset& other) const
-{
-    return rotate == other.rotate && mirror == other.mirror && enabled == other.enabled;
-}
-
-CropGuideParams::CropGuideParams() : enabled(true) {}
+CropGuideParams::CropGuideParams() : mirror_golden_triangle(false) , enabled(true) {}
 
 bool CropGuideParams::operator==(const CropGuideParams& other) const
 {
     return enabled == other.enabled
-        && presets == other.presets;
+        && presets == other.presets
+        && mirror_golden_triangle == other.mirror_golden_triangle;
 }
 
 CoarseTransformParams::CoarseTransformParams() :

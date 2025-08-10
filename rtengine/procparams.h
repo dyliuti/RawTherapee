@@ -19,6 +19,7 @@
 #pragma once
 
 #include <array>
+#include <bitset>
 #include <cmath>
 #include <cstdio>
 #include <map>
@@ -934,16 +935,18 @@ struct CropGuideParams {
 
     // 0 is along positive-X axis and 90 along positive-Y axis
     // (i.e. rotate in counter-clockwise direction starting from 3 o'clock)
-    enum class Rotate { BY_0, BY_90, BY_180, BY_270 };
-    struct Mirror {
-        enum AboutAxis {
-            X = 0b01,
-            Y = 0b10,
-            NONE = 0,
-            ALL = X | Y
-        };
-    };
+    // enum class Rotate { BY_0, BY_90, BY_180, BY_270 };
+    // struct Mirror {
+    //     enum AboutAxis {
+    //         X = 0b01,
+    //         Y = 0b10,
+    //         NONE = 0,
+    //         ALL = X | Y
+    //     };
+    // };
 
+    // If values are added/removed, make sure to update NUM_PRESETS and
+    // CropGuideParamsEdited.presets
     enum PresetIndex : size_t {
         RULE_OF_THIRDS = 0,
         RULE_OF_DIAGONALS,
@@ -955,29 +958,14 @@ struct CropGuideParams {
         EPASSPORT,
         CENTERED_SQUARE
     };
+    static constexpr size_t NUM_PRESETS = 9;
+    static_assert(NUM_PRESETS > PresetIndex::CENTERED_SQUARE);
 
-    struct Preset {
-        Rotate rotate = Rotate::BY_0;
-        Mirror::AboutAxis mirror = Mirror::AboutAxis::NONE;
-        bool enabled = false;
-
-        bool operator==(const Preset& other) const;
-        bool operator!=(const Preset& other) const { return !(*this == other); }
-    };
-
-    std::array<Preset, 9> presets;
+    std::bitset<NUM_PRESETS> presets;
+    bool mirror_golden_triangle;
     bool enabled;
 
     CropGuideParams();
-
-    const Preset& getPreset(Guide guide) const
-    {
-        return presets.at(static_cast<size_t>(guide));
-    }
-    Preset& getPreset(Guide guide)
-    {
-        return presets.at(static_cast<size_t>(guide));
-    }
 
     bool operator==(const CropGuideParams& other) const;
     bool operator!=(const CropGuideParams& other) const { return !(*this == other); }

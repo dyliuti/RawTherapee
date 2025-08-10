@@ -32,11 +32,12 @@ using namespace rtengine::procparams;
 
 void setAll(CropGuideParamsEdited& guide, bool v)
 {
-    for (auto& p : guide.presets) {
-        p.rotate = v;
-        p.mirror = v;
-        p.enabled = v;
+    if (v) {
+        guide.presets.set();
+    } else {
+        guide.presets.reset();
     }
+    guide.mirror_golden_triangle = v;
     guide.enabled = v;
 }
 
@@ -47,10 +48,12 @@ void initFrom(CropGuideParamsEdited& edits, const ProcParams& params,
     const CropGuideParams& other = otherParams.cropGuide;
 
     for (size_t i = 0; i < edits.presets.size(); i++) {
-        edits.presets[i].rotate &= curr.presets[i].rotate == other.presets[i].rotate;
-        edits.presets[i].mirror &= curr.presets[i].mirror == other.presets[i].mirror;
-        edits.presets[i].enabled &= curr.presets[i].enabled == other.presets[i].enabled;
+        bool is_edited = edits.presets[i];
+        is_edited &= curr.presets[i] == other.presets[i];
+        edits.presets[i] = is_edited;
     }
+    edits.mirror_golden_triangle &=
+        curr.mirror_golden_triangle == other.mirror_golden_triangle;
     edits.enabled &= curr.enabled == other.enabled;
 }
 
@@ -58,16 +61,12 @@ void combine(CropGuideParams& toEdit, const CropGuideParams& mod,
              const CropGuideParamsEdited& edits)
 {
     for (size_t i = 0; i < edits.presets.size(); i++) {
-        const auto& preset = edits.presets[i];
-        if (preset.rotate) {
-            toEdit.presets[i].rotate = mod.presets[i].rotate;
+        if (edits.presets[i]) {
+            toEdit.presets[i] = mod.presets[i];
         }
-        if (preset.mirror) {
-            toEdit.presets[i].mirror = mod.presets[i].mirror;
-        }
-        if (preset.enabled) {
-            toEdit.presets[i].enabled = mod.presets[i].enabled;
-        }
+    }
+    if (edits.mirror_golden_triangle) {
+        toEdit.mirror_golden_triangle = mod.mirror_golden_triangle;
     }
     if (edits.enabled) {
         toEdit.enabled = mod.enabled;

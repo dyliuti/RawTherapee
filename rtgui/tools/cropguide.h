@@ -51,11 +51,13 @@ public:
 
     void enabledChanged() override;
     void onPresetToggled(size_t index);
-    void onRotateLeft(size_t index);
-    void onRotateRight(size_t index);
-    void onFlipHorizontal(size_t index);
-    void onFlipVertical(size_t index);
-    void onReset(size_t index);
+    void onGoldenTriangleMirror();
+    void onGoldenTriangleReset();
+    // void onRotateLeft(size_t index);
+    // void onRotateRight(size_t index);
+    // void onFlipHorizontal(size_t index);
+    // void onFlipVertical(size_t index);
+    // void onReset(size_t index);
 
 private:
     void setupEvents();
@@ -66,16 +68,12 @@ private:
         std::unique_ptr<RTImage> hidden_icon;
         Gtk::ToggleButton* visibility_button = nullptr;
         sigc::connection visibility_conn;
-        rtengine::procparams::CropGuideParams::Rotate rotate =
-            rtengine::procparams::CropGuideParams::Rotate::BY_0;
-        rtengine::procparams::CropGuideParams::Mirror::AboutAxis mirror =
-            rtengine::procparams::CropGuideParams::Mirror::AboutAxis::NONE;
         bool is_dirty = false;
-        bool is_rotate_dirty = false;
-        bool is_mirror_dirty = false;
     };
 
     std::array<Preset, 9> m_presets;
+    bool m_mirror_golden_triangle;
+    bool m_dirty_mirror_golden_triangle;
 
     rtengine::ProcEvent EvCropGuideEnabled;
     rtengine::ProcEvent EvCropGuidePresetChanged;

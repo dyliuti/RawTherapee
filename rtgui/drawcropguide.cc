@@ -131,7 +131,7 @@ void drawCropGuides(const Cairo::RefPtr<Cairo::Context>& cr,
 
 void GuideDrawer::drawRuleOfThirds()
 {
-    if (!params.presets.at(PresetIndex::RULE_OF_THIRDS).enabled) return;
+    if (!params.presets[PresetIndex::RULE_OF_THIRDS]) return;
 
     drawHorizontal(1.0 / 3.0);
     drawHorizontal(2.0 / 3.0);
@@ -141,7 +141,7 @@ void GuideDrawer::drawRuleOfThirds()
 
 void GuideDrawer::drawHarmonicMeans()
 {
-    if (!params.presets.at(PresetIndex::HARMONIC_MEANS).enabled) return;
+    if (!params.presets[PresetIndex::HARMONIC_MEANS]) return;
 
     drawHorizontal(GOLDEN_RATIO_RECIPROCAL);
     drawHorizontal(1.0 - GOLDEN_RATIO_RECIPROCAL);
@@ -151,7 +151,7 @@ void GuideDrawer::drawHarmonicMeans()
 
 void GuideDrawer::drawCrosshair()
 {
-    if (!params.presets.at(PresetIndex::CROSSHAIR).enabled) return;
+    if (!params.presets[PresetIndex::CROSSHAIR]) return;
 
     drawHorizontal(0.5);
     drawVertical(0.5);
@@ -159,7 +159,7 @@ void GuideDrawer::drawCrosshair()
 
 void GuideDrawer::drawGrid()
 {
-    if (!params.presets.at(PresetIndex::GRID).enabled) return;
+    if (!params.presets[PresetIndex::GRID]) return;
 
     // To have even distribution, normalize it a bit
     const int longSideNumLines = 10;
@@ -204,7 +204,7 @@ void GuideDrawer::drawGrid()
  */
 void GuideDrawer::drawEpassport()
 {
-    if (!params.presets.at(PresetIndex::EPASSPORT).enabled) return;
+    if (!params.presets[PresetIndex::EPASSPORT]) return;
 
     drawHorizontal(7.0 / 45.0);
     drawHorizontal(26.0 / 45.0);
@@ -214,7 +214,7 @@ void GuideDrawer::drawEpassport()
 
 void GuideDrawer::drawCenteredSquare()
 {
-    if (!params.presets.at(PresetIndex::CENTERED_SQUARE).enabled) return;
+    if (!params.presets[PresetIndex::CENTERED_SQUARE]) return;
 
     const double w = rect.x1 - rect.x0;
     const double h = rect.y1 - rect.y0;
@@ -234,7 +234,7 @@ void GuideDrawer::drawCenteredSquare()
 
 void GuideDrawer::drawDiagonals()
 {
-    if (!params.presets.at(PresetIndex::RULE_OF_DIAGONALS).enabled) return;
+    if (!params.presets[PresetIndex::RULE_OF_DIAGONALS]) return;
 
     double corners_from[4][2];
     double corners_to[4][2];
@@ -268,19 +268,15 @@ void GuideDrawer::drawDiagonals()
 
 void GuideDrawer::drawGoldenTriangle1()
 {
-    const auto& preset = params.presets.at(PresetIndex::GOLDEN_TRIANGLE_1);
-    if (!preset.enabled) return;
+    if (!params.presets[PresetIndex::GOLDEN_TRIANGLE_1]) return;
 
     double x0 = rect.x0;
     double x1 = rect.x1;
-    double y0 = rect.y0;
-    double y1 = rect.y1;
+    const double y0 = rect.y0;
+    const double y1 = rect.y1;
 
-    if (preset.mirror & CropGuideParams::Mirror::AboutAxis::X) {
+    if (params.mirror_golden_triangle) {
         std::swap(x0, x1);
-    }
-    if (preset.mirror & CropGuideParams::Mirror::AboutAxis::Y) {
-        std::swap(y0, y1);
     }
 
     drawDashedLine(x0, y0, x1, y1);
@@ -304,7 +300,7 @@ void GuideDrawer::drawGoldenTriangle1()
 
 void GuideDrawer::drawGoldenTriangle2()
 {
-    if (!params.presets.at(PresetIndex::GOLDEN_TRIANGLE_2).enabled) return;
+    if (!params.presets[PresetIndex::GOLDEN_TRIANGLE_2]) return;
 
     // Swapped
     const double x0 = rect.x1;
