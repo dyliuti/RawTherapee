@@ -940,10 +940,11 @@ struct CropGuideParams {
         CROSSHAIR,
         GRID,
         GOLDEN_TRIANGLE,
+        GOLDEN_RATIO,
         EPASSPORT,
         CENTERED_SQUARE
     };
-    static constexpr size_t NUM_PRESETS = 8;
+    static constexpr size_t NUM_PRESETS = 9;
     static_assert(NUM_PRESETS == PresetIndex::CENTERED_SQUARE + 1);
 
     std::bitset<NUM_PRESETS> presets;

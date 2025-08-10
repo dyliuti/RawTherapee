@@ -33,8 +33,8 @@ namespace
 using PresetIndex = CropGuideParams::PresetIndex;
 
 constexpr double GUIDE_ALPHA = 0.618;
-// constexpr double GOLDEN_RATIO = 1.618;
-constexpr double GOLDEN_RATIO_RECIPROCAL = 0.618;  // (1 / GOLDEN_RATIO)
+constexpr double GOLDEN_RATIO = 1.618033988749895;
+constexpr double GOLDEN_RATIO_RECIPROCAL = 0.618033988749895;
 
 struct CropRect {
     double x0;
@@ -42,6 +42,8 @@ struct CropRect {
     double x1;
     double y1;
 };
+
+enum class Dir { UP, RIGHT, DOWN, LEFT };
 
 struct GuideDrawer {
     const Cairo::RefPtr<Cairo::Context>& cr;
@@ -58,10 +60,17 @@ struct GuideDrawer {
     void drawDiagonals();
     void drawGoldenTriangle();
 
+    void drawGoldenRatio();
+
     void drawHorizontal(double ratio);
     void drawVertical(double ratio);
 
     void drawDashedLine(double x0, double y0, double x1, double y1);
+    void drawDashedArc(double xc, double yc, double r, double rad0, double rad1);
+
+private:
+    void drawGoldenRatioRecursive(double x, double y, double length, Dir dir,
+                                  double limit, bool clockwise);
 };
 
 void drawFrame(const Cairo::RefPtr<Cairo::Context>& cr,
@@ -124,6 +133,8 @@ void drawCropGuides(const Cairo::RefPtr<Cairo::Context>& cr,
         // Diagonals
         util.drawDiagonals();
         util.drawGoldenTriangle();
+
+        util.drawGoldenRatio();
     }
 }
 
@@ -298,6 +309,153 @@ void GuideDrawer::drawGoldenTriangle()
     drawDashedLine(x1, y0, x0 + x, y0 + y);
 }
 
+void GuideDrawer::drawGoldenRatio()
+{
+    if (!params.presets[PresetIndex::GOLDEN_RATIO]) return;
+
+    const double w = rect.x1 - rect.x0;
+    const double h = rect.y1 - rect.y0;
+    const double aspect_ratio = w / h;
+
+    // If the current ratio doesn't match the golden ratio, use a fitted and
+    // centered guide that does match the golden ratio.
+    double fitted_w = w;
+    double fitted_h = h;
+    if (w >= h) {
+        if (aspect_ratio >= GOLDEN_RATIO) {
+            fitted_w = h * GOLDEN_RATIO;
+            fitted_h = h;
+        } else {
+            fitted_w = w;
+            fitted_h = w * GOLDEN_RATIO_RECIPROCAL;
+        }
+    } else {
+        if (aspect_ratio <= GOLDEN_RATIO_RECIPROCAL) {
+            fitted_w = w;
+            fitted_h = w * GOLDEN_RATIO;
+        } else {
+            fitted_w = h * GOLDEN_RATIO_RECIPROCAL;
+            fitted_h = h;
+        }
+    }
+
+    double delta_w = w - fitted_w;
+    double delta_h = h - fitted_h;
+
+    CropRect fitted_rect {
+        rect.x0 + (delta_w / 2.0),
+        rect.y0 + (delta_h / 2.0),
+        rect.x1 - (delta_w / 2.0),
+        rect.y1 - (delta_h / 2.0)
+    };
+
+    // Don't show new fitted rect bounds if close enough
+    if (delta_w >= 4.0) {
+        drawDashedLine(fitted_rect.x0, fitted_rect.y0, fitted_rect.x0, fitted_rect.y1);
+        drawDashedLine(fitted_rect.x1, fitted_rect.y0, fitted_rect.x1, fitted_rect.y1);
+    }
+    if (delta_h >= 4.0) {
+        drawDashedLine(fitted_rect.x0, fitted_rect.y0, fitted_rect.x1, fitted_rect.y0);
+        drawDashedLine(fitted_rect.x0, fitted_rect.y1, fitted_rect.x1, fitted_rect.y1);
+    }
+
+    constexpr double LIMIT_THRESHOLD = 0.05;
+
+    double start_x = fitted_rect.x0;
+    double start_y = fitted_rect.y1;
+    Dir dir = Dir::RIGHT;
+    double length = fitted_w;
+    double limit = fitted_h * LIMIT_THRESHOLD;
+
+    if (fitted_w < fitted_h) {
+        start_x = fitted_rect.x0;
+        start_y = fitted_rect.y0;
+        dir = Dir::DOWN;
+        length = fitted_h;
+        limit = fitted_w * LIMIT_THRESHOLD;
+    }
+
+    bool clockwise = true;
+    drawGoldenRatioRecursive(start_x, start_y, length, dir, limit, clockwise);
+}
+
+/**
+ * @param x Current spiral arc start point x
+ * @param y Current spiral arc start point y
+ * @param length Current length along dir that will be split into golden ratio
+ * @param dir Current direction of split (i.e. where smaller section is positioned)
+ * @param limit Min length before stopping recursion
+ * @param clockwise Direction of spiral while travelling inwards
+ */
+void GuideDrawer::drawGoldenRatioRecursive(double x, double y, double length,
+                                           Dir dir, double limit, bool clockwise)
+{
+    if (length <= limit) return;
+
+    double offset = length * GOLDEN_RATIO_RECIPROCAL;
+
+    // Position along square line segment of split.
+    // This is also the center of the spiral's circular arc segment.
+    double arc_x = x;
+    double arc_y = y;
+    // In radians, the angles of the spiral's circular arc segment.
+    double arc_start = 2 * M_PI;
+    double arc_end = 0;
+    // The end point of the spiral after this iteration.
+    double next_x = x;
+    double next_y = y;
+    Dir next_dir = dir;
+
+    // These angles are if you are viewing the image on a normal x/y graph.
+    // (i.e. they don't match cairo angles)
+    constexpr double ARC_0 = 0.0;
+    constexpr double ARC_90 = 3.0 * M_PI / 2.0;
+    constexpr double ARC_180 = M_PI;
+    constexpr double ARC_270 = M_PI / 2.0;
+
+    if (clockwise) {
+        switch (dir) {
+            case Dir::UP:
+                arc_y -= offset;
+                next_x -= offset;
+                next_y -= offset;
+                arc_start = ARC_270;
+                arc_end = ARC_180;
+                next_dir = Dir::RIGHT;
+                break;
+            case Dir::RIGHT:
+                arc_x += offset;
+                next_x += offset;
+                next_y -= offset;
+                arc_start = ARC_180;
+                arc_end = ARC_90;
+                next_dir = Dir::DOWN;
+                break;
+            case Dir::DOWN:
+                arc_y += offset;
+                next_x += offset;
+                next_y += offset;
+                arc_start = ARC_90;
+                arc_end = ARC_0;
+                next_dir = Dir::LEFT;
+                break;
+            case Dir::LEFT:
+                arc_x -= offset;
+                next_x -= offset;
+                next_y += offset;
+                arc_start = ARC_0;
+                arc_end = ARC_270;
+                next_dir = Dir::UP;
+                break;
+        }
+    }
+
+    drawDashedArc(arc_x, arc_y, offset, arc_start, arc_end);
+    drawDashedLine(arc_x, arc_y, next_x, next_y);
+
+    drawGoldenRatioRecursive(next_x, next_y, offset, next_dir, limit, clockwise);
+}
+
 void GuideDrawer::drawHorizontal(double ratio)
 {
     double y = rect.y0 + std::round((rect.y1 - rect.y0) * ratio);
@@ -321,6 +479,21 @@ void GuideDrawer::drawDashedLine(double x0, double y0, double x1, double y1)
     cr->set_dash(std::valarray<double>({4}), 0);
     cr->move_to(x0, y0);
     cr->line_to(x1, y1);
+    cr->stroke();
+
+    // Reset state
+    cr->set_dash(std::valarray<double>(), 0);
+}
+
+void GuideDrawer::drawDashedArc(double xc, double yc, double r, double rad0, double rad1)
+{
+    cr->set_source_rgba(1.0, 1.0, 1.0, GUIDE_ALPHA);
+    cr->arc(xc, yc, r, rad0, rad1);
+    cr->stroke();
+
+    cr->set_source_rgba(0.0, 0.0, 0.0, GUIDE_ALPHA);
+    cr->set_dash(std::valarray<double>({4}), 0);
+    cr->arc(xc, yc, r, rad0, rad1);
     cr->stroke();
 
     // Reset state

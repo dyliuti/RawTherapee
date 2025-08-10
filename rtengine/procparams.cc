@@ -443,6 +443,7 @@ namespace CropGuide {
     DEFINE_KEY(CROSSHAIR, "Crosshair");
     DEFINE_KEY(GRID, "Grid");
     DEFINE_KEY(GOLDEN_TRIANGLE, "GoldenTriangle");
+    DEFINE_KEY(GOLDEN_RATIO, "GoldenRatio");
     DEFINE_KEY(EPASSPORT, "Epassport");
     DEFINE_KEY(CENTERED_SQUARE, "CenteredSquare");
 
@@ -659,6 +660,7 @@ void loadCropGuideParams(
     load(PresetIndex::CROSSHAIR, CROSSHAIR);
     load(PresetIndex::GRID, GRID);
     load(PresetIndex::GOLDEN_TRIANGLE, GOLDEN_TRIANGLE);
+    load(PresetIndex::GOLDEN_RATIO, GOLDEN_RATIO);
     load(PresetIndex::EPASSPORT, EPASSPORT);
     load(PresetIndex::CENTERED_SQUARE, CENTERED_SQUARE);
 
@@ -694,6 +696,7 @@ void saveCropGuideParams(
     save(PresetIndex::CROSSHAIR, CROSSHAIR);
     save(PresetIndex::GRID, GRID);
     save(PresetIndex::GOLDEN_TRIANGLE, GOLDEN_TRIANGLE);
+    save(PresetIndex::GOLDEN_RATIO, GOLDEN_RATIO);
     save(PresetIndex::EPASSPORT, EPASSPORT);
     save(PresetIndex::CENTERED_SQUARE, CENTERED_SQUARE);
 

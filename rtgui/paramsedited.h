@@ -403,7 +403,7 @@ struct CropParamsEdited {
 };
 
 struct CropGuideParamsEdited {
-    std::bitset<8> presets;
+    std::bitset<9> presets;
     bool mirror_golden_triangle;
     bool enabled;
 };

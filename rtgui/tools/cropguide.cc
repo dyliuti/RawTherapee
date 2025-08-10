@@ -33,13 +33,14 @@ using CropParams = rtengine::procparams::CropParams;
 using CropGuideParams = rtengine::procparams::CropGuideParams;
 
 // clang-format off
-constexpr std::array<const char*, 8> GUIDE_TYPE_OPTIONS = {
+constexpr std::array<const char*, 9> GUIDE_TYPE_OPTIONS = {
     "TP_CROP_GTRULETHIRDS",
     "TP_CROP_GTDIAGONALS",
     "TP_CROP_GTHARMMEANS",
     "TP_CROP_GTCROSSHAIR",
     "TP_CROP_GTGRID",
     "TP_CROP_GTTRIANGLE",
+    "TP_CROP_GTGOLDENRATIO",
     "TP_CROP_GTEPASSPORT",
     "TP_CROP_GTCENTEREDSQUARE"
 };
