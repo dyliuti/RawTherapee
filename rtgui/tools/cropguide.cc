@@ -276,21 +276,19 @@ void CropGuide::enabledChanged()
 
 void CropGuide::onPresetToggled(size_t index)
 {
-    if (!listener) return;
-
     auto& preset = m_presets.at(index);
     bool is_visible = preset.visibility_button->get_active();
     preset.visibility_button->set_image(
         is_visible ? *preset.visible_icon : *preset.hidden_icon);
     preset.is_dirty = true;
 
-    listener->panelChanged(EvCropGuidePresetChanged, M(GUIDE_TYPE_OPTIONS.at(index)));
+    if (listener && getEnabled()) {
+        listener->panelChanged(EvCropGuidePresetChanged, M(GUIDE_TYPE_OPTIONS.at(index)));
+    }
 }
 
 void CropGuide::onRotateLeft(size_t index)
 {
-    if (!listener) return;
-
     using Rotate = CropGuideParams::Rotate;
     auto& preset = m_presets.at(index);
     switch (preset.rotate) {
@@ -309,13 +307,13 @@ void CropGuide::onRotateLeft(size_t index)
     }
     preset.is_rotate_dirty = true;
 
-    listener->panelChanged(EvCropGuidePresetChanged, M(GUIDE_TYPE_OPTIONS.at(index)));
+    if (listener && getEnabled()) {
+        listener->panelChanged(EvCropGuidePresetChanged, M(GUIDE_TYPE_OPTIONS.at(index)));
+    }
 }
 
 void CropGuide::onRotateRight(size_t index)
 {
-    if (!listener) return;
-
     using Rotate = CropGuideParams::Rotate;
     auto& preset = m_presets.at(index);
     switch (preset.rotate) {
@@ -334,42 +332,44 @@ void CropGuide::onRotateRight(size_t index)
     }
     preset.is_rotate_dirty = true;
 
-    listener->panelChanged(EvCropGuidePresetChanged, M(GUIDE_TYPE_OPTIONS.at(index)));
+    if (listener && getEnabled()) {
+        listener->panelChanged(EvCropGuidePresetChanged, M(GUIDE_TYPE_OPTIONS.at(index)));
+    }
 }
 
 void CropGuide::onFlipHorizontal(size_t index)
 {
-    if (!listener) return;
-
     auto& preset = m_presets.at(index);
     preset.mirror = static_cast<CropGuideParams::Mirror::AboutAxis>(
         preset.mirror ^ CropGuideParams::Mirror::AboutAxis::Y);
     preset.is_mirror_dirty = true;
 
-    listener->panelChanged(EvCropGuidePresetChanged, M(GUIDE_TYPE_OPTIONS.at(index)));
+    if (listener && getEnabled()) {
+        listener->panelChanged(EvCropGuidePresetChanged, M(GUIDE_TYPE_OPTIONS.at(index)));
+    }
 }
 
 void CropGuide::onFlipVertical(size_t index)
 {
-    if (!listener) return;
-
     auto& preset = m_presets.at(index);
     preset.mirror = static_cast<CropGuideParams::Mirror::AboutAxis>(
         preset.mirror ^ CropGuideParams::Mirror::AboutAxis::X);
     preset.is_mirror_dirty = true;
 
-    listener->panelChanged(EvCropGuidePresetChanged, M(GUIDE_TYPE_OPTIONS.at(index)));
+    if (listener && getEnabled()) {
+        listener->panelChanged(EvCropGuidePresetChanged, M(GUIDE_TYPE_OPTIONS.at(index)));
+    }
 }
 
 void CropGuide::onReset(size_t index)
 {
-    if (!listener) return;
-
     auto& preset = m_presets.at(index);
     preset.rotate = CropGuideParams::Rotate::BY_0;
     preset.mirror = CropGuideParams::Mirror::NONE;
     preset.is_rotate_dirty = true;
     preset.is_mirror_dirty = true;
 
-    listener->panelChanged(EvCropGuidePresetChanged, M(GUIDE_TYPE_OPTIONS.at(index)));
+    if (listener && getEnabled()) {
+        listener->panelChanged(EvCropGuidePresetChanged, M(GUIDE_TYPE_OPTIONS.at(index)));
+    }
 }

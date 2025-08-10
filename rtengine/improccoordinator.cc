@@ -3260,6 +3260,7 @@ void ImProcCoordinator::process()
             || params->sh != nextParams->sh
             || params->toneEqualizer != nextParams->toneEqualizer
             || params->crop != nextParams->crop
+            || params->cropGuide != nextParams->cropGuide
             || params->coarse != nextParams->coarse
             || params->commonTrans != nextParams->commonTrans
             || params->rotate != nextParams->rotate
