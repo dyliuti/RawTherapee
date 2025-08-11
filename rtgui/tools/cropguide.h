@@ -19,6 +19,7 @@
 
 #pragma once
 
+#include "adjuster.h"
 #include "toolpanel.h"
 
 #include "rtengine/procevents.h"
@@ -37,7 +38,10 @@ class ToggleButton;
 
 } // namespace Gtk
 
-class CropGuide final : public ToolParamBlock, public FoldableToolPanel {
+class CropGuide final :
+    public ToolParamBlock,
+    public AdjusterListener,
+    public FoldableToolPanel {
 public:
     static const Glib::ustring TOOL_NAME;
 
@@ -47,7 +51,11 @@ public:
               const ParamsEdited* pedited = nullptr) override;
     void write(rtengine::procparams::ProcParams* pp,
                ParamsEdited* pedited = nullptr) override;
+    void trimValues(rtengine::procparams::ProcParams* pp) override;
     void setBatchMode(bool batchMode) override;
+
+    void setAdjusterBehavior(bool bleed);
+    void adjusterChanged(Adjuster* adj, double newVal) override;
 
     void enabledChanged() override;
     void onPresetToggled(size_t index);
@@ -69,6 +77,8 @@ private:
         bool is_dirty = false;
     };
 
+    Adjuster* m_bleed;
+
     std::array<Preset, 8> m_presets;
     bool m_mirror_golden_triangle;
     bool m_dirty_mirror_golden_triangle;
@@ -80,4 +90,5 @@ private:
 
     rtengine::ProcEvent EvCropGuideEnabled;
     rtengine::ProcEvent EvCropGuidePresetChanged;
+    rtengine::ProcEvent EvCropGuideBleedChanged;
 };

@@ -450,16 +450,7 @@ namespace CropGuide {
     DEFINE_KEY(GOLDEN_TRIANGLE_MIRROR, "GoldenTriangleMirror");
     DEFINE_KEY(GOLDEN_RATIO_ROTATE, "GoldenRatioRotate");
     DEFINE_KEY(GOLDEN_RATIO_MIRROR, "GoldenRatioMirror");
-
-    // DEFINE_KEY(BY_0, "BY_0");
-    // DEFINE_KEY(BY_90, "BY_90");
-    // DEFINE_KEY(BY_180, "BY_180");
-    // DEFINE_KEY(BY_270, "BY_270");
-    //
-    // DEFINE_KEY(MIRROR_NONE, "None");
-    // DEFINE_KEY(MIRROR_X, "X");
-    // DEFINE_KEY(MIRROR_Y, "Y");
-    // DEFINE_KEY(MIRROR_ALL, "All");
+    DEFINE_KEY(BLEED, "Bleed");
 }  // namespace CropGuide
 
 namespace Framing
@@ -672,6 +663,7 @@ void loadCropGuideParams(
                       params.rotate_golden_ratio, edited.rotate_golden_ratio);
     assignFromKeyfile(keyFile, group, GOLDEN_RATIO_MIRROR,
                       params.mirror_golden_ratio, edited.mirror_golden_ratio);
+    assignFromKeyfile(keyFile, group, BLEED, params.bleed, edited.bleed);
 }
 
 void saveCropGuideParams(
@@ -712,6 +704,8 @@ void saveCropGuideParams(
                   GOLDEN_RATIO_ROTATE, params.rotate_golden_ratio, keyFile);
     saveToKeyfile(!pedited || pedited->cropGuide.mirror_golden_ratio, group,
                   GOLDEN_RATIO_MIRROR, params.mirror_golden_ratio, keyFile);
+    saveToKeyfile(!pedited || pedited->cropGuide.bleed, group, BLEED, params.bleed,
+                  keyFile);
 }
 
 } // namespace
@@ -2281,6 +2275,7 @@ CropGuideParams::CropGuideParams()
     , mirror_golden_triangle(false)
     , rotate_golden_ratio(false)
     , mirror_golden_ratio(false)
+    , bleed(0)
 {
 }
 
@@ -2290,7 +2285,8 @@ bool CropGuideParams::operator==(const CropGuideParams& other) const
         && presets == other.presets
         && mirror_golden_triangle == other.mirror_golden_triangle
         && rotate_golden_ratio == other.rotate_golden_ratio
-        && mirror_golden_ratio == other.mirror_golden_ratio;
+        && mirror_golden_ratio == other.mirror_golden_ratio
+        && bleed == other.bleed;
 }
 
 CoarseTransformParams::CoarseTransformParams() :

@@ -919,18 +919,6 @@ struct CropParams {
 };
 
 struct CropGuideParams {
-    // 0 is along positive-X axis and 90 along positive-Y axis
-    // (i.e. rotate in counter-clockwise direction starting from 3 o'clock)
-    // enum class Rotate { BY_0, BY_90, BY_180, BY_270 };
-    // struct Mirror {
-    //     enum AboutAxis {
-    //         X = 0b01,
-    //         Y = 0b10,
-    //         NONE = 0,
-    //         ALL = X | Y
-    //     };
-    // };
-
     // If values are added/removed, make sure to update NUM_PRESETS and
     // CropGuideParamsEdited.presets
     enum PresetIndex : size_t {
@@ -952,6 +940,7 @@ struct CropGuideParams {
     bool mirror_golden_triangle;
     bool rotate_golden_ratio;
     bool mirror_golden_ratio;
+    int bleed;
 
     CropGuideParams();
 

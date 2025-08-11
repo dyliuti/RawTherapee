@@ -62,6 +62,10 @@ CropGuide::CropGuide()
 {
     setupEvents();
     setupPresets();
+    pack_start(*Gtk::manage(new Gtk::Separator()));
+    m_bleed = Gtk::manage(new Adjuster(M("TP_CROP_GUIDE_BLEED"), 0, 10, 1, 0));
+    m_bleed->setAdjusterListener(this);
+    pack_start(*m_bleed);
 
     show_all();
 }
@@ -72,6 +76,7 @@ void CropGuide::setupEvents()
 
     EvCropGuideEnabled = m->newEvent(MINUPDATE, "HISTORY_MSG_CROP_GUIDE_ENABLED");
     EvCropGuidePresetChanged = m->newEvent(MINUPDATE, "HISTORY_MSG_CROP_GUIDE_PRESET_CHANGED");
+    EvCropGuideBleedChanged = m->newEvent(MINUPDATE, "HISTORY_MSG_CROP_GUIDE_BLEED_CHANGED");
 }
 
 void CropGuide::setupPresets()
@@ -151,22 +156,26 @@ void CropGuide::setupPresets()
                 sigc::mem_fun(this, &CropGuide::onGoldenRatioReset));
         }
     }
-
 }
 
 void CropGuide::read(const rtengine::procparams::ProcParams* pp,
                      const ParamsEdited* pedited)
 {
+    DisableListener disable_listener(this);
+    BlockAdjusterEvents blockBleed(m_bleed);
+
     setEnabled(pp->cropGuide.enabled);
     m_mirror_golden_triangle = pp->cropGuide.mirror_golden_triangle;
     m_rotate_golden_ratio = pp->cropGuide.rotate_golden_ratio;
     m_mirror_golden_ratio = pp->cropGuide.mirror_golden_ratio;
+    m_bleed->setValue(pp->cropGuide.bleed);
 
     if (pedited) {
         set_inconsistent(multiImage && pedited->cropGuide.enabled);
         m_dirty_mirror_golden_triangle = pedited->cropGuide.mirror_golden_triangle;
         m_dirty_rotate_golden_ratio = pedited->cropGuide.rotate_golden_ratio;
         m_dirty_mirror_golden_ratio = pedited->cropGuide.mirror_golden_ratio;
+        m_bleed->setEditedState(pedited->cropGuide.bleed ? Edited : UnEdited);
     };
 
     for (size_t i = 0; i < m_presets.size(); i++) {
@@ -190,12 +199,14 @@ void CropGuide::write(rtengine::procparams::ProcParams* pp, ParamsEdited* pedite
     pp->cropGuide.mirror_golden_triangle = m_mirror_golden_triangle;
     pp->cropGuide.rotate_golden_ratio = m_rotate_golden_ratio;
     pp->cropGuide.mirror_golden_ratio = m_mirror_golden_ratio;
+    pp->cropGuide.bleed = m_bleed->getIntValue();
 
     if (pedited) {
         pedited->cropGuide.enabled = !get_inconsistent();
         pedited->cropGuide.mirror_golden_triangle = m_dirty_mirror_golden_triangle;
         pedited->cropGuide.rotate_golden_ratio = m_dirty_rotate_golden_ratio;
         pedited->cropGuide.mirror_golden_ratio = m_dirty_mirror_golden_ratio;
+        pedited->cropGuide.bleed = m_bleed->getEditedState();
     }
 
     for (size_t i = 0; i < m_presets.size(); i++) {
@@ -209,9 +220,29 @@ void CropGuide::write(rtengine::procparams::ProcParams* pp, ParamsEdited* pedite
     }
 }
 
+void CropGuide::trimValues(rtengine::procparams::ProcParams* pp)
+{
+    m_bleed->trimValue(pp->cropGuide.bleed);
+}
+
 void CropGuide::setBatchMode(bool batchMode)
 {
     ToolPanel::setBatchMode(false);
+}
+
+void CropGuide::setAdjusterBehavior(bool bleed)
+{
+    m_bleed->setAddMode(bleed);
+}
+
+void CropGuide::adjusterChanged(Adjuster* adj, double newVal)
+{
+    if (listener && (getEnabled() || batchMode)) {
+        if (adj == m_bleed) {
+            listener->panelChanged(EvCropGuideBleedChanged,
+                                   Glib::ustring::format(adj->getIntValue()));
+        }
+    }
 }
 
 void CropGuide::enabledChanged()
