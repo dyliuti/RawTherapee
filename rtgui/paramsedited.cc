@@ -37,8 +37,10 @@ void setAll(CropGuideParamsEdited& guide, bool v)
     } else {
         guide.presets.reset();
     }
-    guide.mirror_golden_triangle = v;
     guide.enabled = v;
+    guide.mirror_golden_triangle = v;
+    guide.rotate_golden_ratio = v;
+    guide.mirror_golden_ratio = v;
 }
 
 void initFrom(CropGuideParamsEdited& edits, const ProcParams& params,
@@ -52,9 +54,13 @@ void initFrom(CropGuideParamsEdited& edits, const ProcParams& params,
         is_edited &= curr.presets[i] == other.presets[i];
         edits.presets[i] = is_edited;
     }
+    edits.enabled &= curr.enabled == other.enabled;
     edits.mirror_golden_triangle &=
         curr.mirror_golden_triangle == other.mirror_golden_triangle;
-    edits.enabled &= curr.enabled == other.enabled;
+    edits.rotate_golden_ratio &=
+        curr.rotate_golden_ratio == other.rotate_golden_ratio;
+    edits.mirror_golden_ratio &=
+        curr.mirror_golden_ratio == other.mirror_golden_ratio;
 }
 
 void combine(CropGuideParams& toEdit, const CropGuideParams& mod,
@@ -65,11 +71,17 @@ void combine(CropGuideParams& toEdit, const CropGuideParams& mod,
             toEdit.presets[i] = mod.presets[i];
         }
     }
+    if (edits.enabled) {
+        toEdit.enabled = mod.enabled;
+    }
     if (edits.mirror_golden_triangle) {
         toEdit.mirror_golden_triangle = mod.mirror_golden_triangle;
     }
-    if (edits.enabled) {
-        toEdit.enabled = mod.enabled;
+    if (edits.rotate_golden_ratio) {
+        toEdit.rotate_golden_ratio = mod.rotate_golden_ratio;
+    }
+    if (edits.mirror_golden_ratio) {
+        toEdit.mirror_golden_ratio = mod.mirror_golden_ratio;
     }
 }
 

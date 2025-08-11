@@ -53,11 +53,9 @@ public:
     void onPresetToggled(size_t index);
     void onGoldenTriangleMirror();
     void onGoldenTriangleReset();
-    // void onRotateLeft(size_t index);
-    // void onRotateRight(size_t index);
-    // void onFlipHorizontal(size_t index);
-    // void onFlipVertical(size_t index);
-    // void onReset(size_t index);
+    void onGoldenRatioRotate();
+    void onGoldenRatioMirror();
+    void onGoldenRatioReset();
 
 private:
     void setupEvents();
@@ -74,6 +72,11 @@ private:
     std::array<Preset, 8> m_presets;
     bool m_mirror_golden_triangle;
     bool m_dirty_mirror_golden_triangle;
+
+    bool m_rotate_golden_ratio;
+    bool m_dirty_rotate_golden_ratio;
+    bool m_mirror_golden_ratio;
+    bool m_dirty_mirror_golden_ratio;
 
     rtengine::ProcEvent EvCropGuideEnabled;
     rtengine::ProcEvent EvCropGuidePresetChanged;

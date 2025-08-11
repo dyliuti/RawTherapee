@@ -339,10 +339,10 @@ void GuideDrawer::drawGoldenRatio()
         }
     }
 
-    double delta_w = w - fitted_w;
-    double delta_h = h - fitted_h;
+    const double delta_w = w - fitted_w;
+    const double delta_h = h - fitted_h;
 
-    CropRect fitted_rect {
+    const CropRect fitted_rect {
         rect.x0 + (delta_w / 2.0),
         rect.y0 + (delta_h / 2.0),
         rect.x1 - (delta_w / 2.0),
@@ -359,23 +359,57 @@ void GuideDrawer::drawGoldenRatio()
         drawDashedLine(fitted_rect.x0, fitted_rect.y1, fitted_rect.x1, fitted_rect.y1);
     }
 
-    constexpr double LIMIT_THRESHOLD = 0.05;
-
     double start_x = fitted_rect.x0;
     double start_y = fitted_rect.y1;
     Dir dir = Dir::RIGHT;
+
+    if (fitted_w >= fitted_h) {
+        if (params.rotate_golden_ratio && params.mirror_golden_ratio) {
+            start_x = fitted_rect.x0;
+            start_y = fitted_rect.y0;
+            dir = Dir::RIGHT;
+        } else if (params.rotate_golden_ratio) {
+            start_x = fitted_rect.x1;
+            start_y = fitted_rect.y0;
+            dir = Dir::LEFT;
+        } else if (params.mirror_golden_ratio) {
+            start_x = fitted_rect.x1;
+            start_y = fitted_rect.y1;
+            dir = Dir::LEFT;
+        } else {
+            start_x = fitted_rect.x0;
+            start_y = fitted_rect.y1;
+            dir = Dir::RIGHT;
+        }
+    } else {
+        if (params.rotate_golden_ratio && params.mirror_golden_ratio) {
+            start_x = fitted_rect.x0;
+            start_y = fitted_rect.y1;
+            dir = Dir::UP;
+        } else if (params.rotate_golden_ratio) {
+            start_x = fitted_rect.x1;
+            start_y = fitted_rect.y1;
+            dir = Dir::UP;
+        } else if (params.mirror_golden_ratio) {
+            start_x = fitted_rect.x1;
+            start_y = fitted_rect.y0;
+            dir = Dir::DOWN;
+        } else {
+            start_x = fitted_rect.x0;
+            start_y = fitted_rect.y0;
+            dir = Dir::DOWN;
+        }
+    }
+
+    constexpr double LIMIT_THRESHOLD = 0.05;
     double length = fitted_w;
     double limit = fitted_h * LIMIT_THRESHOLD;
-
     if (fitted_w < fitted_h) {
-        start_x = fitted_rect.x0;
-        start_y = fitted_rect.y0;
-        dir = Dir::DOWN;
         length = fitted_h;
         limit = fitted_w * LIMIT_THRESHOLD;
     }
 
-    bool clockwise = true;
+    bool clockwise = !params.mirror_golden_ratio;
     drawGoldenRatioRecursive(start_x, start_y, length, dir, limit, clockwise);
 }
 
@@ -390,7 +424,7 @@ void GuideDrawer::drawGoldenRatio()
 void GuideDrawer::drawGoldenRatioRecursive(double x, double y, double length,
                                            Dir dir, double limit, bool clockwise)
 {
-    if (length <= limit) return;
+    if (length <= limit || length <= 10.0) return;
 
     double offset = length * GOLDEN_RATIO_RECIPROCAL;
 
@@ -446,6 +480,41 @@ void GuideDrawer::drawGoldenRatioRecursive(double x, double y, double length,
                 arc_start = ARC_0;
                 arc_end = ARC_270;
                 next_dir = Dir::UP;
+                break;
+        }
+    } else {
+        switch (dir) {
+            case Dir::UP:
+                arc_y -= offset;
+                next_x += offset;
+                next_y -= offset;
+                arc_start = ARC_0;
+                arc_end = ARC_270;
+                next_dir = Dir::LEFT;
+                break;
+            case Dir::RIGHT:
+                arc_x += offset;
+                next_x += offset;
+                next_y += offset;
+                arc_start = ARC_270;
+                arc_end = ARC_180;
+                next_dir = Dir::UP;
+                break;
+            case Dir::DOWN:
+                arc_y += offset;
+                next_x -= offset;
+                next_y += offset;
+                arc_start = ARC_180;
+                arc_end = ARC_90;
+                next_dir = Dir::RIGHT;
+                break;
+            case Dir::LEFT:
+                arc_x -= offset;
+                next_x -= offset;
+                next_y -= offset;
+                arc_start = ARC_90;
+                arc_end = ARC_0;
+                next_dir = Dir::DOWN;
                 break;
         }
     }

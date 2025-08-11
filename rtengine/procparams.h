@@ -948,8 +948,10 @@ struct CropGuideParams {
     static_assert(NUM_PRESETS == PresetIndex::CENTERED_SQUARE + 1);
 
     std::bitset<NUM_PRESETS> presets;
-    bool mirror_golden_triangle;
     bool enabled;
+    bool mirror_golden_triangle;
+    bool rotate_golden_ratio;
+    bool mirror_golden_ratio;
 
     CropGuideParams();
 

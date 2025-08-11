@@ -448,6 +448,8 @@ namespace CropGuide {
     DEFINE_KEY(CENTERED_SQUARE, "CenteredSquare");
 
     DEFINE_KEY(GOLDEN_TRIANGLE_MIRROR, "GoldenTriangleMirror");
+    DEFINE_KEY(GOLDEN_RATIO_ROTATE, "GoldenRatioRotate");
+    DEFINE_KEY(GOLDEN_RATIO_MIRROR, "GoldenRatioMirror");
 
     // DEFINE_KEY(BY_0, "BY_0");
     // DEFINE_KEY(BY_90, "BY_90");
@@ -666,6 +668,10 @@ void loadCropGuideParams(
 
     assignFromKeyfile(keyFile, group, GOLDEN_TRIANGLE_MIRROR,
                       params.mirror_golden_triangle, edited.mirror_golden_triangle);
+    assignFromKeyfile(keyFile, group, GOLDEN_RATIO_ROTATE,
+                      params.rotate_golden_ratio, edited.rotate_golden_ratio);
+    assignFromKeyfile(keyFile, group, GOLDEN_RATIO_MIRROR,
+                      params.mirror_golden_ratio, edited.mirror_golden_ratio);
 }
 
 void saveCropGuideParams(
@@ -702,6 +708,10 @@ void saveCropGuideParams(
 
     saveToKeyfile(!pedited || pedited->cropGuide.mirror_golden_triangle, group,
                   GOLDEN_TRIANGLE_MIRROR, params.mirror_golden_triangle, keyFile);
+    saveToKeyfile(!pedited || pedited->cropGuide.rotate_golden_ratio, group,
+                  GOLDEN_RATIO_ROTATE, params.rotate_golden_ratio, keyFile);
+    saveToKeyfile(!pedited || pedited->cropGuide.mirror_golden_ratio, group,
+                  GOLDEN_RATIO_MIRROR, params.mirror_golden_ratio, keyFile);
 }
 
 } // namespace
@@ -2266,13 +2276,21 @@ void CropParams::mapToResized(int resizedWidth, int resizedHeight, int scale, in
     }
 }
 
-CropGuideParams::CropGuideParams() : mirror_golden_triangle(false) , enabled(true) {}
+CropGuideParams::CropGuideParams()
+    : enabled(true)
+    , mirror_golden_triangle(false)
+    , rotate_golden_ratio(false)
+    , mirror_golden_ratio(false)
+{
+}
 
 bool CropGuideParams::operator==(const CropGuideParams& other) const
 {
     return enabled == other.enabled
         && presets == other.presets
-        && mirror_golden_triangle == other.mirror_golden_triangle;
+        && mirror_golden_triangle == other.mirror_golden_triangle
+        && rotate_golden_ratio == other.rotate_golden_ratio
+        && mirror_golden_ratio == other.mirror_golden_ratio;
 }
 
 CoarseTransformParams::CoarseTransformParams() :

@@ -55,6 +55,10 @@ CropGuide::CropGuide()
     , m_presets{}
     , m_mirror_golden_triangle(false)
     , m_dirty_mirror_golden_triangle(false)
+    , m_rotate_golden_ratio(false)
+    , m_dirty_rotate_golden_ratio(false)
+    , m_mirror_golden_ratio(false)
+    , m_dirty_mirror_golden_ratio(false)
 {
     setupEvents();
     setupPresets();
@@ -103,6 +107,17 @@ void CropGuide::setupPresets()
         label->set_line_wrap(true);
         grid->attach(*label, 1, curr_row);
 
+        auto add_button = [&](const char* icon, Gtk::Box* button_box) {
+            auto button = Gtk::manage(new Gtk::Button());
+            button->set_image(*Gtk::manage(
+                    new RTImage(icon, Gtk::ICON_SIZE_BUTTON)));
+            button->set_relief(Gtk::RELIEF_NONE);
+            button->set_hexpand(false);
+            button_box->pack_start(*button);
+
+            return button;
+        };
+
         if (type_index == CropGuideParams::PresetIndex::GOLDEN_TRIANGLE) {
             curr_row++;
 
@@ -110,33 +125,30 @@ void CropGuide::setupPresets()
             button_box->set_halign(Gtk::ALIGN_START);
             grid->attach(*button_box, 1, curr_row);
 
-            auto add_button = [&](const char* icon) {
-                auto button = Gtk::manage(new Gtk::Button());
-                button->set_image(*Gtk::manage(
-                        new RTImage(icon, Gtk::ICON_SIZE_BUTTON)));
-                button->set_relief(Gtk::RELIEF_NONE);
-                button->set_hexpand(false);
-                button_box->pack_start(*button);
+            auto mirror_button = add_button("flip-horizontal", button_box);
+            auto undo_button = add_button("undo-small", button_box);
 
-                return button;
-            };
-
-            // auto rotate_left_button = add_button("rotate-left-small");
-            // auto rotate_right_button = add_button("rotate-right-small");
-            auto flip_h_button = add_button("flip-horizontal");
-            // auto flip_v_button = add_button("flip-vertical");
-            auto undo_button = add_button("undo-small");
-
-            // rotate_left_button->signal_clicked().connect(sigc::bind(
-            //     sigc::mem_fun(this, &CropGuide::onRotateLeft), i));
-            // rotate_right_button->signal_clicked().connect(sigc::bind(
-            //     sigc::mem_fun(this, &CropGuide::onRotateRight), i));
-            flip_h_button->signal_clicked().connect(
+            mirror_button->signal_clicked().connect(
                 sigc::mem_fun(this, &CropGuide::onGoldenTriangleMirror));
-            // flip_v_button->signal_clicked().connect(sigc::bind(
-            //     sigc::mem_fun(this, &CropGuide::onFlipVertical), i));
             undo_button->signal_clicked().connect(
                 sigc::mem_fun(this, &CropGuide::onGoldenTriangleReset));
+        } else if (type_index == CropGuideParams::PresetIndex::GOLDEN_RATIO) {
+            curr_row++;
+
+            auto button_box = Gtk::manage(new Gtk::Box());
+            button_box->set_halign(Gtk::ALIGN_START);
+            grid->attach(*button_box, 1, curr_row);
+
+            auto rotate_button = add_button("rotate-right-small", button_box);
+            auto mirror_button = add_button("flip-horizontal", button_box);
+            auto undo_button = add_button("undo-small", button_box);
+
+            rotate_button->signal_clicked().connect(
+                sigc::mem_fun(this, &CropGuide::onGoldenRatioRotate));
+            mirror_button->signal_clicked().connect(
+                sigc::mem_fun(this, &CropGuide::onGoldenRatioMirror));
+            undo_button->signal_clicked().connect(
+                sigc::mem_fun(this, &CropGuide::onGoldenRatioReset));
         }
     }
 
@@ -147,10 +159,14 @@ void CropGuide::read(const rtengine::procparams::ProcParams* pp,
 {
     setEnabled(pp->cropGuide.enabled);
     m_mirror_golden_triangle = pp->cropGuide.mirror_golden_triangle;
+    m_rotate_golden_ratio = pp->cropGuide.rotate_golden_ratio;
+    m_mirror_golden_ratio = pp->cropGuide.mirror_golden_ratio;
 
     if (pedited) {
         set_inconsistent(multiImage && pedited->cropGuide.enabled);
         m_dirty_mirror_golden_triangle = pedited->cropGuide.mirror_golden_triangle;
+        m_dirty_rotate_golden_ratio = pedited->cropGuide.rotate_golden_ratio;
+        m_dirty_mirror_golden_ratio = pedited->cropGuide.mirror_golden_ratio;
     };
 
     for (size_t i = 0; i < m_presets.size(); i++) {
@@ -172,10 +188,14 @@ void CropGuide::write(rtengine::procparams::ProcParams* pp, ParamsEdited* pedite
 {
     pp->cropGuide.enabled = getEnabled();
     pp->cropGuide.mirror_golden_triangle = m_mirror_golden_triangle;
+    pp->cropGuide.rotate_golden_ratio = m_rotate_golden_ratio;
+    pp->cropGuide.mirror_golden_ratio = m_mirror_golden_ratio;
 
     if (pedited) {
         pedited->cropGuide.enabled = !get_inconsistent();
         pedited->cropGuide.mirror_golden_triangle = m_dirty_mirror_golden_triangle;
+        pedited->cropGuide.rotate_golden_ratio = m_dirty_rotate_golden_ratio;
+        pedited->cropGuide.mirror_golden_ratio = m_dirty_mirror_golden_ratio;
     }
 
     for (size_t i = 0; i < m_presets.size(); i++) {
@@ -242,89 +262,37 @@ void CropGuide::onGoldenTriangleReset()
     }
 }
 
-// void CropGuide::onRotateLeft(size_t index)
-// {
-//     using Rotate = CropGuideParams::Rotate;
-//     auto& preset = m_presets.at(index);
-//     switch (preset.rotate) {
-//         case Rotate::BY_0:
-//             preset.rotate = Rotate::BY_90;
-//             break;
-//         case Rotate::BY_90:
-//             preset.rotate = Rotate::BY_180;
-//             break;
-//         case Rotate::BY_180:
-//             preset.rotate = Rotate::BY_270;
-//             break;
-//         case Rotate::BY_270:
-//             preset.rotate = Rotate::BY_0;
-//             break;
-//     }
-//     preset.is_rotate_dirty = true;
-//
-//     if (listener && getEnabled()) {
-//         listener->panelChanged(EvCropGuidePresetChanged, M(GUIDE_TYPE_OPTIONS.at(index)));
-//     }
-// }
-//
-// void CropGuide::onRotateRight(size_t index)
-// {
-//     using Rotate = CropGuideParams::Rotate;
-//     auto& preset = m_presets.at(index);
-//     switch (preset.rotate) {
-//         case Rotate::BY_0:
-//             preset.rotate = Rotate::BY_270;
-//             break;
-//         case Rotate::BY_90:
-//             preset.rotate = Rotate::BY_0;
-//             break;
-//         case Rotate::BY_180:
-//             preset.rotate = Rotate::BY_90;
-//             break;
-//         case Rotate::BY_270:
-//             preset.rotate = Rotate::BY_180;
-//             break;
-//     }
-//     preset.is_rotate_dirty = true;
-//
-//     if (listener && getEnabled()) {
-//         listener->panelChanged(EvCropGuidePresetChanged, M(GUIDE_TYPE_OPTIONS.at(index)));
-//     }
-// }
-//
-// void CropGuide::onFlipHorizontal(size_t index)
-// {
-//     auto& preset = m_presets.at(index);
-//     preset.mirror = static_cast<CropGuideParams::Mirror::AboutAxis>(
-//         preset.mirror ^ CropGuideParams::Mirror::AboutAxis::Y);
-//     preset.is_mirror_dirty = true;
-//
-//     if (listener && getEnabled()) {
-//         listener->panelChanged(EvCropGuidePresetChanged, M(GUIDE_TYPE_OPTIONS.at(index)));
-//     }
-// }
-//
-// void CropGuide::onFlipVertical(size_t index)
-// {
-//     auto& preset = m_presets.at(index);
-//     preset.mirror = static_cast<CropGuideParams::Mirror::AboutAxis>(
-//         preset.mirror ^ CropGuideParams::Mirror::AboutAxis::X);
-//     preset.is_mirror_dirty = true;
-//
-//     if (listener && getEnabled()) {
-//         listener->panelChanged(EvCropGuidePresetChanged, M(GUIDE_TYPE_OPTIONS.at(index)));
-//     }
-// }
-//
-// void CropGuide::onReset(size_t index)
-// {
-//     auto& preset = m_presets.at(index);
-//     preset.rotate = CropGuideParams::Rotate::BY_0;
-//     preset.mirror = CropGuideParams::Mirror::NONE;
-//     preset.is_rotate_dirty = true;
-//     preset.is_mirror_dirty = true;
-//
-//     if (listener && getEnabled()) {
-//         listener->panelChanged(EvCropGuidePresetChanged, M(GUIDE_TYPE_OPTIONS.at(index)));
-//     }
-// }
+void CropGuide::onGoldenRatioRotate()
+{
+    m_rotate_golden_ratio = !m_rotate_golden_ratio;
+    m_dirty_rotate_golden_ratio = true;
+
+    if (listener && getEnabled()) {
+        listener->panelChanged(EvCropGuidePresetChanged, M(GUIDE_TYPE_OPTIONS.at(
+            CropGuideParams::PresetIndex::GOLDEN_RATIO)));
+    }
+}
+
+void CropGuide::onGoldenRatioMirror()
+{
+    m_mirror_golden_ratio = !m_mirror_golden_ratio;
+    m_dirty_mirror_golden_ratio = true;
+
+    if (listener && getEnabled()) {
+        listener->panelChanged(EvCropGuidePresetChanged, M(GUIDE_TYPE_OPTIONS.at(
+            CropGuideParams::PresetIndex::GOLDEN_RATIO)));
+    }
+}
+
+void CropGuide::onGoldenRatioReset()
+{
+    m_mirror_golden_ratio = false;
+    m_dirty_mirror_golden_ratio = true;
+    m_rotate_golden_ratio = false;
+    m_dirty_rotate_golden_ratio = true;
+
+    if (listener && getEnabled()) {
+        listener->panelChanged(EvCropGuidePresetChanged, M(GUIDE_TYPE_OPTIONS.at(
+            CropGuideParams::PresetIndex::GOLDEN_RATIO)));
+    }
+}

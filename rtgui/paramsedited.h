@@ -404,8 +404,10 @@ struct CropParamsEdited {
 
 struct CropGuideParamsEdited {
     std::bitset<9> presets;
-    bool mirror_golden_triangle;
     bool enabled;
+    bool mirror_golden_triangle;
+    bool rotate_golden_ratio;
+    bool mirror_golden_ratio;
 };
 
 struct CoarseTransformParamsEdited {
