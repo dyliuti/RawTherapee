@@ -21,8 +21,6 @@ env:
 jobs:
   build:
     runs-on: ${{ matrix.arch == 'arm64' && 'windows-11-arm' || 'windows-latest' }}
-    permissions:
-      contents: write
     defaults:
       run:
         shell: msys2 {0}
@@ -34,6 +32,9 @@ jobs:
     env:
       MSYS2_ENV_NAME: ${{ matrix.arch == 'arm64' && 'CLANGARM64' || 'MINGW64' }}
       MSYS2_ENV_PREFIX: ${{ matrix.arch == 'arm64' && 'clangarm64' || 'mingw64' }}
+    outputs:
+      ARTIFACT_NAME_PREFIX: ${{ steps.prepare-artifact-name.outputs.ARTIFACT_NAME_PREFIX }}
+      REF_NAME_FILTERED: ${{ steps.prepare-artifact-name.outputs.REF_NAME_FILTERED }}
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -153,7 +154,7 @@ jobs:
           echo -e '[Settings]\ngtk-button-images=1' > "$BUILD_DIR/share/gtk-3.0/settings.ini"
 
       - name: Create installer
-        if: ${{matrix.build_type == 'release' && (github.ref_type == 'tag' || github.ref_name == 'dev')}}
+        if: ${{matrix.build_type == 'release'}}
         working-directory: build/${{matrix.build_type}}
         shell: pwsh
         run: |
@@ -165,22 +166,28 @@ jobs:
           iscc /F"installer" "WindowsInnoSetup.iss"
 
       - name: Prepare artifact name
+        id: prepare-artifact-name
         run: |
           if [ '${{github.ref_type}}' == 'tag' ]; then
-            ARTIFACT_NAME="RawTherapee_${REF_NAME_FILTERED}_win64_${{matrix.arch}}_${{matrix.build_type}}"
+            ARTIFACT_NAME_PREFIX="RawTherapee_${REF_NAME_FILTERED}_win64"
           else
             echo "Getting RawTherapee version."
             export VERSION="$(grep -m 1 '^Version: .*$' './build/${{matrix.build_type}}/AboutThisBuild.txt' | sed 's/^Version: \(.\+\)$/\1/')"
             echo "Version is '$VERSION'."
             FILTERED_VERSION="$(echo "$VERSION" | sed 's/[^A-z0-9_.-]//g')"
-            ARTIFACT_NAME="RawTherapee_${REF_NAME_FILTERED}_${FILTERED_VERSION}_win64_${{matrix.arch}}_${{matrix.build_type}}"
+            ARTIFACT_NAME_PREFIX="RawTherapee_${REF_NAME_FILTERED}_${FILTERED_VERSION}_win64"
           fi
+          ARTIFACT_NAME="${ARTIFACT_NAME_PREFIX}_${{matrix.arch}}_${{matrix.build_type}}"
           echo "Artifact name is '$ARTIFACT_NAME'."
 
           echo "Recording artifact name."
           echo "ARTIFACT_NAME=$ARTIFACT_NAME" >> "$(cygpath -u $GITHUB_ENV)"
           echo "Recording RawTherapee version."
           echo "RT_VERSION=$VERSION" >> "$(cygpath -u $GITHUB_ENV)"
+
+          echo "Saving artifact name and filtered ref name to outputs."
+          echo "ARTIFACT_NAME_PREFIX=$ARTIFACT_NAME_PREFIX" >> "$(cygpath -u $GITHUB_OUTPUT)"
+          echo "REF_NAME_FILTERED=$REF_NAME_FILTERED" >> "$(cygpath -u $GITHUB_OUTPUT)"
 
           echo "Renaming artifact."
           mv './build/${{matrix.build_type}}' "./build/$ARTIFACT_NAME"
@@ -189,13 +196,6 @@ jobs:
             mv './build/installer.exe' "./build/$ARTIFACT_NAME.exe"
           fi
 
-      - name: Create ZIP archive
-        shell: cmd
-        working-directory: ./build
-        run: |
-          echo "Zipping artifact."
-          7z a -tzip "%ARTIFACT_NAME%.zip" "./%ARTIFACT_NAME%"
-
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -203,13 +203,61 @@ jobs:
           path: build\${{env.ARTIFACT_NAME}}
 
       - name: Upload installer
-        if: ${{matrix.build_type == 'release' && (github.ref_type == 'tag' || github.ref_name == 'dev')}}
+        if: ${{matrix.build_type == 'release'}}
         uses: actions/upload-artifact@v4
         with:
           name: ${{env.ARTIFACT_NAME}}.exe
           path: build\${{env.ARTIFACT_NAME}}.exe
 
+  publish:
+    needs: build
+    runs-on: 'windows-latest'
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [release, debug]
+        arch: [x86_64, arm64]
+    env:
+      ARTIFACT_NAME: ${{ format('{0}_{1}_{2}', needs.build.outputs.ARTIFACT_NAME_PREFIX, matrix.arch, matrix.build_type) }}
+      REF_NAME_FILTERED: ${{needs.build.outputs.REF_NAME_FILTERED}}
+    steps:
+      - name: Initialize
+        id: initialize
+        if: ${{github.ref_type == 'tag' || github.ref_name == 'dev' || (github.event_name == 'pull_request' && contains(fromJSON(env.publish_pre_dev_labels), github.event.pull_request.head.label))}}
+        run: |
+          echo "Proceeding with job."
+
+      - name: Download build artifact
+        id: download-build-artifact
+        if: ${{steps.initialize.outcome == 'success'}}
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{env.ARTIFACT_NAME}}
+          path: build/${{env.ARTIFACT_NAME}}
+
+      - name: Download installer
+        id: download-installer
+        if: ${{steps.download-build-artifact.outcome == 'success' && matrix.build_type == 'release'}}
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{env.ARTIFACT_NAME}}.exe
+          path: build
+
+      - name: Create ZIP archive
+        if: ${{steps.download-build-artifact.outcome == 'success'}}
+        shell: cmd
+        working-directory: ./build
+        run: |
+          echo "Zipping artifact."
+          7z a -tzip "%ARTIFACT_NAME%.zip" "./%ARTIFACT_NAME%"
+
       - name: Prepare for publishing
+        id: prepare-for-publishing
         if: ${{github.ref_type == 'tag' || github.ref_name == 'dev'}}
         run: |
           echo "Setting publish name."
@@ -231,7 +279,7 @@ jobs:
 
       - name: Publish artifacts
         uses: softprops/action-gh-release@v2
-        if: ${{github.ref_type == 'tag' || github.ref_name == 'dev'}}
+        if: ${{steps.prepare-for-publishing.outcome == 'success'}}
         with:
           tag_name: nightly-github-actions
           files: |
@@ -240,7 +288,7 @@ jobs:
 
       - name: Publish installer
         uses: softprops/action-gh-release@v2
-        if: ${{matrix.build_type == 'release' && (github.ref_type == 'tag' || github.ref_name == 'dev')}}
+        if: ${{steps.prepare-for-publishing.outcome == 'success' && matrix.build_type == 'release'}}
         with:
           tag_name: nightly-github-actions
           files: build/${{env.PUBLISH_NAME}}.exe
