@@ -335,3 +335,58 @@ jobs:
           tag_name: pre-dev-github-actions
           repository: RawTherapee/RawTherapee
           files: build/${{env.PUBLISH_NAME}}.exe
+
+  test-launch:
+    needs: build
+    runs-on: ${{ matrix.arch == 'arm64' && 'windows-11-arm' || 'windows-latest' }}
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [release, debug]
+        arch: [x86_64, arm64]
+    env:
+      ARTIFACT_NAME: ${{ format('{0}_{1}_{2}', needs.build.outputs.ARTIFACT_NAME_PREFIX, matrix.arch, matrix.build_type) }}
+    steps:
+      - name: Download build artifact
+        id: download-build-artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{env.ARTIFACT_NAME}}
+          path: build/${{env.ARTIFACT_NAME}}
+
+      - name: Launch CLI
+        working-directory: build/${{env.ARTIFACT_NAME}}
+        run: |
+          echo "Launching RawTherapee CLI."
+          ./rawtherapee-cli.exe
+
+      - name: Launch GUI
+        working-directory: build/${{env.ARTIFACT_NAME}}
+        run: |
+          STATUS_FILE="rawtherapee-status.txt"
+          SUCCESS_MESSAGE="success"
+          FAILURE_MESSAGE="failure"
+
+          echo "Launching RawTherapee GUI."
+          ./rawtherapee.exe && echo $SUCCESS_MESSAGE > $STATUS_FILE || echo $FAILURE_MESSAGE > $STATUS_FILE &
+
+          echo "Waiting 10 seconds for RawTherapee to start."
+          sleep 10
+
+          echo "Checking if RawTherapee launched successfully."
+          if [ -f "$STATUS_FILE" ]; then
+            $STATUS=$(cat "$STATUS_FILE")
+            if [ "$STATUS" == "$FAILURE_MESSAGE" ]; then
+              echo "RawTherapee failed to start."
+              exit 1
+            elif [ "$STATUS" == "$SUCCESS_MESSAGE" ]; then
+              echo "RawTherapee started successfully."
+            else
+              echo "Unknown status: $STATUS"
+              exit 1
+            fi
+          fi
+          echo "RawTherapee is launching or has launched successfully."
