@@ -799,8 +799,7 @@ void saveCropGuideParams(
             }
 
             auto name = getAspectRatioLabel(entry.preset_index);
-            cJSON* name_obj = cJSON_CreateStringReference(name.c_str());
-            cJSON_AddItemToObject(obj, NAME, name_obj);
+            cJSON_AddStringToObject(obj, NAME, name.c_str());
 
             cJSON_AddNumberToObject(obj, RED, entry.red);
             cJSON_AddNumberToObject(obj, GREEN, entry.green);
