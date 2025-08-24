@@ -21,6 +21,7 @@
 
 #include <locale.h>
 
+#include <cJSON.h>
 #include <glib/gstdio.h>
 #include <glibmm/fileutils.h>
 #include <glibmm/miscutils.h>
@@ -451,7 +452,13 @@ namespace CropGuide {
     DEFINE_KEY(GOLDEN_TRIANGLE_MIRROR, "GoldenTriangleMirror");
     DEFINE_KEY(GOLDEN_RATIO_ROTATE, "GoldenRatioRotate");
     DEFINE_KEY(GOLDEN_RATIO_MIRROR, "GoldenRatioMirror");
+    DEFINE_KEY(ASPECT_RATIOS, "AspectRatios");
     DEFINE_KEY(BLEED, "Bleed");
+
+    DEFINE_KEY(NAME, "Name");
+    DEFINE_KEY(RED, "Red");
+    DEFINE_KEY(GREEN, "Green");
+    DEFINE_KEY(BLUE, "Blue");
 }  // namespace CropGuide
 
 namespace Framing
@@ -665,6 +672,75 @@ void loadCropGuideParams(
     assignFromKeyfile(keyFile, group, GOLDEN_RATIO_MIRROR,
                       params.mirror_golden_ratio, edited.mirror_golden_ratio);
     assignFromKeyfile(keyFile, group, BLEED, params.bleed, edited.bleed);
+
+    auto parse_aspect_ratios = [&](const char* data) {
+        cJSON* json = cJSON_Parse(data);
+        if (!json) return;
+        if (!cJSON_IsArray(json)) {
+            cJSON_Delete(json);
+            return;
+        }
+
+        auto num_objects = cJSON_GetArraySize(json);
+
+        edited.aspect_ratios = true;
+        params.aspect_ratios.clear();
+        if (num_objects == 0) {
+            cJSON_Delete(json);
+            return;
+        }
+
+        params.aspect_ratios.reserve(num_objects);
+        const auto& presets = getAspectRatios();
+
+        auto find_index = [&](const char* value, size_t& result) -> bool {
+            for (size_t i = 0; i < presets.size(); i++) {
+                if (presets[i].label == value) {
+                    result = i;
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        auto parse_color = [&](const cJSON* obj, const char* key, double& out) {
+            const cJSON* entry = cJSON_GetObjectItemCaseSensitive(obj, key);
+            if (cJSON_IsNumber(entry)) {
+                out = entry->valuedouble;
+            } else {
+                out = 1.0;
+            }
+        };
+
+        const cJSON* obj = nullptr;
+        cJSON_ArrayForEach(obj, json) {
+            const cJSON* name = cJSON_GetObjectItemCaseSensitive(obj, NAME);
+            if (cJSON_IsString(name) && (name->valuestring != nullptr)) {
+                size_t preset_index = 0;
+                if (find_index(name->valuestring, preset_index)) {
+                    CropGuideParams::AspectRatioParams entry(preset_index);
+
+                    const cJSON* enabled =
+                        cJSON_GetObjectItemCaseSensitive(obj, TOOL_ENABLED);
+                    if (cJSON_IsTrue(enabled)) {
+                        entry.enabled = true;
+                    } else {
+                        entry.enabled = false;
+                    }
+
+                    parse_color(obj, RED, entry.red);
+                    parse_color(obj, GREEN, entry.green);
+                    parse_color(obj, BLUE, entry.blue);
+                    params.aspect_ratios.push_back(std::move(entry));
+                }
+            }
+        }
+    };
+
+    if (keyFile.has_key(group, ASPECT_RATIOS)) {
+        Glib::ustring aspect_ratios = keyFile.get_string(group, ASPECT_RATIOS);
+        parse_aspect_ratios(aspect_ratios.c_str());
+    }
 }
 
 void saveCropGuideParams(
@@ -707,6 +783,43 @@ void saveCropGuideParams(
                   GOLDEN_RATIO_MIRROR, params.mirror_golden_ratio, keyFile);
     saveToKeyfile(!pedited || pedited->cropGuide.bleed, group, BLEED, params.bleed,
                   keyFile);
+
+    auto dump_aspect_ratios = [&]() {
+        cJSON* serialized_aspect_ratios = cJSON_CreateArray();
+        if (!serialized_aspect_ratios) return;
+
+        for (const auto& entry : params.aspect_ratios) {
+            cJSON* obj = cJSON_CreateObject();
+            if (!obj) continue;
+
+            if (entry.enabled) {
+                cJSON_AddTrueToObject(obj, TOOL_ENABLED);
+            } else {
+                cJSON_AddFalseToObject(obj, TOOL_ENABLED);
+            }
+
+            auto name = getAspectRatioLabel(entry.preset_index);
+            cJSON* name_obj = cJSON_CreateStringReference(name.c_str());
+            cJSON_AddItemToObject(obj, NAME, name_obj);
+
+            cJSON_AddNumberToObject(obj, RED, entry.red);
+            cJSON_AddNumberToObject(obj, GREEN, entry.green);
+            cJSON_AddNumberToObject(obj, BLUE, entry.blue);
+
+            cJSON_AddItemToArray(serialized_aspect_ratios, obj);
+        }
+
+        char* serialized_json = cJSON_PrintUnformatted(serialized_aspect_ratios);
+        if (serialized_json) {
+            keyFile.set_string(group, ASPECT_RATIOS, serialized_json);
+            free(serialized_json);
+        }
+        cJSON_Delete(serialized_aspect_ratios);
+    };
+
+    if (!pedited || pedited->cropGuide.aspect_ratios) {
+        dump_aspect_ratios();
+    }
 }
 
 } // namespace

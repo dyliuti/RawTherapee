@@ -65,15 +65,4 @@ void fillAspectRatios(std::vector<AspectRatio>& ratios) {
     }
 }
 
-std::vector<AspectRatio> getAspectRatios() {
-    std::vector<AspectRatio> ratios(ASPECT_RATIOS.begin(), ASPECT_RATIOS.end());
-    return ratios;
-}
-
-Glib::ustring getAspectRatioLabel(size_t index) {
-    return ASPECT_RATIOS.at(index).label;
-}
-
-double getAspectRatioValue(size_t index) {
-    return ASPECT_RATIOS.at(index).value;
-}
+const std::vector<AspectRatio>& getAspectRatios() { return ASPECT_RATIOS; }

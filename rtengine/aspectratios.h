@@ -36,7 +36,14 @@ struct AspectRatio {
 // before calling this function.
 void fillAspectRatios(std::vector<AspectRatio>& ratios);
 
-std::vector<AspectRatio> getAspectRatios();
+const std::vector<AspectRatio>& getAspectRatios();
 
-Glib::ustring getAspectRatioLabel(size_t index);
-double getAspectRatioValue(size_t index);
+inline Glib::ustring getAspectRatioLabel(size_t index)
+{
+    return getAspectRatios().at(index).label;
+}
+
+inline double getAspectRatioValue(size_t index)
+{
+    return getAspectRatios().at(index).value;
+}
