@@ -19,7 +19,6 @@
 
 #include "cropguide.h"
 
-#include "aspectratios.h"
 #include "colorpreview.h"
 #include "eventmapper.h"
 #include "guiutils.h"
@@ -188,8 +187,7 @@ void CropGuide::setupAspectRatioGuides()
     pack_start(*box);
 
     {
-        std::vector<AspectRatio> ratios;
-        fillAspectRatios(ratios);
+        std::vector<AspectRatio> ratios = getAspectRatios();
 
         m_aspect_ratio_presets.reserve(ratios.size());
         size_t index = 0;

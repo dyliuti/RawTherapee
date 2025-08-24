@@ -41,6 +41,7 @@ void setAll(CropGuideParamsEdited& guide, bool v)
     guide.mirror_golden_triangle = v;
     guide.rotate_golden_ratio = v;
     guide.mirror_golden_ratio = v;
+    guide.aspect_ratios = v;
     guide.bleed = v;
 }
 
@@ -62,6 +63,8 @@ void initFrom(CropGuideParamsEdited& edits, const ProcParams& params,
         curr.rotate_golden_ratio == other.rotate_golden_ratio;
     edits.mirror_golden_ratio &=
         curr.mirror_golden_ratio == other.mirror_golden_ratio;
+    edits.aspect_ratios &=
+        curr.aspect_ratios == other.aspect_ratios;
     edits.bleed &= curr.bleed == other.bleed;
 }
 
@@ -84,6 +87,9 @@ void combine(CropGuideParams& toEdit, const CropGuideParams& mod,
     }
     if (edits.mirror_golden_ratio) {
         toEdit.mirror_golden_ratio = mod.mirror_golden_ratio;
+    }
+    if (edits.aspect_ratios) {
+        toEdit.aspect_ratios = mod.aspect_ratios;
     }
     if (edits.bleed) {
         toEdit.bleed = mod.bleed;

@@ -20,10 +20,10 @@
 
 #include "crop.h"
 
-#include "aspectratios.h"
 #include "options.h"
 #include "rtimage.h"
 
+#include "rtengine/aspectratios.h"
 #include "rtengine/procparams.h"
 #include "rtengine/utils.h"
 

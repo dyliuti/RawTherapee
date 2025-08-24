@@ -26,6 +26,7 @@
 #include <glibmm/miscutils.h>
 #include <glibmm/keyfile.h>
 
+#include "aspectratios.h"
 #include "color.h"
 #include "colortemp.h"
 #include "curves.h"
@@ -2268,6 +2269,28 @@ void CropParams::mapToResized(int resizedWidth, int resizedHeight, int scale, in
         x2 = min(resizedWidth, max(0, (x + w) / scale));
         y2 = min(resizedHeight, max(0, (y + h) / scale));
     }
+}
+
+CropGuideParams::AspectRatioParams::AspectRatioParams(size_t preset_index)
+    : enabled(false)
+    , preset_index(preset_index)
+    , width(getAspectRatioValue(preset_index))
+    , height(1.0)
+    , red(1.0)
+    , green(1.0)
+    , blue(1.0)
+{
+}
+
+bool CropGuideParams::AspectRatioParams::operator==(const AspectRatioParams& other) const
+{
+    return enabled == other.enabled
+        && preset_index == other.preset_index
+        && width == other.width
+        && height == other.height
+        && red == other.red
+        && green == other.green
+        && blue == other.blue;
 }
 
 CropGuideParams::CropGuideParams()

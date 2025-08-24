@@ -935,6 +935,24 @@ struct CropGuideParams {
     static constexpr size_t NUM_PRESETS = 9;
     static_assert(NUM_PRESETS == PresetIndex::CENTERED_SQUARE + 1);
 
+    struct AspectRatioParams {
+        bool enabled;
+        size_t preset_index;
+        double width;
+        double height;
+        double red;
+        double green;
+        double blue;
+
+        AspectRatioParams(size_t preset_index);
+
+        bool operator==(const AspectRatioParams& other) const;
+        bool operator!=(const AspectRatioParams& other) const {
+            return !(*this == other);
+        }
+    };
+
+    std::vector<AspectRatioParams> aspect_ratios;
     std::bitset<NUM_PRESETS> presets;
     bool enabled;
     bool mirror_golden_triangle;

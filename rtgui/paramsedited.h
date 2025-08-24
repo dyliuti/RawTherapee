@@ -408,6 +408,7 @@ struct CropGuideParamsEdited {
     bool mirror_golden_triangle;
     bool rotate_golden_ratio;
     bool mirror_golden_ratio;
+    bool aspect_ratios;
     bool bleed;
 };
 

@@ -20,9 +20,9 @@
 #pragma once
 
 #include "adjuster.h"
-#include "aspectratios.h"
 #include "toolpanel.h"
 
+#include "rtengine/aspectratios.h"
 #include "rtengine/procevents.h"
 #include "rtengine/procparams.h"
 
