@@ -103,6 +103,7 @@ private:
     void onAspectRatioPresetPickColor(size_t index, ColorPreview* preview);
     void onAspectRatioPresetRemoved(size_t index);
 
+    void refreshAvailableAspectRatios();
     int compareAspectRatioModels(const Glib::RefPtr<const AspectRatioModel>& lhs,
                                  const Glib::RefPtr<const AspectRatioModel>& rhs) const;
 

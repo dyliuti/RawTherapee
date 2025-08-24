@@ -330,13 +330,7 @@ void CropGuide::read(const rtengine::procparams::ProcParams* pp,
             preset, sigc::mem_fun(this, &CropGuide::compareAspectRatioModels));
     }
 
-    ConnectionBlocker block(m_available_aspect_ratios_conn);
-    m_available_aspect_ratios_combo->remove_all();
-    for (const auto& model : m_aspect_ratio_presets) {
-        if (!model->active) {
-            m_available_aspect_ratios_combo->append(model->aspect_ratio.label);
-        }
-    }
+    refreshAvailableAspectRatios();
 
     if (pedited) {
         m_dirty_aspect_ratios = pedited->cropGuide.aspect_ratios;
@@ -578,9 +572,22 @@ void CropGuide::onAspectRatioPresetRemoved(size_t index)
         }
     }
 
+    refreshAvailableAspectRatios();
+
     if (listener && getEnabled()) {
         listener->panelChanged(EvCropGuideAspectRatioPresetChanged,
                                preset->aspect_ratio.label);
+    }
+}
+
+void CropGuide::refreshAvailableAspectRatios()
+{
+    ConnectionBlocker block(m_available_aspect_ratios_conn);
+    m_available_aspect_ratios_combo->remove_all();
+    for (const auto& model : m_aspect_ratio_presets) {
+        if (!model->active) {
+            m_available_aspect_ratios_combo->append(model->aspect_ratio.label);
+        }
     }
 }
 
