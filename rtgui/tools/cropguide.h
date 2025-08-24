@@ -20,20 +20,28 @@
 #pragma once
 
 #include "adjuster.h"
+#include "aspectratios.h"
 #include "toolpanel.h"
 
 #include "rtengine/procevents.h"
 #include "rtengine/procparams.h"
 
+#include <gdkmm/rgba.h>
+#include <giomm/liststore.h>
+#include <glibmm/refptr.h>
+
 #include <array>
 #include <memory>
+#include <vector>
 
+class ColorPreview;
 class MyComboBoxText;
 class ParamsEdited;
 class RTImage;
 
 namespace Gtk {
 
+class ListBox;
 class ToggleButton;
 
 } // namespace Gtk
@@ -66,18 +74,48 @@ public:
     void onGoldenRatioReset();
 
 private:
-    void setupEvents();
-    void setupPresets();
+    struct AspectRatioModel : public Glib::Object {
+        static Glib::RefPtr<AspectRatioModel> create()
+        {
+            return Glib::RefPtr<AspectRatioModel>(new AspectRatioModel);
+        }
+
+        AspectRatio aspect_ratio;
+        size_t index = 0;
+
+        Gdk::RGBA color;
+        bool active = false;
+        bool visible = true;
+
+        bool is_active_dirty = false;
+        bool is_visible_dirty = false;
+    };
 
     struct Preset {
-        std::unique_ptr<RTImage> visible_icon;
-        std::unique_ptr<RTImage> hidden_icon;
         Gtk::ToggleButton* visibility_button = nullptr;
         sigc::connection visibility_conn;
         bool is_dirty = false;
     };
 
+    void setupEvents();
+    void setupPresets();
+    void setupAspectRatioGuides();
+
+    void onAspectRatioComboChanged();
+    void onAspectRatioPresetToggled(Gtk::ToggleButton* button, size_t index);
+    void onAspectRatioPresetPickColor(size_t index, ColorPreview* preview);
+    void onAspectRatioPresetRemoved(size_t index);
+
+    Gtk::Widget* createAspectRatioModelControls(
+        const Glib::RefPtr<AspectRatioModel>& item);
+
     Adjuster* m_bleed;
+    Gtk::ListBox* m_aspect_ratio_listbox;
+    MyComboBoxText* m_available_aspect_ratios_combo;
+    sigc::connection m_available_aspect_ratios_conn;
+
+    Glib::RefPtr<Gio::ListStore<AspectRatioModel>> m_aspect_ratio_store;
+    std::vector<Glib::RefPtr<AspectRatioModel>> m_aspect_ratio_presets;
 
     std::array<Preset, 8> m_presets;
     bool m_mirror_golden_triangle;
@@ -90,5 +128,6 @@ private:
 
     rtengine::ProcEvent EvCropGuideEnabled;
     rtengine::ProcEvent EvCropGuidePresetChanged;
+    rtengine::ProcEvent EvCropGuideAspectRatioPresetChanged;
     rtengine::ProcEvent EvCropGuideBleedChanged;
 };

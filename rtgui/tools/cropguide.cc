@@ -19,13 +19,15 @@
 
 #include "cropguide.h"
 
+#include "aspectratios.h"
+#include "colorpreview.h"
 #include "eventmapper.h"
 #include "guiutils.h"
 #include "multilangmgr.h"
 #include "paramsedited.h"
 #include "rtimage.h"
 
-#include <array>
+#include <algorithm>
 
 namespace {
 
@@ -46,12 +48,24 @@ constexpr std::array<const char*, 9> GUIDE_TYPE_OPTIONS = {
 };
 // clang-format on
 
+void updateImage(Gtk::ToggleButton* button, bool is_enabled)
+{
+    if (is_enabled) {
+        button->set_image(*Gtk::manage(
+            new RTImage("power-on-small", Gtk::ICON_SIZE_BUTTON)));
+    } else {
+        button->set_image(*Gtk::manage(
+            new RTImage("power-off-small", Gtk::ICON_SIZE_BUTTON)));
+    }
+}
+
 } // namespace
 
 const Glib::ustring CropGuide::TOOL_NAME = "cropguide";
 
 CropGuide::CropGuide()
     : FoldableToolPanel(this, TOOL_NAME, M("TP_CROP_GUIDE_LABEL"), false, true)
+    , m_aspect_ratio_store(Gio::ListStore<AspectRatioModel>::create())
     , m_presets{}
     , m_mirror_golden_triangle(false)
     , m_dirty_mirror_golden_triangle(false)
@@ -61,7 +75,11 @@ CropGuide::CropGuide()
     , m_dirty_mirror_golden_ratio(false)
 {
     setupEvents();
+
     setupPresets();
+    pack_start(*Gtk::manage(new Gtk::Separator()));
+    setupAspectRatioGuides();
+
     pack_start(*Gtk::manage(new Gtk::Separator()));
     m_bleed = Gtk::manage(new Adjuster(M("TP_CROP_GUIDE_BLEED"), 0, 10, 1, 0));
     m_bleed->setAdjusterListener(this);
@@ -75,8 +93,12 @@ void CropGuide::setupEvents()
     auto m = ProcEventMapper::getInstance();
 
     EvCropGuideEnabled = m->newEvent(MINUPDATE, "HISTORY_MSG_CROP_GUIDE_ENABLED");
-    EvCropGuidePresetChanged = m->newEvent(MINUPDATE, "HISTORY_MSG_CROP_GUIDE_PRESET_CHANGED");
-    EvCropGuideBleedChanged = m->newEvent(MINUPDATE, "HISTORY_MSG_CROP_GUIDE_BLEED_CHANGED");
+    EvCropGuidePresetChanged =
+        m->newEvent(MINUPDATE, "HISTORY_MSG_CROP_GUIDE_PRESET_CHANGED");
+    EvCropGuideAspectRatioPresetChanged =
+        m->newEvent(MINUPDATE, "HISTORY_MSG_CROP_GUIDE_ASPECT_RATIO_PRESET_CHANGED");
+    EvCropGuideBleedChanged =
+        m->newEvent(MINUPDATE, "HISTORY_MSG_CROP_GUIDE_BLEED_CHANGED");
 }
 
 void CropGuide::setupPresets()
@@ -93,14 +115,9 @@ void CropGuide::setupPresets()
         const auto type_index = static_cast<CropGuideParams::PresetIndex>(i);
         auto& preset = m_presets[i];
 
-        preset.visible_icon = std::unique_ptr<RTImage>(
-            new RTImage("power-on-small", Gtk::ICON_SIZE_BUTTON));
-        preset.hidden_icon = std::unique_ptr<RTImage>(
-            new RTImage("power-off-small", Gtk::ICON_SIZE_BUTTON));
-
         auto visible_button = Gtk::manage(new Gtk::ToggleButton());
         preset.visibility_button = visible_button;
-        visible_button->set_image(*preset.hidden_icon);
+        updateImage(visible_button, false);
         visible_button->set_relief(Gtk::RELIEF_NONE);
         preset.visibility_conn = visible_button->signal_toggled().connect(sigc::bind(
                 sigc::mem_fun(this, &CropGuide::onPresetToggled), i));
@@ -158,6 +175,106 @@ void CropGuide::setupPresets()
     }
 }
 
+void CropGuide::setupAspectRatioGuides()
+{
+    auto box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL));
+    auto label = Gtk::manage(new Gtk::Label(M("TP_CROP_GUIDE_ASPECT_RATIO")));
+    label->set_halign(Gtk::ALIGN_START);
+    box->pack_start(*label);
+    m_available_aspect_ratios_combo = Gtk::manage(new MyComboBoxText());
+    m_available_aspect_ratios_conn = m_available_aspect_ratios_combo->signal_changed()
+        .connect(sigc::mem_fun(this, &CropGuide::onAspectRatioComboChanged));
+    box->pack_start(*m_available_aspect_ratios_combo);
+    pack_start(*box);
+
+    {
+        std::vector<AspectRatio> ratios;
+        fillAspectRatios(ratios);
+
+        m_aspect_ratio_presets.reserve(ratios.size());
+        size_t index = 0;
+        for (auto& r : ratios) {
+            m_available_aspect_ratios_combo->append(r.label);
+
+            Glib::RefPtr<AspectRatioModel> preset = AspectRatioModel::create();
+            preset->aspect_ratio = std::move(r);
+            preset->index = index++;
+            m_aspect_ratio_presets.push_back(preset);
+        }
+    }
+
+    m_aspect_ratio_listbox = Gtk::manage(new Gtk::ListBox());
+    m_aspect_ratio_listbox->set_selection_mode(Gtk::SELECTION_NONE);
+
+    auto placeholder = Gtk::manage(new Gtk::Label(
+        M("TP_CROP_GUIDE_NO_ASPECT_RATIO_GUIDES")));
+    placeholder->show();
+    m_aspect_ratio_listbox->set_placeholder(*placeholder);
+
+    m_aspect_ratio_listbox->bind_list_store(
+        m_aspect_ratio_store,
+        sigc::mem_fun(this, &CropGuide::createAspectRatioModelControls));
+    pack_start(*m_aspect_ratio_listbox);
+}
+
+Gtk::Widget* CropGuide::createAspectRatioModelControls(
+    const Glib::RefPtr<AspectRatioModel>& item)
+{
+    auto grid = Gtk::manage(new Gtk::Grid());
+
+    auto visible_button = Gtk::manage(new Gtk::ToggleButton());
+    visible_button->set_active(item->visible);
+    updateImage(visible_button, item->visible);
+    visible_button->set_relief(Gtk::RELIEF_NONE);
+    grid->attach(*visible_button, 0, 0);
+
+    visible_button->signal_clicked().connect(sigc::bind(
+        sigc::mem_fun(this, &CropGuide::onAspectRatioPresetToggled),
+        visible_button, item->index));
+
+    auto label = Gtk::manage(new Gtk::Label(item->aspect_ratio.label));
+    label->set_halign(Gtk::ALIGN_START);
+    label->set_line_wrap(true);
+    grid->attach(*label, 1, 0);
+
+    auto color_preview = Gtk::manage(new ColorPreview());
+    color_preview->set_hexpand(false);
+    color_preview->set_halign(Gtk::ALIGN_CENTER);
+    color_preview->set_vexpand(false);
+    color_preview->set_valign(Gtk::ALIGN_CENTER);
+    // color_preview->set_size_request(10, 10);
+    color_preview->setRgb(item->color.get_red(), item->color.get_green(),
+                          item->color.get_blue());
+    grid->attach(*color_preview, 0, 1);
+
+    auto box = Gtk::manage(new Gtk::Box());
+
+    auto color_button = Gtk::manage(new Gtk::Button());
+    color_button->set_image(*Gtk::manage(
+        new RTImage("color-picker-small", Gtk::ICON_SIZE_BUTTON)));
+    color_button->set_relief(Gtk::RELIEF_NONE);
+    box->pack_start(*color_button, false, false);
+
+    color_button->signal_clicked().connect(sigc::bind(
+        sigc::mem_fun(this, &CropGuide::onAspectRatioPresetPickColor),
+        item->index,
+        color_preview));
+
+    auto remove_button = Gtk::manage(new Gtk::Button());
+    remove_button->set_image(*Gtk::manage(
+        new RTImage("cancel-small", Gtk::ICON_SIZE_BUTTON)));
+    remove_button->set_relief(Gtk::RELIEF_NONE);
+    box->pack_start(*remove_button, false, false);
+
+    remove_button->signal_clicked().connect(sigc::bind(
+        sigc::mem_fun(this, &CropGuide::onAspectRatioPresetRemoved),
+        item->index));
+
+    grid->attach(*box, 1, 1);
+    grid->show_all();
+    return grid;
+}
+
 void CropGuide::read(const rtengine::procparams::ProcParams* pp,
                      const ParamsEdited* pedited)
 {
@@ -184,8 +301,7 @@ void CropGuide::read(const rtengine::procparams::ProcParams* pp,
 
         ConnectionBlocker block(preset.visibility_conn);
         preset.visibility_button->set_active(is_enabled);
-        preset.visibility_button->set_image(
-            is_enabled ? *preset.visible_icon : *preset.hidden_icon);
+        updateImage(preset.visibility_button, is_enabled);
 
         if (pedited) {
             preset.is_dirty = pedited->cropGuide.presets[i];
@@ -262,8 +378,7 @@ void CropGuide::onPresetToggled(size_t index)
 {
     auto& preset = m_presets.at(index);
     bool is_visible = preset.visibility_button->get_active();
-    preset.visibility_button->set_image(
-        is_visible ? *preset.visible_icon : *preset.hidden_icon);
+    updateImage(preset.visibility_button, is_visible);
     preset.is_dirty = true;
 
     if (listener && getEnabled()) {
@@ -325,5 +440,100 @@ void CropGuide::onGoldenRatioReset()
     if (listener && getEnabled()) {
         listener->panelChanged(EvCropGuidePresetChanged, M(GUIDE_TYPE_OPTIONS.at(
             CropGuideParams::PresetIndex::GOLDEN_RATIO)));
+    }
+}
+
+void CropGuide::onAspectRatioComboChanged()
+{
+    ConnectionBlocker block(m_available_aspect_ratios_conn);
+
+    int active_row = m_available_aspect_ratios_combo->get_active_row_number();
+    Glib::ustring active_text = m_available_aspect_ratios_combo->get_active_text();
+    m_available_aspect_ratios_combo->unset_active();
+    m_available_aspect_ratios_combo->remove_text(active_row);
+
+    auto is_matching_preset = [&](const Glib::RefPtr<AspectRatioModel>& preset) {
+        return active_text == preset->aspect_ratio.label;
+    };
+
+    auto it = std::find_if(m_aspect_ratio_presets.begin(), m_aspect_ratio_presets.end(),
+                           is_matching_preset);
+    if (it == m_aspect_ratio_presets.end()) return;
+
+    Glib::RefPtr<AspectRatioModel> model = *it;
+    model->active = true;
+    model->visible = true;
+    model->is_active_dirty = true;
+    model->is_visible_dirty = true;
+
+    // m_aspect_ratio_store->append(model);
+    auto cmp = [](const Glib::RefPtr<const AspectRatioModel>& lhs,
+                  const Glib::RefPtr<const AspectRatioModel>& rhs) {
+        if (lhs->index < rhs->index) {
+            return -1;
+        } else if (lhs->index > rhs->index) {
+            return 1;
+        } else {
+            return 0;
+        }
+    };
+    m_aspect_ratio_store->insert_sorted(model, cmp);
+}
+
+void CropGuide::onAspectRatioPresetToggled(Gtk::ToggleButton* button, size_t index)
+{
+    bool is_visible = button->get_active();
+    updateImage(button, is_visible);
+
+    auto& preset = m_aspect_ratio_presets.at(index);
+    preset->visible = is_visible;
+    preset->is_visible_dirty = true;
+
+    if (listener && getEnabled()) {
+        listener->panelChanged(EvCropGuideAspectRatioPresetChanged,
+                               preset->aspect_ratio.label);
+    }
+}
+
+void CropGuide::onAspectRatioPresetPickColor(size_t index, ColorPreview* preview)
+{
+    auto& preset = m_aspect_ratio_presets.at(index);
+
+    Gtk::ColorChooserDialog dialog;
+    dialog.set_use_alpha(false);
+    dialog.set_rgba(preset->color);
+
+    int result = dialog.run();
+    if (result != Gtk::RESPONSE_OK) return;
+
+    Gdk::RGBA color = dialog.get_rgba();
+    preset->color = color;
+    preview->setRgb(color.get_red(), color.get_green(), color.get_blue());
+
+    if (listener && getEnabled()) {
+        listener->panelChanged(EvCropGuideAspectRatioPresetChanged,
+                               preset->aspect_ratio.label);
+    }
+}
+
+void CropGuide::onAspectRatioPresetRemoved(size_t index)
+{
+    auto& preset = m_aspect_ratio_presets.at(index);
+    preset->active = false;
+    preset->visible = false;
+    preset->is_active_dirty = true;
+    preset->is_visible_dirty = true;
+
+    auto size = m_aspect_ratio_store->get_n_items();
+    for (guint i = 0; i < size; i++) {
+        if (m_aspect_ratio_store->get_object(i) == preset) {
+            m_aspect_ratio_store->remove(i);
+            break;
+        }
+    }
+
+    if (listener && getEnabled()) {
+        listener->panelChanged(EvCropGuideAspectRatioPresetChanged,
+                               preset->aspect_ratio.label);
     }
 }
