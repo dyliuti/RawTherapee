@@ -116,7 +116,7 @@ void FileBrowserEntry::refreshQuickThumbnailImage ()
     }
 
     // Only make a (slow) processed preview if the picture has been edited at all
-    bool upgrade_to_processed = (!options.internalThumbIfUntouched || thumbnail->isPParamsValid());
+    bool upgrade_to_processed = (!App::get().options().internalThumbIfUntouched || thumbnail->isPParamsValid());
     thumbImageUpdater->add(this, &updatepriority, upgrade_to_processed, false, this);
 }
 
@@ -204,7 +204,7 @@ void FileBrowserEntry::customBackBufferUpdate (Cairo::RefPtr<Cairo::Context> c)
         if (crop.enabled && !thumbnail->isQuick()) {
             const auto& cropGuide = thumbnail->getProcParams().cropGuide;
             auto cropGuideOverride = []() {
-                switch (options.cropGuides) {
+                switch (App::get().options().cropGuides) {
                     case Options::CROP_GUIDE_NONE:
                         return CropGuideOverride::NO_GUIDES;
                     case Options::CROP_GUIDE_FRAME:
@@ -332,7 +332,7 @@ bool FileBrowserEntry::motionNotify (int x, int y)
 
     Inspector* inspector = parent->getInspector();
 
-    if (inspector && inspector->isActive() && (!parent->isInTabMode() || options.inspectorWindow)) {
+    if (inspector && inspector->isActive() && (!parent->isInTabMode() || App::get().options().inspectorWindow)) {
         const rtengine::Coord2D coord(getPosInImgSpace(x, y));
 
         if (coord.x != -1.) {

@@ -103,7 +103,7 @@ void PreviewWindow::updatePreviewImage ()
         const auto& cparams = previewHandler->getCropParams();
 
         auto cropGuideOverride = []() {
-            switch (options.cropGuides) {
+            switch (App::get().options().cropGuides) {
                 case Options::CROP_GUIDE_NONE:
                     return CropGuideOverride::NO_GUIDES;
                 case Options::CROP_GUIDE_FRAME:
@@ -192,6 +192,7 @@ bool PreviewWindow::on_draw(const ::Cairo::RefPtr< Cairo::Context> &cr)
             cr->rectangle (rectX + 1 * s, rectY + 1 * s, rectW - 2 * s, rectH - 2 * s);
             cr->stroke ();
 
+            const auto& options = App::get().options();
             // draw a "frame" line. Color of frame line can be set in preferences
             cr->set_source_rgba(options.navGuideBrush[0], options.navGuideBrush[1], options.navGuideBrush[2], options.navGuideBrush[3]); //( 1.0, 1.0, 1.0, 1.0);
             cr->rectangle (rectX, rectY, rectW, rectH);

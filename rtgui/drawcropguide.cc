@@ -674,6 +674,7 @@ void drawCrop(const Cairo::RefPtr<Cairo::Context>& cr,
     double c2y = (cropParams.y + cropParams.h - starty) * scale - (fullImageVisible ? 0.0 : 1.0);
 
     // crop overlay color, linked with crop windows background
+    const auto& options = App::get().options();
     if (options.bgcolor == 0 || !useBgColor) {
         cr->set_source_rgba (options.cutOverlayBrush[0], options.cutOverlayBrush[1], options.cutOverlayBrush[2], options.cutOverlayBrush[3]);
     } else if (options.bgcolor == 1) {

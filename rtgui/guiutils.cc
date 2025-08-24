@@ -431,7 +431,7 @@ bool MyExpander::on_enter_leave_enable (GdkEventCrossing* event)
 
 void MyExpander::updateStyle()
 {
-    updateVScrollbars(options.hideTPVScrollbar);
+    updateVScrollbars(App::get().options().hideTPVScrollbar);
 
 //GTK318
 #if GTK_MAJOR_VERSION == 3 && GTK_MINOR_VERSION < 20
@@ -658,7 +658,7 @@ MyScrolledWindow::MyScrolledWindow ()
 
 bool MyScrolledWindow::on_scroll_event (GdkEventScroll* event)
 {
-    if (!options.hideTPVScrollbar) {
+    if (!App::get().options().hideTPVScrollbar) {
         Gtk::ScrolledWindow::on_scroll_event (event);
         return true;
     }
