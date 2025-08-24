@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
 
 env:
-  publish_pre_dev_labels: '["RawTherapee:windows-arm"]'
+  publish_pre_dev_labels: '[]'
 
 
 jobs:
