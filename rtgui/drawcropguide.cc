@@ -21,6 +21,7 @@
 
 #include "options.h"
 
+#include "rtengine/aspectratios.h"
 #include "rtengine/procparams.h"
 
 #include <cmath>
@@ -50,6 +51,15 @@ struct GuideDrawer {
     const CropRect& rect;
     const CropGuideParams& params;
 
+    double red = 1.0;
+    double green = 1.0;
+    double blue = 1.0;
+
+    GuideDrawer(const Cairo::RefPtr<Cairo::Context>& context,
+                const CropRect& bounds,
+                const CropGuideParams& guideParams)
+        : cr(context), rect(bounds), params(guideParams) {}
+
     void drawRuleOfThirds();
     void drawHarmonicMeans();
     void drawCrosshair();
@@ -61,6 +71,7 @@ struct GuideDrawer {
     void drawGoldenTriangle();
 
     void drawGoldenRatio();
+    void drawAspectRatios();
 
     void drawHorizontal(double ratio);
     void drawVertical(double ratio);
@@ -141,6 +152,8 @@ void drawCropGuides(const Cairo::RefPtr<Cairo::Context>& cr,
 
         util.drawGoldenRatio();
     }
+
+    util.drawAspectRatios();
 }
 
 }  // namespace
@@ -530,6 +543,72 @@ void GuideDrawer::drawGoldenRatioRecursive(double x, double y, double length,
     drawGoldenRatioRecursive(next_x, next_y, offset, next_dir, limit, clockwise);
 }
 
+void GuideDrawer::drawAspectRatios()
+{
+    const double w = rect.x1 - rect.x0;
+    const double h = rect.y1 - rect.y0;
+    const double rect_ratio = w / h;
+
+    for (const auto& entry : params.aspect_ratios) {
+        if (!entry.enabled) continue;
+
+        red = entry.red;
+        green = entry.green;
+        blue = entry.blue;
+
+        const double aspect_ratio = getAspectRatioValue(entry.preset_index);
+        const double inverse_aspect_ratio = 1.0 / aspect_ratio;
+
+        // If the current ratio doesn't match the desired aspect ratio, use a
+        // fitted and centered guide that does match the aspect ratio.
+        double fitted_w = w;
+        double fitted_h = h;
+
+        if (w >= h) {
+            if (rect_ratio >= aspect_ratio) {
+                fitted_w = h * aspect_ratio;
+                fitted_h = h;
+            } else {
+                fitted_w = w;
+                fitted_h = w * inverse_aspect_ratio;
+            }
+        } else {
+            if (rect_ratio <= inverse_aspect_ratio) {
+                fitted_w = w;
+                fitted_h = w * aspect_ratio;
+            } else {
+                fitted_w = h * inverse_aspect_ratio;
+                fitted_h = h;
+            }
+        }
+
+        const double delta_w = w - fitted_w;
+        const double delta_h = h - fitted_h;
+
+        const CropRect fitted_rect {
+            rect.x0 + (delta_w / 2.0),
+            rect.y0 + (delta_h / 2.0),
+            rect.x1 - (delta_w / 2.0),
+            rect.y1 - (delta_h / 2.0)
+        };
+
+        // Don't show new fitted rect bounds if close enough
+        if (delta_w >= 2.0) {
+            drawDashedLine(fitted_rect.x0, fitted_rect.y0, fitted_rect.x0, fitted_rect.y1);
+            drawDashedLine(fitted_rect.x1, fitted_rect.y0, fitted_rect.x1, fitted_rect.y1);
+        }
+        if (delta_h >= 2.0) {
+            drawDashedLine(fitted_rect.x0, fitted_rect.y0, fitted_rect.x1, fitted_rect.y0);
+            drawDashedLine(fitted_rect.x0, fitted_rect.y1, fitted_rect.x1, fitted_rect.y1);
+        }
+    }
+
+    // Restore default crop guide color
+    red = 1.0;
+    green = 1.0;
+    blue = 1.0;
+}
+
 void GuideDrawer::drawHorizontal(double ratio)
 {
     double y = rect.y0 + std::round((rect.y1 - rect.y0) * ratio);
@@ -544,7 +623,7 @@ void GuideDrawer::drawVertical(double ratio)
 
 void GuideDrawer::drawDashedLine(double x0, double y0, double x1, double y1)
 {
-    cr->set_source_rgba(1.0, 1.0, 1.0, GUIDE_ALPHA);
+    cr->set_source_rgba(red, green, blue, GUIDE_ALPHA);
     cr->move_to(x0, y0);
     cr->line_to(x1, y1);
     cr->stroke();

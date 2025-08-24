@@ -86,9 +86,6 @@ private:
         Gdk::RGBA color;
         bool active = false;
         bool visible = true;
-
-        bool is_active_dirty = false;
-        bool is_visible_dirty = false;
     };
 
     struct Preset {
@@ -106,6 +103,9 @@ private:
     void onAspectRatioPresetPickColor(size_t index, ColorPreview* preview);
     void onAspectRatioPresetRemoved(size_t index);
 
+    int compareAspectRatioModels(const Glib::RefPtr<const AspectRatioModel>& lhs,
+                                 const Glib::RefPtr<const AspectRatioModel>& rhs) const;
+
     Gtk::Widget* createAspectRatioModelControls(
         const Glib::RefPtr<AspectRatioModel>& item);
 
@@ -117,7 +117,7 @@ private:
     Glib::RefPtr<Gio::ListStore<AspectRatioModel>> m_aspect_ratio_store;
     std::vector<Glib::RefPtr<AspectRatioModel>> m_aspect_ratio_presets;
 
-    std::array<Preset, 8> m_presets;
+    std::array<Preset, 9> m_presets;
     bool m_mirror_golden_triangle;
     bool m_dirty_mirror_golden_triangle;
 
@@ -125,6 +125,8 @@ private:
     bool m_dirty_rotate_golden_ratio;
     bool m_mirror_golden_ratio;
     bool m_dirty_mirror_golden_ratio;
+
+    bool m_dirty_aspect_ratios;
 
     rtengine::ProcEvent EvCropGuideEnabled;
     rtengine::ProcEvent EvCropGuidePresetChanged;

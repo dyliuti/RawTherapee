@@ -2274,8 +2274,6 @@ void CropParams::mapToResized(int resizedWidth, int resizedHeight, int scale, in
 CropGuideParams::AspectRatioParams::AspectRatioParams(size_t preset_index)
     : enabled(false)
     , preset_index(preset_index)
-    , width(getAspectRatioValue(preset_index))
-    , height(1.0)
     , red(1.0)
     , green(1.0)
     , blue(1.0)
@@ -2286,8 +2284,6 @@ bool CropGuideParams::AspectRatioParams::operator==(const AspectRatioParams& oth
 {
     return enabled == other.enabled
         && preset_index == other.preset_index
-        && width == other.width
-        && height == other.height
         && red == other.red
         && green == other.green
         && blue == other.blue;
@@ -2309,6 +2305,7 @@ bool CropGuideParams::operator==(const CropGuideParams& other) const
         && mirror_golden_triangle == other.mirror_golden_triangle
         && rotate_golden_ratio == other.rotate_golden_ratio
         && mirror_golden_ratio == other.mirror_golden_ratio
+        && aspect_ratios == other.aspect_ratios
         && bleed == other.bleed;
 }
 

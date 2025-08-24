@@ -72,6 +72,7 @@ CropGuide::CropGuide()
     , m_dirty_rotate_golden_ratio(false)
     , m_mirror_golden_ratio(false)
     , m_dirty_mirror_golden_ratio(false)
+    , m_dirty_aspect_ratios(false)
 {
     setupEvents();
 
@@ -240,7 +241,6 @@ Gtk::Widget* CropGuide::createAspectRatioModelControls(
     color_preview->set_halign(Gtk::ALIGN_CENTER);
     color_preview->set_vexpand(false);
     color_preview->set_valign(Gtk::ALIGN_CENTER);
-    // color_preview->set_size_request(10, 10);
     color_preview->setRgb(item->color.get_red(), item->color.get_green(),
                           item->color.get_blue());
     grid->attach(*color_preview, 0, 1);
@@ -305,6 +305,42 @@ void CropGuide::read(const rtengine::procparams::ProcParams* pp,
             preset.is_dirty = pedited->cropGuide.presets[i];
         }
     }
+
+    m_aspect_ratio_store->remove_all();
+    for (const auto& model : m_aspect_ratio_presets) {
+        model->active = false;
+        model->visible = true;
+
+        Gdk::RGBA color;
+        color.set_rgba(1.f, 1.f, 1.f);
+        model->color = color;
+    }
+
+    for (const auto& param : pp->cropGuide.aspect_ratios) {
+        auto& preset = m_aspect_ratio_presets.at(param.preset_index);
+        preset->active = true;
+        preset->visible = param.enabled;
+
+        Gdk::RGBA color;
+        color.set_rgba(static_cast<float>(param.red), static_cast<float>(param.green),
+                       static_cast<float>(param.blue));
+        preset->color = color;
+
+        m_aspect_ratio_store->insert_sorted(
+            preset, sigc::mem_fun(this, &CropGuide::compareAspectRatioModels));
+    }
+
+    ConnectionBlocker block(m_available_aspect_ratios_conn);
+    m_available_aspect_ratios_combo->remove_all();
+    for (const auto& model : m_aspect_ratio_presets) {
+        if (!model->active) {
+            m_available_aspect_ratios_combo->append(model->aspect_ratio.label);
+        }
+    }
+
+    if (pedited) {
+        m_dirty_aspect_ratios = pedited->cropGuide.aspect_ratios;
+    }
 }
 
 void CropGuide::write(rtengine::procparams::ProcParams* pp, ParamsEdited* pedited)
@@ -331,6 +367,23 @@ void CropGuide::write(rtengine::procparams::ProcParams* pp, ParamsEdited* pedite
         if (pedited) {
             pedited->cropGuide.presets[i] = preset.is_dirty;
         }
+    }
+
+    if (pedited) {
+        pedited->cropGuide.aspect_ratios = m_dirty_aspect_ratios;
+    }
+
+    pp->cropGuide.aspect_ratios.clear();
+    for (const auto& model : m_aspect_ratio_presets) {
+        if (!model->active) continue;
+
+        CropGuideParams::AspectRatioParams params(model->index);
+        params.enabled = model->visible;
+        params.red = model->color.get_red();
+        params.green = model->color.get_green();
+        params.blue = model->color.get_blue();
+
+        pp->cropGuide.aspect_ratios.push_back(std::move(params));
     }
 }
 
@@ -461,21 +514,15 @@ void CropGuide::onAspectRatioComboChanged()
     Glib::RefPtr<AspectRatioModel> model = *it;
     model->active = true;
     model->visible = true;
-    model->is_active_dirty = true;
-    model->is_visible_dirty = true;
+    m_dirty_aspect_ratios = true;
 
-    // m_aspect_ratio_store->append(model);
-    auto cmp = [](const Glib::RefPtr<const AspectRatioModel>& lhs,
-                  const Glib::RefPtr<const AspectRatioModel>& rhs) {
-        if (lhs->index < rhs->index) {
-            return -1;
-        } else if (lhs->index > rhs->index) {
-            return 1;
-        } else {
-            return 0;
-        }
-    };
-    m_aspect_ratio_store->insert_sorted(model, cmp);
+    m_aspect_ratio_store->insert_sorted(
+        model, sigc::mem_fun(this, &CropGuide::compareAspectRatioModels));
+
+    if (listener && getEnabled()) {
+        listener->panelChanged(EvCropGuideAspectRatioPresetChanged,
+                               model->aspect_ratio.label);
+    }
 }
 
 void CropGuide::onAspectRatioPresetToggled(Gtk::ToggleButton* button, size_t index)
@@ -485,7 +532,7 @@ void CropGuide::onAspectRatioPresetToggled(Gtk::ToggleButton* button, size_t ind
 
     auto& preset = m_aspect_ratio_presets.at(index);
     preset->visible = is_visible;
-    preset->is_visible_dirty = true;
+    m_dirty_aspect_ratios = true;
 
     if (listener && getEnabled()) {
         listener->panelChanged(EvCropGuideAspectRatioPresetChanged,
@@ -506,6 +553,8 @@ void CropGuide::onAspectRatioPresetPickColor(size_t index, ColorPreview* preview
 
     Gdk::RGBA color = dialog.get_rgba();
     preset->color = color;
+    m_dirty_aspect_ratios = true;
+
     preview->setRgb(color.get_red(), color.get_green(), color.get_blue());
 
     if (listener && getEnabled()) {
@@ -519,8 +568,7 @@ void CropGuide::onAspectRatioPresetRemoved(size_t index)
     auto& preset = m_aspect_ratio_presets.at(index);
     preset->active = false;
     preset->visible = false;
-    preset->is_active_dirty = true;
-    preset->is_visible_dirty = true;
+    m_dirty_aspect_ratios = true;
 
     auto size = m_aspect_ratio_store->get_n_items();
     for (guint i = 0; i < size; i++) {
@@ -533,5 +581,18 @@ void CropGuide::onAspectRatioPresetRemoved(size_t index)
     if (listener && getEnabled()) {
         listener->panelChanged(EvCropGuideAspectRatioPresetChanged,
                                preset->aspect_ratio.label);
+    }
+}
+
+int CropGuide::compareAspectRatioModels(
+    const Glib::RefPtr<const AspectRatioModel>& lhs,
+    const Glib::RefPtr<const AspectRatioModel>& rhs) const
+{
+    if (lhs->index < rhs->index) {
+        return -1;
+    } else if (lhs->index > rhs->index) {
+        return 1;
+    } else {
+        return 0;
     }
 }

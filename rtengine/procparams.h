@@ -938,8 +938,6 @@ struct CropGuideParams {
     struct AspectRatioParams {
         bool enabled;
         size_t preset_index;
-        double width;
-        double height;
         double red;
         double green;
         double blue;
