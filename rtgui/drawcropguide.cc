@@ -23,9 +23,9 @@
 
 #include "rtengine/aspectratios.h"
 #include "rtengine/procparams.h"
+#include "rtengine/rt_math.h"
 
-#include <cmath>
-
+using namespace rtengine;
 using namespace rtengine::procparams;
 
 namespace
@@ -451,7 +451,7 @@ void GuideDrawer::drawGoldenRatioRecursive(double x, double y, double length,
     double arc_x = x;
     double arc_y = y;
     // In radians, the angles of the spiral's circular arc segment.
-    double arc_start = 2 * M_PI;
+    double arc_start = 2 * RT_PI;
     double arc_end = 0;
     // The end point of the spiral after this iteration.
     double next_x = x;
@@ -461,9 +461,9 @@ void GuideDrawer::drawGoldenRatioRecursive(double x, double y, double length,
     // These angles are if you are viewing the image on a normal x/y graph.
     // (i.e. they don't match cairo angles)
     constexpr double ARC_0 = 0.0;
-    constexpr double ARC_90 = 3.0 * M_PI / 2.0;
-    constexpr double ARC_180 = M_PI;
-    constexpr double ARC_270 = M_PI / 2.0;
+    constexpr double ARC_90 = 3.0 * RT_PI / 2.0;
+    constexpr double ARC_180 = RT_PI;
+    constexpr double ARC_270 = RT_PI / 2.0;
 
     if (clockwise) {
         switch (dir) {
