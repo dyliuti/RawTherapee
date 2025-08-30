@@ -178,8 +178,13 @@ public:
     // previewloaderlistener interface
     void previewReady (int dir_id, FileBrowserEntry* fdn) override;
     void previewsFinished (int dir_id) override;
+    // called asynchronoysly from the main event loop
     void previewsFinishedUI ();
-    void _refreshProgressBar ();
+
+    // called  asynchronously from the main event loop
+    void previewsFinishedUI(int dir_id);
+
+    void _refreshProgressBar();
 
     void setInspector(Inspector* inspector)
     {
