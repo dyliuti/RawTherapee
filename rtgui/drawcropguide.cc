@@ -708,10 +708,16 @@ void drawCrop(const Cairo::RefPtr<Cairo::Context>& cr,
     // If bleed is enabled, shrink the crop rect to simulate the bleed margin
     CropRect bleed_rect = crop_rect;
     {
+        // outer = inner + 2 * bleed * inner = (1 + 2 * bleed) * inner
+        double scale = (1.0 + 2.0 * cropGuideParams.bleed / 100.0);
+
         double w = crop_rect.x1 - crop_rect.x0;
         double h = crop_rect.y1 - crop_rect.y0;
-        double dx = w * cropGuideParams.bleed / 100.0;
-        double dy = h * cropGuideParams.bleed / 100.0;
+        double new_w = w / scale;
+        double new_h = h / scale;
+
+        double dx = (w - new_w) / 2.0;
+        double dy = (h - new_h) / 2.0;
 
         bleed_rect.x0 += dx;
         bleed_rect.y0 += dy;
