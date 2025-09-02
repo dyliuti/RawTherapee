@@ -897,14 +897,14 @@ void FileCatalog::previewsFinishedUI(int dir_id)
     redrawAll();
     previewsToLoad = 0;
 
-    if (!hasValidCurrentEFS) {
-        MyMutex::MyLock lock(dirEFSMutex);
-        currentEFS = dirEFS;
-    }
-
     if (filterPanel) {
         filterPanel->set_sensitive(true);
-        filterPanel->setFilter(currentEFS, false);
+        if (!hasValidCurrentEFS) {
+            MyMutex::MyLock lock(dirEFSMutex);
+            filterPanel->setFilter(dirEFS, true);
+        } else {
+            filterPanel->setFilter(currentEFS, false);
+        }
     }
 
     if (exportPanel) {
