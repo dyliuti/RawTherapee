@@ -174,7 +174,7 @@ public:
             ThumbImageUpdateListener::ImageUpdate update(
                     img, logical, device_scale, scale,
                     thm->getProcParams().crop, thm->getProcParams().cropGuide);
-            j.listener_->updateImage(std::move(update));
+            j.listener_->updateImage(update);
         }
 
         if ( --active_ == 0 ) {
