@@ -1256,7 +1256,6 @@ void EditorPanel::open (Thumbnail* tmb, rtengine::InitialImage* isrc)
 
     // initialize everything
     openThm = tmb;
-    openThm->increaseRef ();
 
     fname = openThm->getFileName();
     lastSaveAsFileName = removeExtension (Glib::path_get_basename (fname));
