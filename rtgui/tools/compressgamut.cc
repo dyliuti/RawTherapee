@@ -23,8 +23,9 @@
 #include "compressgamut.h"
 
 #include "eventmapper.h"
-
+#include <iomanip>
 #include "rtengine/procparams.h"
+
 
 using namespace rtengine;
 using namespace rtengine::procparams;
@@ -46,7 +47,6 @@ Compressgamut::Compressgamut () : FoldableToolPanel(this, TOOL_NAME, M("TP_COMPR
     Evcgenabled = m->newEvent(COMPR, "HISTORY_MSG_CG_ENABLED");
 
 
-
     Gtk::Frame *iFrame = Gtk::manage(new Gtk::Frame(M("TP_COMPRESSGAMUT_MAIN_COLORSPACE")));
 
     iFrame->set_label_align(0.025f, 0.5);
@@ -61,12 +61,18 @@ Compressgamut::Compressgamut () : FoldableToolPanel(this, TOOL_NAME, M("TP_COMPR
     colorspace->append(M("TP_COMPRESSGAMUT_SRGB"));
     colorspace->append(M("TP_COMPRESSGAMUT_DCIP3"));
     colorspace->append(M("TP_COMPRESSGAMUT_ACESP1"));
+    colorspace->append(M("TP_COMPRESSGAMUT_BETA"));
     colorspace->set_active(3);
     iVBox->pack_start(*colorspace);
     iFrame->add(*iVBox);
     pack_start(*iFrame);
     colorspaceconn = colorspace->signal_changed().connect(sigc::mem_fun(*this, &Compressgamut::colorspaceChanged));
+ 
+    acLabel = Gtk::manage (new Gtk::Label ("---"));
+    setExpandAlignProperties (acLabel, true, false, Gtk::ALIGN_CENTER, Gtk::ALIGN_START);
+    acLabel->set_tooltip_markup (M ("TP_COMPRESSGAMUT_MACLABEL_TOOLTIP"));
 
+    acLabel->show ();
     // Percentage of the core gamut to protect Limits
     // Values calculated to protect all the colors of the ColorChecker Classic 24 as given by
     // ISO 17321-1 and Ohta (1997)
@@ -101,12 +107,14 @@ Compressgamut::Compressgamut () : FoldableToolPanel(this, TOOL_NAME, M("TP_COMPR
     limVBox->pack_start (*d_c);
     limVBox->pack_start (*d_m);
     limVBox->pack_start (*d_y);
+    limVBox->pack_start (*acLabel);
+
     limFrame->add(*limVBox);
     pack_start(*limFrame, Gtk::PACK_SHRINK);
 
     // Aggressiveness of the compression curve Pwr
     rolloff = Gtk::manage(new Gtk::CheckButton(M("TP_COMPRESSGAMUT_ROLLOFF")));
-    pwr = Gtk::manage (new Adjuster (M("TP_COMPRESSGAMUT_PWR"), 0.5, 2.0, 0.01, 1.2));
+    pwr = Gtk::manage (new Adjuster (M("TP_COMPRESSGAMUT_PWR"), 0.2, 2.0, 0.01, 1.2));
     rolloffconn = rolloff->signal_toggled().connect (sigc::mem_fun (*this, &Compressgamut::rolloff_change));
 
     Gtk::Frame *rollFrame = Gtk::manage(new Gtk::Frame());
@@ -131,6 +139,34 @@ Compressgamut::Compressgamut () : FoldableToolPanel(this, TOOL_NAME, M("TP_COMPR
     d_y->setLogScale(100, 1);   
     show_all_children ();
 }
+
+Compressgamut::~Compressgamut()
+{
+    idle_register.destroy();
+}
+
+void Compressgamut::achromaticChanged (double acmax)
+{
+
+
+    idle_register.add(
+         [this, acmax]() -> bool
+
+        {
+            GThreadLock lock; // All GUI access from idle_add callbacks or separate thread HAVE to be protected
+
+            disableListener();
+            acLabel->set_text(
+                Glib::ustring::compose(M("TP_COMPRESSGAMUT_MACLABEL"),
+                                    Glib::ustring::format(std::fixed, std::setprecision(2), acmax))
+            );
+            enableListener();
+            return false;
+        }
+    );
+
+}
+
 
 void Compressgamut::read (const ProcParams* pp, const ParamsEdited* pedited)
 {
@@ -176,6 +212,8 @@ void Compressgamut::read (const ProcParams* pp, const ParamsEdited* pedited)
         colorspace->set_active(4);
     } else if (pp->cg.colorspace == "acesp1") {
         colorspace->set_active(5);
+    } else if (pp->cg.colorspace == "beta") {
+        colorspace->set_active(6);    
     }
     colorspaceconn.block (false);
 
@@ -217,6 +255,8 @@ void Compressgamut::write (ProcParams* pp, ParamsEdited* pedited)
         pp->cg.colorspace = "dcip3";
     } else if (colorspace->get_active_row_number() == 5){
         pp->cg.colorspace = "acesp1";
+    } else if (colorspace->get_active_row_number() == 6){
+        pp->cg.colorspace = "beta";
     }
 
 

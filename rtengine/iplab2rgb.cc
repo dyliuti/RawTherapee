@@ -468,7 +468,7 @@ void ImProcFunctions::preserv(LabImage *nprevl, LabImage *provis, int cw, int ch
 //const float PWR = 1.2;
 
 
-void ImProcFunctions::gamutcompr( Imagefloat *src, Imagefloat *dst) const
+void ImProcFunctions::gamutcompr( Imagefloat *src, Imagefloat *dst, float &mac) const
 {
      if (settings->verbose) {
         printf("Apply compression gamut \n");
@@ -554,6 +554,17 @@ void ImProcFunctions::gamutcompr( Imagefloat *src, Imagefloat *dst) const
         acesp1[2][1] = 0.009998;
         acesp1[2][2] = 0.820945;
 
+    Matrix beta = {};//Beta RGB near Pointers'gamut
+        beta[0][0] = 0.6712537;
+        beta[0][1] = 0.1745834;
+        beta[0][2] = 0.1183829;
+        beta[1][0] = 0.3032726;
+        beta[1][1] = 0.6637861;
+        beta[1][2] = 0.0329413;
+        beta[2][0] = 0.0000000;
+        beta[2][1] = 0.0407010;
+        beta[2][2] = 0.7845090;
+       
     Matrix out = {};
 
     if (params->cg.colorspace == "rec2020") {
@@ -568,6 +579,8 @@ void ImProcFunctions::gamutcompr( Imagefloat *src, Imagefloat *dst) const
         out = dcip3;
     } else if  (params->cg.colorspace == "acesp1") {
         out = acesp1;
+   } else if  (params->cg.colorspace == "beta") {
+        out = beta;        
     } else {
         out = acesp1; // Should never happen, but just in case.
     }
@@ -606,9 +619,10 @@ void ImProcFunctions::gamutcompr( Imagefloat *src, Imagefloat *dst) const
     const int width = src->getWidth();
 
     constexpr float range = 65535.f;
-
+    float ac = 0.f;
+    float maxac = 0.f;
 #ifdef _OPENMP
-        #   pragma omp parallel for schedule(dynamic,16) if (multiThread)
+        #   pragma omp parallel for reduction(max:maxac) schedule(dynamic,16) if (multiThread)
 #endif
 
     for (int i = 0; i < height; ++i)
@@ -620,13 +634,17 @@ void ImProcFunctions::gamutcompr( Imagefloat *src, Imagefloat *dst) const
             float rout = 0.f;
             float gout = 0.f;
             float bout = 0.f;
-            Color::aces_reference_gamut_compression(rgb_in, th, dl, to_out, from_out, pw, roll, rout, gout, bout);
+            Color::aces_reference_gamut_compression(rgb_in, th, dl, to_out, from_out, pw, roll, rout, gout, bout, ac);
+            if (ac > maxac) {
+                maxac = ac;
+            }
             dst->r(i, j) = range * rout;//in interval 0..65535
             dst->g(i, j) = range * gout;
             dst->b(i, j) = range * bout;
         }
+        mac = maxac;
+      
 }
-
 
 inline float power_norm2(float r, float g, float b)
 {
