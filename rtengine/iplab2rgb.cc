@@ -467,8 +467,8 @@ void ImProcFunctions::preserv(LabImage *nprevl, LabImage *provis, int cw, int ch
 // Aggressiveness of the compression curve
 //const float PWR = 1.2;
 
-
-void ImProcFunctions::gamutcompr( Imagefloat *src, Imagefloat *dst, float &mac) const
+//Jacques Desmis December 2025
+void ImProcFunctions::gamutcompr( Imagefloat *src, Imagefloat *dst, float &mac, float &mac0, float &mac1, float &mac2) const
 {
      if (settings->verbose) {
         printf("Apply compression gamut \n");
@@ -564,7 +564,7 @@ void ImProcFunctions::gamutcompr( Imagefloat *src, Imagefloat *dst, float &mac) 
         beta[2][0] = 0.0000000;
         beta[2][1] = 0.0407010;
         beta[2][2] = 0.7845090;
-       
+
     Matrix out = {};
 
     if (params->cg.colorspace == "rec2020") {
@@ -580,7 +580,7 @@ void ImProcFunctions::gamutcompr( Imagefloat *src, Imagefloat *dst, float &mac) 
     } else if  (params->cg.colorspace == "acesp1") {
         out = acesp1;
    } else if  (params->cg.colorspace == "beta") {
-        out = beta;        
+        out = beta;
     } else {
         out = acesp1; // Should never happen, but just in case.
     }
@@ -620,9 +620,16 @@ void ImProcFunctions::gamutcompr( Imagefloat *src, Imagefloat *dst, float &mac) 
 
     constexpr float range = 65535.f;
     float ac = 0.f;
+    float ac0 = 0.f;
+    float ac1 = 0.f;
+    float ac2 = 0.f;
     float maxac = 0.f;
+    float maxac0 = 0.f;
+    float maxac1 = 0.f;
+    float maxac2 = 0.f;
+
 #ifdef _OPENMP
-        #   pragma omp parallel for reduction(max:maxac) schedule(dynamic,16) if (multiThread)
+        #   pragma omp parallel for reduction(max:maxac) reduction(max:maxac0) reduction(max:maxac1) reduction(max:maxac2) schedule(dynamic,16) if (multiThread)
 #endif
 
     for (int i = 0; i < height; ++i)
@@ -634,16 +641,29 @@ void ImProcFunctions::gamutcompr( Imagefloat *src, Imagefloat *dst, float &mac) 
             float rout = 0.f;
             float gout = 0.f;
             float bout = 0.f;
-            Color::aces_reference_gamut_compression(rgb_in, th, dl, to_out, from_out, pw, roll, rout, gout, bout, ac);
+            //find maximum achromatic for red, green, blue
+            Color::aces_reference_gamut_compression(rgb_in, th, dl, to_out, from_out, pw, roll, rout, gout, bout, ac, ac0, ac1, ac2);
             if (ac > maxac) {
                 maxac = ac;
             }
+            if (ac0 > maxac0) {
+                maxac0 = ac0;
+            }
+            if (ac1 > maxac1) {
+                maxac1 = ac1;
+            }
+            if (ac2 > maxac2) {
+                maxac2 = ac2;
+            }
+
             dst->r(i, j) = range * rout;//in interval 0..65535
             dst->g(i, j) = range * gout;
             dst->b(i, j) = range * bout;
         }
-        mac = maxac;
-      
+        mac = maxac;  
+        mac0 = maxac0;
+        mac1 = maxac1;
+        mac2 = maxac2; 
 }
 
 inline float power_norm2(float r, float g, float b)
