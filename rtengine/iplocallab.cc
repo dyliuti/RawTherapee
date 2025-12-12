@@ -242,6 +242,8 @@ void calcGammaLut(double gamma, double ts, LUTf &gammaLut)
     }
 }
 
+
+
 float calcLocalFactor(const float lox, const float loy, const float lcx, const float dx, const float lcy, const float dy, const float ach, const float gradient)
 {
     //ellipse x2/a2 + y2/b2=1
@@ -435,7 +437,6 @@ void SobelCannyLuma(float **sobelL, float **luma, int bfw, int bfh, float radius
         sobelL[bfh - 1][x] = 0.f;
     }
 }
-
 
 float igammalog(float x, float p, float s, float g2, float g4)
 {
@@ -886,6 +887,8 @@ struct local_params {
     
 
 };
+
+
 
 static void calcLocalParams(int sp, int oW, int oH,  const LocallabParams& locallab, struct local_params& lp, bool prevDeltaE, int llColorMask, int llColorMaskinv, int llExpMask, int llExpMaskinv, int llSHMask, int llSHMaskinv, int llvibMask, int lllcMask, int llsharMask, int llcbMask, int llretiMask, int llsoftMask, int lltmMask, int llblMask, int lllogMask, int ll_Mask, int llcieMask, const LocwavCurve & locwavCurveden, bool locwavdenutili)
 {
@@ -18318,18 +18321,69 @@ void ImProcFunctions::Lab_Local(
                         float maxw = -100.f;
                         float maxwred = -100.f;
                         float maxwgreen = -100.f;                      
-                        float maxwblue = -100.f;                      
+                        float maxwblue = -100.f;
+                        constexpr float range = 65535.f;
+                        using Triple = std::array<double, 3>;
+                        using Matrix = std::array<Triple, 3>;
 
- 
+                        Matrix inv_agx_T = {};//initialize inv_agx_T
+
+                        if(params->locallab.spots.at(sp).ghs_agx == true) {
+                            //Define AgX matrix for color space transformation
+                            const Matrix agx_mat = {{
+                                { 0.856627153315983, 0.0951212405381588, 0.0482516061458583 },
+                                { 0.137318972929847, 0.761241990602591, 0.101439036467562 },
+                                { 0.11189821299995, 0.0767994186031903, 0.811302368396859 }
+                            }};
+
+                            Matrix agx_T = {};
+                            Color::transpose(agx_mat, agx_T);//transpose Matrix
+                            //invert matrix
+                            if (!rtengine::invertMatrix(agx_T, inv_agx_T)) {
+                                if (settings->verbose) {
+                                    std::cout << "Matrix is not invertible, skipping and use this one" << std::endl;
+                                }
+                                //If the calculations fail, we use this matrix calculated with a spreadsheet. Note that if 'agx_mat' changes, you must redo the calculations.
+                                inv_agx_T[0][0] = 1.1974410768877;
+                                inv_agx_T[0][1] = -0.196474626321346;
+                                inv_agx_T[0][2] = -0.146557417106601;
+                                inv_agx_T[1][0] = -0.144261512698001;
+                                inv_agx_T[1][1] = 1.35409513146973;
+                                inv_agx_T[1][2] = -0.1082844058788469;
+                                inv_agx_T[2][0] = -0.0531795641897042;
+                                inv_agx_T[2][1] = -0.157620505148385;
+                                inv_agx_T[2][2] = 1.25484147589507;                               
+                            }
+                            //now we have 2 Matrix to convert tmpimage with Agx
+
+#ifdef _OPENMP
+        #   pragma omp parallel for schedule(dynamic,16) if (multiThread)
+#endif
+                            for (int i = 0; i < bfh; ++i)
+                                for (int j = 0; j < bfw; ++j) {
+                                    const float r = tmpImage->r(i, j);
+                                    const float g = tmpImage->g(i, j);
+                                    const float b = tmpImage->b(i, j);
+                                    std::array<float, 3> rgb_in{r, g, b};
+                                    float rout = 0.f;
+                                    float gout = 0.f;
+                                    float bout = 0.f;                             
+                                    Color::agx_trans(rgb_in, agx_T, rout, gout, bout);
+                                    tmpImage->r(i, j) = rtengine::max(0.00001f, rout);//avoid negatives values. Normally this should never happen because the coefficients of Agx_T are all positive... unless the matrix changes
+                                    tmpImage->g(i, j) = rtengine::max(0.00001f, gout);//these potentially negative values, related to calculations and not to the gamut, are not accepted by the rgblab or labrgb, workingtrc functions, etc,
+                                    tmpImage->b(i, j) = rtengine::max(0.00001f, bout);//but after numerous checks, this has no impact on the results...except to prevent a crash.                                                  
+                                }                               
+                        }
+
                         if(params->locallab.spots.at(sp).ghs_autobw == true  && strtype == GHTStrType::NORMAL) { //find probably White point and black point ...Must be adjusted manually in soma cases notably Black point with negatives values...                        
 #ifdef _OPENMP
         #   pragma omp parallel for reduction(min:minb) reduction(max:maxw) reduction(max:maxwred) reduction(max:maxwgreen) reduction(max:maxwblue) if (multiThread)
 #endif
                              for (int i = 0; i < bfh; ++i)
                                 for (int j = 0; j < bfw; ++j) {
-                                    float r = tmpImage->r(i, j) / 65535.f;
-                                    float g = tmpImage->g(i, j) / 65535.f;
-                                    float b = tmpImage->b(i, j) / 65535.f;
+                                    float r = tmpImage->r(i, j) / range;
+                                    float g = tmpImage->g(i, j) / range;
+                                    float b = tmpImage->b(i, j) / range;
                                     float minrgb = rtengine::min(r, g, b);
                                     if(minrgb < minb){
                                         minb = minrgb;
@@ -18398,9 +18452,9 @@ void ImProcFunctions::Lab_Local(
 #endif
                             for (int i = 0; i < bfh; ++i)
                                 for (int j = 0; j < bfw; ++j) {
-                                    float r = tmpImage->r(i, j) / 65535.f;
-                                    float g = tmpImage->g(i, j) / 65535.f;
-                                    float b = tmpImage->b(i, j) / 65535.f;
+                                    float r = tmpImage->r(i, j) / range;
+                                    float g = tmpImage->g(i, j) / range;
+                                    float b = tmpImage->b(i, j) / range;
                                     float Ro, Go, Bo;
                                     float deltawp = rtengine::max(0.05f, shiftwhitepoint - shiftblackpoint2);//0.05 minimum acceptable
                                     if(strtype == GHTStrType::NORMAL) {
@@ -18429,13 +18483,13 @@ void ImProcFunctions::Lab_Local(
                                         wpnb++;
                                     }
                                     if( strtype == GHTStrType::NORMAL ) { //strtype == GHTStrType::NORMAL only strtype == GHTStrType::NORMAL if crash
-                                        tmpImage->r(i, j) = rtengine::max(0.00001f, Ro * 65535.f);//0.00001f to avoid crash
-                                        tmpImage->g(i, j) = rtengine::max(0.00001f, Go * 65535.f);
-                                        tmpImage->b(i, j) = rtengine::max(0.00001f, Bo * 65535.f);
+                                        tmpImage->r(i, j) = rtengine::max(0.00001f, Ro * range);//0.00001f to avoid crash
+                                        tmpImage->g(i, j) = rtengine::max(0.00001f, Go * range);
+                                        tmpImage->b(i, j) = rtengine::max(0.00001f, Bo * range);
                                     }  else if( strtype == GHTStrType::INVERSE) {//to uncomment if crash
-                                        tmpImage->r(i, j) = clipR(rtengine::max(0.00001f, Ro * 65535.f));//0.0001f to avoid crash different from 'normal'
-                                        tmpImage->g(i, j) = clipR(rtengine::max(0.00001f, Go * 65535.f));//clipR to avoid crash in some cases
-                                        tmpImage->b(i, j) = clipR(rtengine::max(0.00001f, Bo * 65535.f));
+                                        tmpImage->r(i, j) = clipR(rtengine::max(0.00001f, Ro * range));//0.0001f to avoid crash different from 'normal'
+                                        tmpImage->g(i, j) = clipR(rtengine::max(0.00001f, Go * range));//clipR to avoid crash in some cases
+                                        tmpImage->b(i, j) = clipR(rtengine::max(0.00001f, Bo * range));
                                     } 
                                 }
                                 
@@ -18549,9 +18603,9 @@ void ImProcFunctions::Lab_Local(
 #endif
                             for (int i = 0; i < bfh; ++i)
                                 for (int j = 0; j < bfw; ++j) {
-                                    float r = tmpImage->r(i, j)/65535.f;
-                                    float g = tmpImage->g(i, j)/65535.f;
-                                    float b = tmpImage->b(i, j)/65535.f;
+                                    float r = tmpImage->r(i, j)/range;
+                                    float g = tmpImage->g(i, j)/range;
+                                    float b = tmpImage->b(i, j)/range;
                                     float Ro = 0.f;
                                     float Go = 0.f;
                                     float Bo = 0.f;
@@ -18585,9 +18639,9 @@ void ImProcFunctions::Lab_Local(
                                         apply_sat(Ro, Go, Bo, fgh, gh);//always apply saturation
                                     }
                                    // rebuild tmpImage with limit 0.00001f to avoid crash after SE 
-                                    tmpImage->r(i, j) = rtengine::max(0.00001f, Ro * 65535.f);//0.00001f to avoid crash
-                                    tmpImage->g(i, j) = rtengine::max(0.00001f, Go * 65535.f);
-                                    tmpImage->b(i, j) = rtengine::max(0.00001f, Bo * 65535.f);
+                                    tmpImage->r(i, j) = rtengine::max(0.00001f, Ro * range);//0.00001f to avoid crash
+                                    tmpImage->g(i, j) = rtengine::max(0.00001f, Go * range);
+                                    tmpImage->b(i, j) = rtengine::max(0.00001f, Bo * range);
                                 }
                         } else if(met ==3 || met == 4 || met == 5) {//Luminance Saturation Hue HSL
 #ifdef _OPENMP
@@ -18670,7 +18724,27 @@ void ImProcFunctions::Lab_Local(
                                 }
                             lab2rgb(*labtemp, *tmpImage, params->icm.workingProfile);
                         }
-
+                        
+                        if(params->locallab.spots.at(sp).ghs_agx == true) {
+#ifdef _OPENMP
+        #   pragma omp parallel for schedule(dynamic,16) if (multiThread)
+#endif                                            
+                            for (int i = 0; i < bfh; ++i)
+                                for (int j = 0; j < bfw; ++j) {
+                                    const float r = tmpImage->r(i, j);
+                                    const float g = tmpImage->g(i, j);
+                                    const float b = tmpImage->b(i, j);
+                                    std::array<float, 3> rgb_in{r, g, b};
+                                    float rout = 0.f;
+                                    float gout = 0.f;
+                                    float bout = 0.f;                             
+                                    Color::agx_trans(rgb_in, inv_agx_T, rout, gout, bout);
+                                    tmpImage->r(i, j) = rtengine::max(0.00001f, rout);//avoid negatives values which are mathematically possible due to the values 
+                                    tmpImage->g(i, j) = rtengine::max(0.00001f, gout);//​​of the inverse matrix and the possible 'overflows' of the GHS calculations if the user uses very strong settings
+                                    tmpImage->b(i, j) = rtengine::max(0.00001f, bout);                                                          
+                                }
+                        }
+ 
                         if(smoth && D > 0.002f) {//to preserve settings WP and BP
                             //Highlight attenuation in function of HP - protect highlight
                             tone_eqsmooth(this, tmpImage.get(), lp, params->icm.workingProfile, sk, multiThread);//reduce Ev > 0 < 12
