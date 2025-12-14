@@ -467,8 +467,8 @@ void ImProcFunctions::preserv(LabImage *nprevl, LabImage *provis, int cw, int ch
 // Aggressiveness of the compression curve
 //const float PWR = 1.2;
 
-
-void ImProcFunctions::gamutcompr( Imagefloat *src, Imagefloat *dst) const
+//Jacques Desmis December 2025
+void ImProcFunctions::gamutcompr( Imagefloat *src, Imagefloat *dst, float &mac, float &mac0, float &mac1, float &mac2) const
 {
      if (settings->verbose) {
         printf("Apply compression gamut \n");
@@ -554,6 +554,17 @@ void ImProcFunctions::gamutcompr( Imagefloat *src, Imagefloat *dst) const
         acesp1[2][1] = 0.009998;
         acesp1[2][2] = 0.820945;
 
+    Matrix beta = {};//Beta RGB near Pointers'gamut
+        beta[0][0] = 0.6712537;
+        beta[0][1] = 0.1745834;
+        beta[0][2] = 0.1183829;
+        beta[1][0] = 0.3032726;
+        beta[1][1] = 0.6637861;
+        beta[1][2] = 0.0329413;
+        beta[2][0] = 0.0000000;
+        beta[2][1] = 0.0407010;
+        beta[2][2] = 0.7845090;
+
     Matrix out = {};
 
     if (params->cg.colorspace == "rec2020") {
@@ -568,6 +579,8 @@ void ImProcFunctions::gamutcompr( Imagefloat *src, Imagefloat *dst) const
         out = dcip3;
     } else if  (params->cg.colorspace == "acesp1") {
         out = acesp1;
+   } else if  (params->cg.colorspace == "beta") {
+        out = beta;
     } else {
         out = acesp1; // Should never happen, but just in case.
     }
@@ -606,9 +619,17 @@ void ImProcFunctions::gamutcompr( Imagefloat *src, Imagefloat *dst) const
     const int width = src->getWidth();
 
     constexpr float range = 65535.f;
+    float ac = 0.f;
+    float ac0 = 0.f;
+    float ac1 = 0.f;
+    float ac2 = 0.f;
+    float maxac = 0.f;
+    float maxac0 = 0.f;
+    float maxac1 = 0.f;
+    float maxac2 = 0.f;
 
 #ifdef _OPENMP
-        #   pragma omp parallel for schedule(dynamic,16) if (multiThread)
+        #   pragma omp parallel for reduction(max:maxac) reduction(max:maxac0) reduction(max:maxac1) reduction(max:maxac2) schedule(dynamic,16) if (multiThread)
 #endif
 
     for (int i = 0; i < height; ++i)
@@ -620,11 +641,104 @@ void ImProcFunctions::gamutcompr( Imagefloat *src, Imagefloat *dst) const
             float rout = 0.f;
             float gout = 0.f;
             float bout = 0.f;
-            Color::aces_reference_gamut_compression(rgb_in, th, dl, to_out, from_out, pw, roll, rout, gout, bout);
+            //find maximum achromatic for red, green, blue
+            Color::aces_reference_gamut_compression(rgb_in, th, dl, to_out, from_out, pw, roll, rout, gout, bout, ac, ac0, ac1, ac2);
+            if (ac > maxac) {
+                maxac = ac;
+            }
+            if (ac0 > maxac0) {
+                maxac0 = ac0;
+            }
+            if (ac1 > maxac1) {
+                maxac1 = ac1;
+            }
+            if (ac2 > maxac2) {
+                maxac2 = ac2;
+            }
+
             dst->r(i, j) = range * rout;//in interval 0..65535
             dst->g(i, j) = range * gout;
             dst->b(i, j) = range * bout;
         }
+        mac = maxac;  
+        mac0 = maxac0;
+        mac1 = maxac1;
+        mac2 = maxac2; 
+}
+
+inline float power_norm2(float r, float g, float b)
+{
+    r = std::abs(r);
+    g = std::abs(g);
+    b = std::abs(b);
+
+    float r2 = SQR(r);
+    float g2 = SQR(g);
+    float b2 = SQR(b);
+    float d = r2 + g2 + b2;
+    float n = r * r2 + g * g2 + b * b2;
+
+    return n / std::max(d, 1e-12f);
+}
+
+
+inline float norm3(float r, float g, float b, TMatrix ws)
+{
+    constexpr float hi = std::numeric_limits<float>::max() / 100.f;
+    return std::min(hi, power_norm2(r, g, b) / 2.f + Color::rgbLuminance(r, g, b, ws) / 2.f);
+}
+
+
+void ImProcFunctions::apsatur(int sp, Imagefloat* tmpImage, Imagefloat* tmpImage2, int bfw, int bfh, float satu) 
+//act on saturation RGB after Abstract Profile - main and Selective Editing
+{
+    const TMatrix wprof = ICCStore::getInstance()->workingSpaceMatrix(params->icm.workingProfile);
+    
+    const float noise = pow_F(2.f, -16.f);
+
+    const auto sfcie =
+        [=](float s, float c) -> float
+            {
+                if (c > noise) {
+                    return 1.f - min(std::abs(s) / c, 1.f);
+                } else {
+                    return 0.f;
+                }
+            };
+      
+    const auto apply_satcie =
+        [&](float &r, float &g, float &b, float f, float ll, float satu) -> void
+            {
+                float rl = r - ll;
+                float gl = g - ll;
+                float bl = b - ll;
+                float s = intp(max(sfcie(rl, r), sfcie(gl, g), sfcie(bl, b)), pow_F(f, 0.3f * satu) * (0.6f) + (0.4f), 1.f);
+                r = ll + s * rl;
+                g = ll + s * gl;
+                b = ll + s * bl;
+            };
+            
+#ifdef _OPENMP
+            #pragma omp parallel for if (multiThread)
+#endif
+            for (int y = 0; y < bfh; ++y)
+                for (int x = 0; x < bfw; ++x) {
+                    float R0 = tmpImage->r(y, x) / 65535.f;
+                    float G0 = tmpImage->g(y, x) / 65535.f;
+                    float B0 = tmpImage->b(y, x) / 65535.f;
+                    float R2 = tmpImage2->r(y, x) /65535.f;
+                    float G2 = tmpImage2->g(y, x) / 65535.f;
+                    float B2 = tmpImage2->b(y, x) / 65535.f;
+                    float fcie2 = norm3(R2, G2, B2, wprof);                                       
+                    float fcie0 = norm3(R0, G0, B0, wprof);
+                    fcie0 = rtengine::max(fcie0, noise);
+                    fcie2 = rtengine::max(fcie2, noise);
+                    float amp = fcie0 / fcie2;
+                    apply_satcie(R0, G0, B0, amp, fcie2, satu);//always apply saturation
+                    tmpImage->r(y, x) = R0 * 65535.f;
+                    tmpImage->g(y, x) = G0 * 65535.f;
+                    tmpImage->b(y, x) = B0 * 65535.f;                                     
+                }               
 }
 
 

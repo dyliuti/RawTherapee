@@ -20,10 +20,10 @@
 
 #include <gtkmm.h>
 
-#include "adjuster.h"
-#include "checkbox.h"
 #include "guiutils.h"
 #include "toolpanel.h"
+#include "widgets/basic/adjuster.h"
+#include "widgets/basic/checkbox.h"
 
 class XTransProcess final :
     public ToolParamBlock,
@@ -67,5 +67,5 @@ public:
     void autoContrastChanged (double autoContrast) override;
     void adjusterChanged(Adjuster* a, double newval) override;
     void checkBoxToggled(CheckBox* c, CheckValue newval) override;
-    void adjusterAutoToggled(Adjuster* a) override;
+    void adjusterAutoToggled(Adjuster* a, bool newval) override;
 };

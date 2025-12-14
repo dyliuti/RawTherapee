@@ -19,12 +19,12 @@
 
 #include "cropguide.h"
 
-#include "colorpreview.h"
 #include "eventmapper.h"
 #include "guiutils.h"
 #include "multilangmgr.h"
 #include "paramsedited.h"
 #include "rtimage.h"
+#include "widgets/basic/colorpreview.h"
 
 #include <algorithm>
 

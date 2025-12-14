@@ -1,3 +1,9 @@
+set(PROCPARAM_SRCS
+    procparams.cc
+    params/locallab.cc
+    params/serdes.cc
+)
+
 set(RTENGINESOURCEFILES
     alpha.cc
     ahd_demosaic_RT.cc
@@ -92,7 +98,6 @@ set(RTENGINESOURCEFILES
     pixelshift.cc
     previewimage.cc
     processingjob.cc
-    procparams.cc
     profilestore.cc
     rawflatfield.cc
     rawimage.cc
@@ -111,6 +116,7 @@ set(RTENGINESOURCEFILES
     utils.cc
     vng4_demosaic_RT.cc
     xtrans_demosaic.cc
+    ${PROCPARAM_SRCS}
 )
 
 if(LENSFUN_HAS_LOAD_DIRECTORY)

@@ -20,10 +20,10 @@
 
 #include <gtkmm.h>
 
-#include "adjuster.h"
-#include "checkbox.h"
 #include "guiutils.h"
 #include "toolpanel.h"
+#include "widgets/basic/adjuster.h"
+#include "widgets/basic/checkbox.h"
 
 class BayerProcess final :
     public ToolParamBlock,
@@ -91,7 +91,7 @@ public:
     void methodChanged();
     void imageNumberChanged();
     void adjusterChanged(Adjuster* a, double newval) override;
-    void adjusterAutoToggled (Adjuster* a) override;
+    void adjusterAutoToggled (Adjuster* a, bool newval) override;
     void checkBoxToggled(CheckBox* c, CheckValue newval) override;
     void pixelShiftMotionMethodChanged();
     void pixelShiftDemosaicMethodChanged();

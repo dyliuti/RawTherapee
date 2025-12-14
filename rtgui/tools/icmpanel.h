@@ -22,12 +22,12 @@
 
 #include <gtkmm.h>
 
-#include "adjuster.h"
 #include "guiutils.h"
-#include "popupbutton.h"
 #include "toolpanel.h"
 #include "curvelistener.h"
-#include "thresholdadjuster.h"
+#include "widgets/basic/adjuster.h"
+#include "widgets/basic/popupbutton.h"
+#include "widgets/basic/thresholdadjuster.h"
 
 #include "rtengine/imagedata.h"
 
@@ -66,8 +66,11 @@ protected:
 
     Adjuster* wGamma;
     Adjuster* wSlope;
+    Adjuster* wapsat;
+    
     Adjuster* wmidtcie;
     Gtk::CheckButton* wsmoothcie;
+    Adjuster* wsmoothciesli;
     Adjuster* sigmatrc;
     Adjuster* offstrc;
     Adjuster* pyrwavtrc;
@@ -147,6 +150,8 @@ private:
     rtengine::ProcEvent EvICMshifty;
     rtengine::ProcEvent EvICMwmidtcie;
     rtengine::ProcEvent EvICMwsmoothcie;
+    rtengine::ProcEvent EvICMwapsat;
+    rtengine::ProcEvent EvICMwsmoothciesli;
     rtengine::ProcEvent EvICMsigmatrc;
     rtengine::ProcEvent EvICMoffstrc;
     rtengine::ProcEvent EvICMopacityWLI;

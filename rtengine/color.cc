@@ -2175,6 +2175,15 @@ void Color::mult3(std::array<float, 3> &in, const Matrix &ma, std::array<float, 
     std::copy(buf.cbegin(), buf.cend(), out.begin());
 }
 
+//conversion RGB data with Agx matrix and inverse
+void Color::agx_trans(const std::array<float, 3> &rgb_in, const Matrix &to_agx, float &R, float &G, float &B) {
+    std::array<float, 3> rgb{rgb_in[0], rgb_in[1], rgb_in[2]};
+    Color::mult3(rgb, to_agx, rgb);
+    R = rgb[0];
+    G = rgb[1];
+    B = rgb[2];
+}
+
 // ACES-style gamut compression
 //
 // tweaked from the original from https://github.com/jedypod/gamut-compress
@@ -2200,14 +2209,16 @@ void Color::mult3(std::array<float, 3> &in, const Matrix &ma, std::array<float, 
 //const float PWR = 1.2;
 //https://www.gujinwei.org/research/camspec/
 
+//Jacques Desmis December 2025
+
 void Color::aces_reference_gamut_compression(
     const std::array<float, 3> &rgb_in,
     const std::array<float, 3> &threshold,
     const std::array<float, 3> &distance_limit,
     const Matrix &to_out, const Matrix &from_out,
     float pwr, bool rolloff,
-    float &R, float &G, float &B)
-{
+    float &R, float &G, float &B, float &ac, float &ac0, float &ac1, float &ac2)// ac, ac0, ac1, ac2 achromatic values for Red, Green, Blue
+ {
     std::array<float, 3> rgb{rgb_in[0], rgb_in[1], rgb_in[2]};
 
     // Calculate scale so compression function passes through distance limit:
@@ -2221,8 +2232,11 @@ void Color::aces_reference_gamut_compression(
     Color::mult3(rgb, to_out, rgb);
 
     // Achromatic axis
-    const float ac = fmax(rgb[0], fmax(rgb[1], rgb[2]));
 
+    ac = fmax(rgb[0], fmax(rgb[1], rgb[2]));
+    ac0 = rgb[0];
+    ac1 = rgb[1];
+    ac2 = rgb[2];
     // Inverse RGB Ratios: distance from achromatic axis
     std::array<float, 3> d{0.f, 0.f, 0.f};
     if (ac != 0) {
@@ -2270,7 +2284,7 @@ void Color::aces_reference_gamut_compression(
                     const float po = pow(nd, pwr);
                     cd[i] = thres + scale * nd / (pow(1.0f + po, 1.0f / pwr));
                 }
-            }    
+            }
         }
     }
     // Inverse RGB Ratios to RGB

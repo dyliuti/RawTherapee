@@ -20,12 +20,12 @@
 
 #include "colorappearance.h"
 
-#include "curveeditor.h"
-#include "curveeditorgroup.h"
 #include "guiutils.h"
 #include "options.h"
 #include "rtimage.h"
 #include "eventmapper.h"
+#include "widgets/curves/curveeditor.h"
+#include "widgets/curves/curveeditorgroup.h"
 
 #include "rtengine/color.h"
 #include "rtengine/procparams.h"
@@ -2003,7 +2003,7 @@ void ColorAppearance::adjusterChanged(Adjuster* a, double newval)
     }
 }
 
-void ColorAppearance::adjusterAutoToggled(Adjuster* a)
+void ColorAppearance::adjusterAutoToggled(Adjuster* a, bool newval)
 {
     if (multiImage) {
         if (degree->getAutoInconsistent()) {

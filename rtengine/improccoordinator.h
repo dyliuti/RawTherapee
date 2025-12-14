@@ -200,6 +200,8 @@ protected:
     AutoChromaListener* adnListener;
     WaveletListener* awavListener;
     RetinexListener* dehaListener;
+    CompgamutListener* acmaxListener;
+  
 //    LocallabListener* locallListener;
 
     
@@ -357,6 +359,7 @@ protected:
     LocwavCurve locedgwavCurve;
     LocwavCurve loclmasCurve_wav;
     LocwavCurve locwavCurvehue;
+    LocwavCurve locwavCurvehuecont;
     LocwavCurve locwavCurvejz;
 
     std::vector<float> huerefs;
@@ -550,6 +553,10 @@ public:
     void setAutoChromaListener  (AutoChromaListener* adn) override
     {
         adnListener = adn;
+    }
+    void setCompgamutListener  (CompgamutListener* cop) override
+    {
+        acmaxListener = cop;
     }
     void setRetinexListener  (RetinexListener* adh) override
     {

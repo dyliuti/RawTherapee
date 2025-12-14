@@ -19,8 +19,8 @@
 
 #pragma once
 
-#include "adjuster.h"
 #include "toolpanel.h"
+#include "widgets/basic/adjuster.h"
 
 #include "rtengine/aspectratios.h"
 #include "rtengine/procevents.h"

@@ -75,8 +75,44 @@ set(RT_GUI_TOOL_PANEL_SOURCES
     tools/xtransrawexposure.cc
 )
 
+set(RT_GUI_WIDGET_SOURCES
+    # Basic
+    widgets/basic/adjuster.cc
+    widgets/basic/checkbox.cc
+    widgets/basic/coloredbar.cc
+    widgets/basic/colorpreview.cc
+    widgets/basic/coordinateadjuster.cc
+    widgets/basic/lwbutton.cc
+    widgets/basic/lwbuttonset.cc
+    widgets/basic/popupbutton.cc
+    widgets/basic/popupcommon.cc
+    widgets/basic/popuptogglebutton.cc
+    widgets/basic/shcselector.cc
+    widgets/basic/thresholdadjuster.cc
+    widgets/basic/thresholdselector.cc
+    # Curves
+    widgets/curves/curveeditor.cc
+    widgets/curves/curveeditorgroup.cc
+    widgets/curves/diagonalcurveeditorsubgroup.cc
+    widgets/curves/flatcurveeditorsubgroup.cc
+    widgets/curves/mycurve.cc
+    widgets/curves/mydiagonalcurve.cc
+    widgets/curves/myflatcurve.cc
+)
+
+set(RT_GUI_WINDOWS_SOURCES
+    windows/editwindow.cc
+    windows/iccprofilecreator.cc
+    windows/partialpastedlg.cc
+    windows/preferences.cc
+    windows/renamedlg.cc
+    windows/rtappchooserdialog.cc
+    windows/rtwindow.cc
+    windows/saveasdlg.cc
+    windows/splash.cc
+)
+
 set(NONCLISOURCEFILES
-    adjuster.cc
     alignedmalloc.cc
     batchqueue.cc
     batchqueuebuttonset.cc
@@ -87,20 +123,13 @@ set(NONCLISOURCEFILES
     browserfilter.cc
     cacheimagedata.cc
     cachemanager.cc
-    checkbox.cc
     clipboard.cc
     coarsepanel.cc
-    coloredbar.cc
-    colorpreview.cc
     controllines.cc
     controlspotpanel.cc
-    coordinateadjuster.cc
     crophandler.cc
     cropwindow.cc
     cursormanager.cc
-    curveeditor.cc
-    curveeditorgroup.cc
-    diagonalcurveeditorsubgroup.cc
     dirbrowser.cc
     drawcropguide.cc
     dynamicprofilepanel.cc
@@ -108,7 +137,6 @@ set(NONCLISOURCEFILES
     editcallbacks.cc
     editorpanel.cc
     editwidgets.cc
-    editwindow.cc
     eventmapper.cc
     exiffiltersettings.cc
     exifpanel.cc
@@ -121,12 +149,10 @@ set(NONCLISOURCEFILES
     filepanel.cc
     filethumbnailbuttonset.cc
     filterpanel.cc
-    flatcurveeditorsubgroup.cc
     guiutils.cc
     hidpi.cc
     histogrampanel.cc
     history.cc
-    iccprofilecreator.cc
     imagearea.cc
     imageareapanel.cc
     indclippedpanel.cc
@@ -134,24 +160,14 @@ set(NONCLISOURCEFILES
     iptcpanel.cc
     labgrid.cc
     lockablecolorpicker.cc
-    lwbutton.cc
-    lwbuttonset.cc
     main.cc
     metadatapanel.cc
     multilangmgr.cc
-    mycurve.cc
-    mydiagonalcurve.cc
-    myflatcurve.cc
     navigator.cc
     options.cc
     paramsedited.cc
-    partialpastedlg.cc
     pathutils.cc
     placesbrowser.cc
-    popupbutton.cc
-    popupcommon.cc
-    popuptogglebutton.cc
-    preferences.cc
     previewhandler.cc
     previewloader.cc
     previewmodepanel.cc
@@ -159,20 +175,12 @@ set(NONCLISOURCEFILES
     profilepanel.cc
     profilestorecombobox.cc
     recentbrowser.cc
-    renamedlg.cc
-    rtappchooserdialog.cc
     rtimage.cc
     rtscalable.cc
     rtsurface.cc
-    rtwindow.cc
-    saveasdlg.cc
     saveformatpanel.cc
-    shcselector.cc
     soundman.cc
-    splash.cc
     threadutils.cc
-    thresholdadjuster.cc
-    thresholdselector.cc
     thumbbrowserbase.cc
     thumbbrowserentrybase.cc
     thumbimageupdater.cc
@@ -183,6 +191,8 @@ set(NONCLISOURCEFILES
     toolpanelcoord.cc
     zoompanel.cc
     ${RT_GUI_TOOL_PANEL_SOURCES}
+    ${RT_GUI_WIDGET_SOURCES}
+    ${RT_GUI_WINDOWS_SOURCES}
 )
 
 if(APPLE)

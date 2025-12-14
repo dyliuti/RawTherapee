@@ -228,6 +228,10 @@ struct CaptureSharpeningParamsEdited {
     bool deconvradiusOffset;
     bool deconviter;
     bool deconvitercheck;
+    bool showcap;
+    bool noisecap;
+    bool noisecaptype;
+    bool noisecapafter;
     bool isUnchanged() const;
 };
 
@@ -376,8 +380,11 @@ struct CGParamsEdited {
     bool th_m;
     bool th_y;
     bool d_c;
+    bool autodc;
     bool d_m;
+    bool autodm;
     bool d_y;
+    bool autody;
     bool pwr;
     bool colorspace;
     bool rolloff;
@@ -615,6 +622,7 @@ public:
         bool ghs_chro;
         bool ghs_B;
         bool ghs_SP;
+        bool SPAutoRadius;
         bool ghs_LP;
         bool ghs_HP;
         bool ghs_LC;
@@ -622,6 +630,7 @@ public:
         bool ghs_BLP;
         bool ghs_HLP;
         bool ghs_autobw;
+        bool ghs_agx;
         bool ghs_smooth;
         bool ghs_inv;
         
@@ -737,6 +746,8 @@ public:
         bool blurMethod;
         bool medMethod;
         bool activlum;
+        bool madlsav[21];
+
         bool noiselumf;
         bool noiselumf0;
         bool noiselumf2;
@@ -760,6 +771,7 @@ public:
         bool detailthr;
         bool locwavcurveden;
         bool locwavcurvehue;
+        bool locwavcurvehuecont;
         bool showmaskblMethodtyp;
         bool CCmaskblcurve;
         bool LLmaskblcurve;
@@ -780,6 +792,15 @@ public:
         bool Lmaskblcurve;
         bool LLmaskblcurvewav;
         bool csthresholdblur;
+        bool denocontrast;
+        bool denoAutocontrast;
+        bool contrshow;
+        bool lockmadl;
+        bool madllock;
+        bool enacontrast;
+        bool denoratio;
+        bool denomask;
+       
         // Tone Mapping
         bool visitonemap;
         bool exptonemap;
@@ -859,6 +880,7 @@ public:
         bool expsharp;
         bool complexsharp;
         bool sharcontrast;
+        bool deconvAutoshar;
         bool sharradius;
         bool sharamount;
         bool shardamping;
@@ -867,6 +889,16 @@ public:
         bool shargam;
         bool sensisha;
         bool inverssha;
+        bool sharshow;
+        bool itercheck;
+        bool methodcap;
+        bool capradius;
+        bool deconvAutoRadius;
+        bool deconvCoBoost;
+        bool deconvCoProt;
+        bool deconvCoLat;
+        bool deconvCogam;
+        bool reparsha;
         // Local Contrast
         bool visicontrast;
         bool expcontrast;
@@ -1084,6 +1116,7 @@ public:
         bool smoothcielum;
         bool smoothciehigh;
         bool smoothcielnk;
+        bool smoothcieinv;
         bool logjz;
         bool sigjz12;
         bool sigjz;
@@ -1116,6 +1149,7 @@ public:
         bool jzcurve;
         bool czcurve;
         bool czjzcurve;
+        bool invcurve;
         bool HHcurvejz;
         bool CHcurvejz;
         bool LHcurvejz;
@@ -1151,7 +1185,9 @@ public:
         bool comprcieth;
         bool gamjcie;
         bool smoothcieth;
+        bool smoothciethtrc;
         bool slopjcie;
+        bool satjcie;
         bool contsig;
         bool skewsig;
         bool whitsig;
@@ -1163,6 +1199,7 @@ public:
         bool kslopesmor;
         bool kslopesmog;
         bool kslopesmob;
+        bool midtciemet;
         bool midtcie;
         bool redxl;
         bool redyl;
@@ -1414,7 +1451,9 @@ struct ColorManagementParamsEdited {
     bool pyrwavtrc;
     bool opacityCurveWLI;
 
+    bool wapsat;
     bool wsmoothcie;
+    bool wsmoothciesli;
     bool will;
     bool wprim;
     bool wcat;

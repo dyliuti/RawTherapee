@@ -22,10 +22,10 @@
 
 #include <gtkmm.h>
 
-#include "adjuster.h"
-#include "checkbox.h"
 #include "guiutils.h"
 #include "toolpanel.h"
+#include "widgets/basic/adjuster.h"
+#include "widgets/basic/checkbox.h"
 
 namespace rtengine
 {
@@ -84,7 +84,7 @@ public:
     void setDefaults         (const rtengine::procparams::ProcParams* defParams, const ParamsEdited* pedited = nullptr) override;
 
     void adjusterChanged            (Adjuster* a, double newval) override;
-    void adjusterAutoToggled        (Adjuster* a) override;
+    void adjusterAutoToggled        (Adjuster* a, bool newval) override;
     void flatFieldFileChanged       ();
     void flatFieldFile_Reset        ();
     void flatFieldAutoSelectChanged ();

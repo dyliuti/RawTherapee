@@ -1895,6 +1895,8 @@ static inline void Lab2XYZ(vfloat L, vfloat a, vfloat b, vfloat &x, vfloat &y, v
     static void  transpose(const Matrix &ma, Matrix &R);
     static void  multip(const Matrix &ma, const Matrix &mb, Matrix &R);
     static void  mult3(std::array<float, 3> &in, const Matrix &ma, std::array<float, 3> &out);
+    //conversion RGB data with Agx matrix and inverse
+    static void agx_trans(const std::array<float, 3> &rgb_in, const Matrix &to_agx, float &R, float &G, float &B);
 
     static void aces_reference_gamut_compression(
         const std::array<float, 3> &rgb_in,
@@ -1902,7 +1904,7 @@ static inline void Lab2XYZ(vfloat L, vfloat a, vfloat b, vfloat &x, vfloat &y, v
         const std::array<float, 3> &distance_limit,
         const Matrix &to_out, const Matrix &from_out,
         float pwr, bool rolloff,
-        float &R, float &G, float &B);
+        float &R, float &G, float &B, float &ac, float &ac0, float &ac1, float &ac2);
 
     /**
     * @brief Get HSV's hue from the Lab's hue

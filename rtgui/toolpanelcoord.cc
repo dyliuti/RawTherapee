@@ -242,6 +242,11 @@ const std::vector<ToolTree> TRANSFORM_PANEL_TOOLS = {
 
 const std::vector<ToolTree> RAW_PANEL_TOOLS = {
     {
+        .id = Tool::PD_SHARPENING,
+        .children = {},
+    },
+
+    {
         .id = Tool::SENSOR_BAYER,
         .children = {
             {
@@ -297,10 +302,6 @@ const std::vector<ToolTree> RAW_PANEL_TOOLS = {
     },
     {
         .id = Tool::FLATFIELD_TOOL,
-        .children = {},
-    },
-    {
-        .id = Tool::PD_SHARPENING,
         .children = {},
     },
 };
@@ -1410,6 +1411,7 @@ void ToolPanelCoordinator::initImage(rtengine::StagedImageProcessor* ipc_, bool 
         ipc->setLocallabListener(locallab);
         ipc->setImageTypeListener(this);
         ipc->setFilmNegListener(filmNegative);
+        ipc->setCompgamutListener(compressgamut);
         flatfield->setShortcutPath(Glib::path_get_dirname(ipc->getInitialImage()->getFileName()));
 
         icm->setRawMeta(raw, (const rtengine::FramesData*)pMetaData);

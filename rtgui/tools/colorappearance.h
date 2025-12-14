@@ -20,11 +20,11 @@
 
 #include <gtkmm.h>
 
-#include "adjuster.h"
 #include "colorprovider.h"
 #include "curvelistener.h"
 #include "guiutils.h"
 #include "toolpanel.h"
+#include "widgets/basic/adjuster.h"
 
 class DiagonalCurveEditor;
 class CurveEditorGroup;
@@ -49,7 +49,7 @@ public:
     void setDefaults    (const rtengine::procparams::ProcParams* defParams, const ParamsEdited* pedited = nullptr) override;
     void setBatchMode   (bool batchMode) override;
     void adjusterChanged     (Adjuster* a, double newval) override;
-    void adjusterAutoToggled (Adjuster* a) override;
+    void adjusterAutoToggled (Adjuster* a, bool newval) override;
 //    void adjusterAdapToggled (Adjuster* a, bool newval);
     void enabledChanged      () override;
     void surroundChanged     ();

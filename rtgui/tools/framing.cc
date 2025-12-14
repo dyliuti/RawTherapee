@@ -21,10 +21,10 @@
 
 #include "framing.h"
 
-#include "colorpreview.h"
 #include "eventmapper.h"
 #include "paramsedited.h"
 #include "tools/resize.h"
+#include "widgets/basic/colorpreview.h"
 
 #include "rtengine/aspectratios.h"
 #include "rtengine/color.h"
