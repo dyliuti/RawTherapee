@@ -1662,7 +1662,19 @@ void FileCatalog::categoryButtonToggled (Gtk::ToggleButton* b, bool isMouseClick
 void FileCatalog::showRecursiveToggled()
 {
     App::get().mut_options().browseRecursive = bRecursive->get_active();
-    reparseDirectory();
+
+    // Killing background threads can sometimes block the UI for a long time,
+    // This may be a spot where giving the user information is needed.
+    previewLoader->removeAllJobs();
+    thumbImageUpdater->removeAllJobs();
+
+    idle_register.add(
+        [this]() -> bool
+        {
+            dirSelected(selectedDirectory, "");
+            return false;
+        }
+    );
 }
 
 BrowserFilter FileCatalog::getFilter ()
