@@ -2229,69 +2229,36 @@ void FileCatalog::toggleRightPanel()
 
 void FileCatalog::selectImage (Glib::ustring fname, bool clearFilters)
 {
+    if (clearFilters) { // clear all filters
+        Query->set_text("");
+        categoryButtonToggled(bFilterClear, false);
 
-    Glib::ustring dirname = Glib::path_get_dirname(fname);
-
-    if (!dirname.empty()) {
-        BrowsePath->set_text(dirname);
-
-
-        if (clearFilters) { // clear all filters
-            Query->set_text("");
-            categoryButtonToggled(bFilterClear, false);
-
-            // disable exif filters
-            if (filterPanel->isEnabled()) {
-                filterPanel->setEnabled (false);
-            }
-        }
-
-        if (BrowsePath->get_text() != selectedDirectory) {
-            // reload or refresh thumbs and select image
-            buttonBrowsePathPressed ();
-            // the actual selection of image will be handled asynchronously at the end of FileCatalog::previewsFinishedUI
-            imageToSelect_fname = fname;
-        } else {
-            // FileCatalog::filterChanged ();//this will be replaced by queue_draw() in fileBrowser->selectImage
-            fileBrowser->selectImage(fname);
-            imageToSelect_fname = "";
+        // disable exif filters
+        if (filterPanel->isEnabled()) {
+            filterPanel->setEnabled (false);
         }
     }
+
+    fileBrowser->selectImage(fname);
+    imageToSelect_fname = "";
 }
 
 
 void FileCatalog::openNextPreviousEditorImage (Glib::ustring fname, bool clearFilters, eRTNav nextPrevious)
 {
+    if (clearFilters) { // clear all filters
+        Query->set_text("");
+        categoryButtonToggled(bFilterClear, false);
 
-    Glib::ustring dirname = Glib::path_get_dirname(fname);
-
-    if (!dirname.empty()) {
-        BrowsePath->set_text(dirname);
-
-
-        if (clearFilters) { // clear all filters
-            Query->set_text("");
-            categoryButtonToggled(bFilterClear, false);
-
-            // disable exif filters
-            if (filterPanel->isEnabled()) {
-                filterPanel->setEnabled (false);
-            }
-        }
-
-        if (BrowsePath->get_text() != selectedDirectory) {
-            // reload or refresh thumbs and select image
-            buttonBrowsePathPressed ();
-            // the actual selection of image will be handled asynchronously at the end of FileCatalog::previewsFinishedUI
-            refImageForOpen_fname = fname;
-            actionNextPrevious = nextPrevious;
-        } else {
-            // FileCatalog::filterChanged ();//this was replace by queue_draw() in fileBrowser->selectImage
-            fileBrowser->openNextPreviousEditorImage(fname, nextPrevious);
-            refImageForOpen_fname = "";
-            actionNextPrevious = NAV_NONE;
+        // disable exif filters
+        if (filterPanel->isEnabled()) {
+            filterPanel->setEnabled (false);
         }
     }
+
+    fileBrowser->openNextPreviousEditorImage(fname, nextPrevious);
+    refImageForOpen_fname = "";
+    actionNextPrevious = NAV_NONE;
 }
 
 bool FileCatalog::handleShortcutKey (GdkEventKey* event)
