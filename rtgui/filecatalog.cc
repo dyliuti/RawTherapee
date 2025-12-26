@@ -989,16 +989,17 @@ void FileCatalog::refreshHeight ()
 void FileCatalog::_openImage(const std::vector<Thumbnail*>& tmb)
 {
     if (enabled && listener) {
-        bool continueToLoad = true;
-
-        for (size_t i = 0; i < tmb.size() && continueToLoad; i++) {
-            // Open the image here, and stop if in Single Editor mode, or if an image couldn't
-            // be opened, would it be because the file doesn't exist or because of lack of RAM
-            if( !(listener->fileSelected (tmb[i])) && !App::get().options().tabbedUI ) {
-                continueToLoad = false;
+        for (size_t i = 0; i < tmb.size(); i++) {
+            // fileSelected does not complete with a fully loaded image, but it does do some preliminary checks
+            if (!listener->fileSelected(tmb[i])) {
+                tmb[i]->decreaseRef();
+            } else if (!App::get().options().tabbedUI) {
+                // allow only one image in single editor mode
+                for (++i; i < tmb.size(); i++) {
+                    tmb[i]->decreaseRef();
+                }
+                break;
             }
-
-            tmb[i]->decreaseRef ();
         }
     }
 }
