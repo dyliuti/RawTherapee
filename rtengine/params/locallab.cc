@@ -520,6 +520,7 @@ LocallabParams::LocallabSpot::LocallabSpot() :
     complexshadhigh(0),
     shMethod("ghs"),
     ghsMethod("rgb"),
+    ghsMatmet("agx"),
     ghsMode("ghs"),
     ghs_D(0.001),
     ghs_slope(9.03296),
@@ -529,7 +530,7 @@ LocallabParams::LocallabSpot::LocallabSpot() :
     SPAutoRadius(true), //auto Symmetry point 
     ghs_LP(0.),
     ghs_HP(1.),
-    ghs_LC(30.),
+    ghs_LC(10.),
     ghs_MID(0.),
     ghs_BLP(0.),
     ghs_HLP(1.),
@@ -537,7 +538,6 @@ LocallabParams::LocallabSpot::LocallabSpot() :
     ghs_agx(true),
     ghs_smooth(false),
     ghs_inv(false),
-    
     multsh{0, 0, 0, 0, 0, 0},
     highlights(0),
     h_tonalwidth(70),
@@ -691,11 +691,8 @@ LocallabParams::LocallabSpot::LocallabSpot() :
     strvib(0.0),
     strvibab(0.0),
     strvibh(0.0),
- //   angvib(0.0),
     angvib(1.0),
-   // feathervib(25.0),
     feathervib(1.0),
-    
     Lmaskvibcurve{
         static_cast<double>(DCT_NURBS),
         0.0,
@@ -1150,7 +1147,6 @@ LocallabParams::LocallabSpot::LocallabSpot() :
     deconvCoLat(25.),
     deconvCogam(1.),
     reparsha(100.),
-    
     // Local Contrast
     visicontrast(false),
     expcontrast(false),
@@ -1853,7 +1849,6 @@ LocallabParams::LocallabSpot::LocallabSpot() :
     sigmoidthcie(1.2),
     sigmoidsenscie(0.9),
     sigmoidblcie(0.75),
-
     comprcie(0.4),
     strcielog(80.),
     comprcieth(6.),
@@ -1882,20 +1877,20 @@ LocallabParams::LocallabSpot::LocallabSpot() :
     },
     midtciemet("one"),
     midtcie(0),
-    grexl(0.1596),
-    greyl(0.8404),
-    bluxl(0.0366),
-    bluyl(0.0001),   
-    redxl(0.7347),
-    redyl(0.2653),
+    grexl(0.1700),//new Rec2020 default values in Color Appearance (CAM16) as in 'Abstract profile', instead of Prophoto.
+    greyl(0.7970),
+    bluxl(0.1310),
+    bluyl(0.0460),
+    redxl(0.7080),
+    redyl(0.2920),
     refi(0.),
     shiftxl(0.),
     shiftyl(0.),
     whitescie(20),
     blackscie(0),
-    illMethod("d50"),
+    illMethod("d65"),
     smoothciemet("none"),
-    primMethod("pro"),
+    primMethod("rec"),
     catMethod("brad"),
     sigmoidldajzcie12(1.3),
     sigmoidthjzcie12(0.),
@@ -1995,12 +1990,12 @@ LocallabParams::LocallabSpot::LocallabSpot() :
     higthrescie(85.),
     decaycie(2.),
     strumaskcie(0.),
-	toolcie(false),
-	fftcieMask(true),
+    toolcie(false),
+    fftcieMask(true),
     contcie(0.),
     blurcie(0.2),
-	highmaskcie(0.),
-	shadmaskcie(0.),
+    highmaskcie(0.),
+    shadmaskcie(0.),
      LLmaskciecurvewav{
         static_cast<double>(FCT_MinMaxCPoints),
         0.0,
@@ -2265,6 +2260,7 @@ bool LocallabParams::LocallabSpot::operator ==(const LocallabSpot& other) const
         && complexshadhigh == other.complexshadhigh
         && shMethod == other.shMethod
         && ghsMethod == other.ghsMethod
+        && ghsMatmet == other.ghsMatmet
         && ghsMode == other.ghsMode
         && ghs_D == other.ghs_D
         && ghs_slope == other.ghs_slope
@@ -2272,7 +2268,6 @@ bool LocallabParams::LocallabSpot::operator ==(const LocallabSpot& other) const
         && ghs_B == other.ghs_B
         && SPAutoRadius == other.SPAutoRadius       
         && (SPAutoRadius || (ghs_SP == other.ghs_SP))
-        
         //&& ghs_SP == other.ghs_SP
         && ghs_LP == other.ghs_LP
         && ghs_HP == other.ghs_HP
@@ -2284,7 +2279,6 @@ bool LocallabParams::LocallabSpot::operator ==(const LocallabSpot& other) const
         && ghs_agx == other.ghs_agx
         && ghs_smooth == other.ghs_smooth
         && ghs_inv == other.ghs_inv
-        
         && [this, &other]() -> bool
             {
                 for (int i = 0; i < 6; ++i) {
@@ -2733,7 +2727,6 @@ bool LocallabParams::LocallabSpot::operator ==(const LocallabSpot& other) const
         && lowthresl == other.lowthresl
         && higthresl == other.higthresl
         && decayl == other.decayl
-
         // mask
         && visimask == other.visimask
         && complexmask == other.complexmask
@@ -2857,7 +2850,6 @@ bool LocallabParams::LocallabSpot::operator ==(const LocallabSpot& other) const
         && sigmoidldacie12 == other.sigmoidldacie12
         && sigmoidthcie12 == other.sigmoidthcie12
         && sigmoidblcie12 == other.sigmoidblcie12
-
         && sigmoidldacie == other.sigmoidldacie
         && sigmoidthcie == other.sigmoidthcie
         && sigmoidsenscie == other.sigmoidsenscie
@@ -3265,6 +3257,7 @@ void LoadUtil::shadowHighlight()
     assignFromKeyfile(keyFile, "Locallab", "Complexshadhigh_" + index_str, spot.complexshadhigh, spotEdited.complexshadhigh);
     assignFromKeyfile(keyFile, "Locallab", "ShMethod_" + index_str, spot.shMethod, spotEdited.shMethod);
     assignFromKeyfile(keyFile, "Locallab", "GhsMethod_" + index_str, spot.ghsMethod, spotEdited.ghsMethod);
+    assignFromKeyfile(keyFile, "Locallab", "GhsMatmet_" + index_str, spot.ghsMatmet, spotEdited.ghsMatmet);
     assignFromKeyfile(keyFile, "Locallab", "GhsMode_" + index_str, spot.ghsMode, spotEdited.ghsMode);
     assignFromKeyfile(keyFile, "Locallab", "Ghs_D_" + index_str, spot.ghs_D, spotEdited.ghs_D);
     assignFromKeyfile(keyFile, "Locallab", "Ghs_slope_" + index_str, spot.ghs_slope, spotEdited.ghs_slope);
@@ -4431,6 +4424,7 @@ void SaveUtil::shadowHighlight()
         saveToKeyfile(!pedited || spot_edited->complexshadhigh, "Locallab", "Complexshadhigh_" + index_str, spot.complexshadhigh, keyFile);
         saveToKeyfile(!pedited || spot_edited->shMethod, "Locallab", "ShMethod_" + index_str, spot.shMethod, keyFile);
         saveToKeyfile(!pedited || spot_edited->ghsMethod, "Locallab", "GhsMethod_" + index_str, spot.ghsMethod, keyFile);
+        saveToKeyfile(!pedited || spot_edited->ghsMatmet, "Locallab", "GhsMatmet_" + index_str, spot.ghsMatmet, keyFile);
         saveToKeyfile(!pedited || spot_edited->ghsMode, "Locallab", "GhsMode_" + index_str, spot.ghsMode, keyFile);
         saveToKeyfile(!pedited || spot_edited->ghs_D, "Locallab", "Ghs_D_" + index_str, spot.ghs_D, keyFile);
         saveToKeyfile(!pedited || spot_edited->ghs_slope, "Locallab", "Ghs_slope_" + index_str, spot.ghs_slope, keyFile);

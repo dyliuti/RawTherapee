@@ -606,6 +606,7 @@ public:
         bool complexshadhigh;
         bool shMethod;
         bool ghsMethod;
+        bool ghsMatmet;
         bool ghsMode;
         bool ghs_D;
         bool ghs_slope;
@@ -623,7 +624,6 @@ public:
         bool ghs_agx;
         bool ghs_smooth;
         bool ghs_inv;
-        
         bool multsh[7];
         bool highlights;
         bool h_tonalwidth;

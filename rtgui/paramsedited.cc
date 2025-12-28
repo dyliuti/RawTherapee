@@ -1478,6 +1478,7 @@ void ParamsEdited::initFrom(const std::vector<rtengine::procparams::ProcParams>&
                 locallab.spots.at(j).complexshadhigh = locallab.spots.at(j).complexshadhigh && pSpot.complexshadhigh == otherSpot.complexshadhigh;
                 locallab.spots.at(j).shMethod = locallab.spots.at(j).shMethod && pSpot.shMethod == otherSpot.shMethod;
                 locallab.spots.at(j).ghsMethod = locallab.spots.at(j).ghsMethod && pSpot.ghsMethod == otherSpot.ghsMethod;
+                locallab.spots.at(j).ghsMatmet = locallab.spots.at(j).ghsMatmet && pSpot.ghsMatmet == otherSpot.ghsMatmet;
                 locallab.spots.at(j).ghsMode = locallab.spots.at(j).ghsMode && pSpot.ghsMode == otherSpot.ghsMode;
                 locallab.spots.at(j).ghs_D = locallab.spots.at(j).ghs_D && pSpot.ghs_D == otherSpot.ghs_D;
                 locallab.spots.at(j).ghs_slope = locallab.spots.at(j).ghs_slope && pSpot.ghs_slope == otherSpot.ghs_slope;
@@ -4625,6 +4626,10 @@ void ParamsEdited::combine(rtengine::procparams::ProcParams& toEdit, const rteng
 
         if (locallab.spots.at(i).ghsMethod) {
             toEdit.locallab.spots.at(i).ghsMethod = mods.locallab.spots.at(i).ghsMethod;
+        }
+
+        if (locallab.spots.at(i).ghsMatmet) {
+            toEdit.locallab.spots.at(i).ghsMatmet = mods.locallab.spots.at(i).ghsMatmet;
         }
 
         if (locallab.spots.at(i).ghsMode) {
@@ -8778,6 +8783,7 @@ LocallabParamsEdited::LocallabSpotEdited::LocallabSpotEdited(bool v) :
     complexshadhigh(v),
     shMethod(v),
     ghsMethod(v),
+    ghsMatmet(v),
     ghsMode(v),
     ghs_D(v),
     ghs_slope(v),
@@ -8795,7 +8801,6 @@ LocallabParamsEdited::LocallabSpotEdited::LocallabSpotEdited(bool v) :
     ghs_agx(v),
     ghs_smooth(v),
     ghs_inv(v),
-    
     multsh{v, v, v, v, v, v, v},
     highlights(v),
     h_tonalwidth(v),
@@ -9610,6 +9615,7 @@ void LocallabParamsEdited::LocallabSpotEdited::set(bool v)
     complexshadhigh = v;
     shMethod = v;
     ghsMethod = v;
+    ghsMatmet = v;
     ghsMode = v;
     ghs_D = v;
     ghs_slope = v;
@@ -9617,7 +9623,6 @@ void LocallabParamsEdited::LocallabSpotEdited::set(bool v)
     ghs_B = v;
     ghs_SP = v;
     SPAutoRadius = v;
-    
     ghs_LP = v;
     ghs_HP = v;
     ghs_LC = v;

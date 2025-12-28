@@ -2336,6 +2336,7 @@ inline float power_norm(float r, float g, float b)
     float r2 = SQR(r);
     float g2 = SQR(g);
     float b2 = SQR(b);
+  
     float d = r2 + g2 + b2;
     float n = r * r2 + g * g2 + b * b2;
 
@@ -2361,6 +2362,19 @@ inline float norm2(float r, float g, float b, TMatrix ws)
     return std::min(hi, power_norm(r, g, b) / 2.f + Color::rgbLuminance(r, g, b, ws) / 2.f);
 }
 
+inline float norm_3(float r, float g, float b, TMatrix ws, float raplim)//lowers the equivalent luminance if the white point is high
+{
+    constexpr float hi = std::numeric_limits<float>::max() / 100.f;
+    float pwn = 0.5f;//standard repartition between XYZ luminance and Out of gamut values 
+    if (raplim < 2.f) {//raplim : ratio between the normal value 'reasonable_limit_white_point' and reality
+        pwn = 0.7f;//Tested on images with WP linear close to 1.5
+    } else if (raplim < 4.f) {//Near Sunset
+        pwn = 0.75f;//Tested on images with WP linear close to 5
+    } else {
+        pwn = 0.85f;//Tested on images with WP linear close to 6 and above //LEDs
+    }    
+    return std::min(hi, pwn * power_norm(r, g, b) + (1.f - pwn) * Color::rgbLuminance(r, g, b, ws));
+}
 
 inline float norm(float r, float g, float b, TMatrix ws)
 {
@@ -18301,8 +18315,8 @@ void ImProcFunctions::Lab_Local(
                         } else if (params->locallab.spots.at(sp).ghsMethod == "hue") {// hue hsl
                             met = 5;
                         }
-                        bool ghsautoSP = params->locallab.spots.at(sp).SPAutoRadius;                        
-                        
+                        bool ghsautoSP = params->locallab.spots.at(sp).SPAutoRadius;
+
                         const ght_compute_params c = GHT_setup(B, D, LP, SP, HP, strtype);//setup system with entries
 
                         std::unique_ptr<Imagefloat> tmpImage(new Imagefloat(bfw, bfh));
@@ -18320,41 +18334,80 @@ void ImProcFunctions::Lab_Local(
                         float minb = 100.f;
                         float maxw = -100.f;
                         float maxwred = -100.f;
-                        float maxwgreen = -100.f;                      
+                        float maxwgreen = -100.f;
                         float maxwblue = -100.f;
                         constexpr float range = 65535.f;
                         using Triple = std::array<double, 3>;
                         using Matrix = std::array<Triple, 3>;
 
-                        Matrix inv_agx_T = {};//initialize inv_agx_T
+                        Matrix inv_lms_T = {};//initialize inv_lms_T
+                        Matrix lms_mat = {};//initialize lms_mat
+                        if(params->locallab.spots.at(sp).ghsMatmet != "none") {
+                            if(params->locallab.spots.at(sp).ghsMatmet == "agx") {// for Rec2020 with chromatic adaptation D50 from Sobotka AgX-Resolve (origin uncertain).
+                                //It's very unusual to apply this transformation in RGB space rather than XYZ space, but why not, especially since we're only affecting the differences
+                                //caused by the change and often we're dealing with a high White Point, therefore outside the usual XYZ values.
 
-                        if(params->locallab.spots.at(sp).ghs_agx == true) {
-                            //Define AgX matrix for color space transformation
-                            const Matrix agx_mat = {{
-                                { 0.856627153315983, 0.0951212405381588, 0.0482516061458583 },
-                                { 0.137318972929847, 0.761241990602591, 0.101439036467562 },
-                                { 0.11189821299995, 0.0767994186031903, 0.811302368396859 }
-                            }};
-
-                            Matrix agx_T = {};
-                            Color::transpose(agx_mat, agx_T);//transpose Matrix
+                                //Define AgX matrix for color space transformation
+                                lms_mat = {{//AgX
+                                    { 0.856627153315983, 0.0951212405381588, 0.0482516061458583 },
+                                    { 0.137318972929847, 0.761241990602591, 0.101439036467562 },
+                                    { 0.11189821299995, 0.0767994186031903, 0.811302368396859 }
+                                }};
+                            } else if(params->locallab.spots.at(sp).ghsMatmet == "JZ") { //original LMS JzAzBz matrix without PQ, whitout Absolute luminance, whitout "az and bz"
+                                lms_mat = {{//JzAzBz - Actually, it's not the JzAzBz model but an approximate cognitive bias.
+                                    { 0.41478972, 0.579999, 0.0146480 },
+                                    { -0.2015100, 1.120649, 0.0531008 },
+                                    { -0.0166008, 0.264800, 0.6684799 }
+                                }};
+                            } else if(params->locallab.spots.at(sp).ghsMatmet == "cat16") { //original 'LMS Cat16' matrix, of course without CIECAM treatment.
+                                lms_mat = {{//Cat16 - Actually, it's not the Cat16 model but an approximate cognitive bias, but less biased than JzAzBz
+                                    { 0.44113111, 0.46084198975, 0.090051211104 },
+                                    { 0.176890718, 0.724815611, 0.06249008 },
+                                    { 0.061414342, 0.196120268, 0.5430087122 }
+                                }};
+                            }
+          
+                            Matrix lms_T = {};
+                            Color::transpose(lms_mat, lms_T);//transpose Matrix
                             //invert matrix
-                            if (!rtengine::invertMatrix(agx_T, inv_agx_T)) {
+                            if (!rtengine::invertMatrix(lms_T, inv_lms_T)) {
                                 if (settings->verbose) {
                                     std::cout << "Matrix is not invertible, skipping and use this one" << std::endl;
                                 }
-                                //If the calculations fail, we use this matrix calculated with a spreadsheet. Note that if 'agx_mat' changes, you must redo the calculations.
-                                inv_agx_T[0][0] = 1.1974410768877;
-                                inv_agx_T[0][1] = -0.196474626321346;
-                                inv_agx_T[0][2] = -0.146557417106601;
-                                inv_agx_T[1][0] = -0.144261512698001;
-                                inv_agx_T[1][1] = 1.35409513146973;
-                                inv_agx_T[1][2] = -0.1082844058788469;
-                                inv_agx_T[2][0] = -0.0531795641897042;
-                                inv_agx_T[2][1] = -0.157620505148385;
-                                inv_agx_T[2][2] = 1.25484147589507;                               
+                                //If the calculations fail, we use this matrix calculated with a spreadsheet. Note that if 'lms_mat' changes, you must redo the calculations.
+                                if(params->locallab.spots.at(sp).ghsMatmet == "agx") {
+                                    inv_lms_T[0][0] = 1.1974410768877;
+                                    inv_lms_T[0][1] = -0.196474626321346;
+                                    inv_lms_T[0][2] = -0.146557417106601;
+                                    inv_lms_T[1][0] = -0.144261512698001;
+                                    inv_lms_T[1][1] = 1.35409513146973;
+                                    inv_lms_T[1][2] = -0.1082844058788469;
+                                    inv_lms_T[2][0] = -0.0531795641897042;
+                                    inv_lms_T[2][1] = -0.157620505148385;
+                                    inv_lms_T[2][2] = 1.25484147589507;
+                                } else if(params->locallab.spots.at(sp).ghsMatmet == "JZ") {////I chose JZ rather than JzAzBz because we're dealing with a cognitive bias.
+                                    inv_lms_T[0][0] = 1.92488743175646;
+                                    inv_lms_T[0][1] = 0.349838855125251;
+                                    inv_lms_T[0][2] = -0.097770847478916;
+                                    inv_lms_T[1][0] = -1.00252032146704;
+                                    inv_lms_T[1][1] = 0.72483850737164;
+                                    inv_lms_T[1][2] = -0.312021163395669;
+                                    inv_lms_T[2][0] = 0.0265884071012174;
+                                    inv_lms_T[2][1] = -0.0573856961296308;
+                                    inv_lms_T[2][2] = 1.51932335013174;
+                                } else if(params->locallab.spots.at(sp).ghsMatmet == "cat16") {//I chose cat16 rather than Cat16 because we're dealing with a cognitive bias.
+                                    inv_lms_T[0][0] = 3.05467729554555;
+                                    inv_lms_T[0][1] = -0.738708117076132;
+                                    inv_lms_T[0][2] = -0.0786826459200281;
+                                    inv_lms_T[1][0] = -1.86312660313314;
+                                    inv_lms_T[1][1] = 1.87455986414727;
+                                    inv_lms_T[1][2] = -0.46632122626262804;
+                                    inv_lms_T[2][0] = -0.29216927086322;
+                                    inv_lms_T[2][1] = -0.0932210370533556;
+                                    inv_lms_T[2][2] = 1.90830440656202;
+                                }
                             }
-                            //now we have 2 Matrix to convert tmpimage with Agx
+                            //now we have 3 Matrices to convert tmpimage with Agx, JzAzBz (JZ), Cat16 (cat16)
 
 #ifdef _OPENMP
         #   pragma omp parallel for schedule(dynamic,16) if (multiThread)
@@ -18367,12 +18420,12 @@ void ImProcFunctions::Lab_Local(
                                     std::array<float, 3> rgb_in{r, g, b};
                                     float rout = 0.f;
                                     float gout = 0.f;
-                                    float bout = 0.f;                             
-                                    Color::agx_trans(rgb_in, agx_T, rout, gout, bout);
-                                    tmpImage->r(i, j) = rtengine::max(0.00001f, rout);//avoid negatives values. Normally this should never happen because the coefficients of Agx_T are all positive... unless the matrix changes
+                                    float bout = 0.f;
+                                    Color::agx_trans(rgb_in, lms_T, rout, gout, bout);
+                                    tmpImage->r(i, j) = rtengine::max(0.00001f, rout);//avoid negative values. Normally this should never happen because the coefficients of the selected matrix are all positive... unless the matrix changes
                                     tmpImage->g(i, j) = rtengine::max(0.00001f, gout);//these potentially negative values, related to calculations and not to the gamut, are not accepted by the rgblab or labrgb, workingtrc functions, etc,
-                                    tmpImage->b(i, j) = rtengine::max(0.00001f, bout);//but after numerous checks, this has no impact on the results...except to prevent a crash.                                                  
-                                }                               
+                                    tmpImage->b(i, j) = rtengine::max(0.00001f, bout);//but after numerous checks, this has no impact on the results...except to prevent a crash.
+                                }
                         }
 
                         if(params->locallab.spots.at(sp).ghs_autobw == true  && strtype == GHTStrType::NORMAL) { //find probably White point and black point ...Must be adjusted manually in soma cases notably Black point with negatives values...                        
@@ -18396,15 +18449,15 @@ void ImProcFunctions::Lab_Local(
                                     float maxr = r;
                                     if(maxr > maxwred){
                                         maxwred = maxr;
-                                    }                                    
+                                    }
                                     float maxg = g;
                                     if(maxg > maxwgreen){
                                         maxwgreen = maxg;
-                                    }                                    
+                                    }
                                     float maxb = b;
                                     if(maxb > maxwblue){
                                         maxwblue = maxb;
-                                    }                                    
+                                    }
                                  }
                                 const float noise = pow_F(2.f, -16.f);
                                 minb = rtengine::max(minb, noise);//set a very minimal value in all cases to avoid 0
@@ -18418,11 +18471,16 @@ void ImProcFunctions::Lab_Local(
                                 const float DRghs = -xlogf(minb / maxw) / log2; //calculate dynamic Range GHS with max and min absolute values, and not with luminance
                                 ghscolor[3] = DRghs; 
                         }
-                               
+          
                         int blackpoint = 100. * params->locallab.spots.at(sp).ghs_BLP;//Black point
                         float shiftblackpoint = params->locallab.spots.at(sp).ghs_BLP;//Black point
                         float shiftwhitepoint = params->locallab.spots.at(sp).ghs_HLP;//White point
-                       
+                        constexpr float reasonable_limit_white_point = 1.3f; //reasonable limit where we can consider that the highlights are very high
+                        //This occurs either when 'Highlight reconstruction' is not activated or when the value recovered with reconstruction is quite low. 
+                        //This is the majority of cases. In this case, I apply 'norm2', which combines the estimated XYZ Luminance values ​​with out-of-gamut values ​​at 50%.
+                        //In other cases, sunsets, images with LEDs,etc. the WP linear values ​​can be very high, up to 11... I vary the ratio from 50% up to 85% for out-of-gamut lights.
+                        //But all of this is quite empirical, based on trials/experiments and not sophisticated mathematical formulas (like almost all colorimetry...)
+
                         if(shiftblackpoint < 0.f && strtype == GHTStrType::NORMAL) {//change only Black point with negatives values for in some cases out of gamut values
                             //rgb value can be very weakly negatives (eg working space sRGB in some rare cases) - tone_eqblack prevents it
                             //also change black value to help "ghs" and avoid noise
@@ -18438,14 +18496,13 @@ void ImProcFunctions::Lab_Local(
                             if(strtype == GHTStrType::INVERSE) {
                                 shiftblackpoint2 = shiftblackpoint;
                             }
-                            
+
                             int bpnb = 0;
                             int wpnb = 0;
                             float minbp = 1.f;
                             float maxwp = 0.f;
-                            
+
                             t1.set();
-                           
 
 #ifdef _OPENMP
         #   pragma omp parallel for reduction(+:bpnb, wpnb) reduction(min:minbp) reduction(max:maxwp) if (multiThread)  //for schedule(dynamic,16)
@@ -18470,14 +18527,14 @@ void ImProcFunctions::Lab_Local(
                                     if(minrgb < minbp){
                                         minbp = minrgb;
                                     }
-                                 
+          
                                     float maxrgb = rtengine::max(Ro, Go, Bo);
                                     if(maxrgb > maxwp){
                                         maxwp = maxrgb;
                                     }
-                                    
+          
                                     if(Ro < 0.f || Go < 0.f || Bo < 0.f) {
-                                        bpnb++;                                      
+                                        bpnb++;
                                     }
                                     if(Ro > 1.f || Go > 1.f || Bo > 1.f) {
                                         wpnb++;
@@ -18492,15 +18549,19 @@ void ImProcFunctions::Lab_Local(
                                         tmpImage->b(i, j) = clipR(rtengine::max(0.00001f, Bo * range));
                                     } 
                                 }
-                                
+          
                                 //evaluation symmetry point only in RGB mode    
                                 LUTu symhist(65535);
                                 symhist.clear();
                                 array2D<float> Y2(bfw, bfh);
-                                //generate histogram RGB with norm2 equivalent luminance
+                                //generate histogram RGB with norm2 or norm_3 equivalent luminance
                                 for (int i = 0; i < bfh; ++i)
                                     for (int j = 0; j < bfw; ++j) {
-                                        Y2[i][j] = norm2(clipR(tmpImage->r(i, j)), clipR(tmpImage->g(i, j)), clipR(tmpImage->b(i, j)), wprof);//clipR to avoid bad datas in histogram - This is not a precise calculation but an assessment
+                                        if(maxwp < reasonable_limit_white_point) { //comparison between the calculated WP and the reasonable limit
+                                            Y2[i][j] = norm2(clipR(tmpImage->r(i, j)), clipR(tmpImage->g(i, j)), clipR(tmpImage->b(i, j)), wprof);//clipR to avoid bad data in histogram - This is not a precise calculation but an assessment
+                                        } else {
+                                            Y2[i][j] = norm_3(clipR(tmpImage->r(i, j)), clipR(tmpImage->g(i, j)), clipR(tmpImage->b(i, j)), wprof, maxwp / reasonable_limit_white_point);//clipR to avoid bad data in histogram - This is not a precise calculation but an assessment
+                                        }
                                         int pos = (int) Y2[i][j];
                                         symhist[pos]++;
                                     }
@@ -18513,11 +18574,11 @@ void ImProcFunctions::Lab_Local(
                                     if(symhist[j] > maxhist) {
                                         maxhist =  symhist[j];
                                         kk = j;
-                                        symref = (float)kk / 65535.f;                                   
-                                    }                               
+                                        symref = (float)kk / 65535.f;
+                                    }
                                 }
-                            
-                                
+          
+          
                                 ghsbpwp[0] = bpnb;
                                 ghsbpwp[1] = wpnb;
                                 ghsbpwpvalue[0] = minbp;
@@ -18534,11 +18595,10 @@ void ImProcFunctions::Lab_Local(
                                     printf("calculate Black Point and White Point: %d nsec\n",  t2.etime(t1));
                                 }
 
-                        /*
-                                if (settings->verbose) {
-                                    printf("Black Point-nb=%i White Point-nb=%i  min-BlackPoint val=%f max-WhitePointPval=%f \n", ghsbpwp[0], ghsbpwp[1], (double)ghsbpwpvalue[0] , (double) ghsbpwpvalue[1]);
-                                }
-                        */        
+                               // if (settings->verbose) {
+                               //     printf("Black Point-nb=%i White Point-nb=%i  min-BlackPoint val=%f max-WhitePointPval=%f \n", ghsbpwp[0], ghsbpwp[1], (double)ghsbpwpvalue[0] , (double) ghsbpwpvalue[1]);
+                               // }
+
                         }
                         
                         if(met == 0  || met == 1) {//RGB mode
@@ -18568,8 +18628,8 @@ void ImProcFunctions::Lab_Local(
                                     g = ll + s * gl;
                                     b = ll + s * bl;
                                 };
-                            
-                                //local contrast with guidedfilter incorporated in RGB luminance met = 0
+          
+                            //local contrast with guidedfilter incorporated in RGB luminance met = 0
                             array2D<float> Yc(bfw, bfh);
                                 {
                                     constexpr float base_posterization = 20.f;
@@ -18580,7 +18640,11 @@ void ImProcFunctions::Lab_Local(
 #endif
                                     for (int y = 0; y < bfh; ++y) {
                                         for (int x = 0; x < bfw; ++x) {
-                                            Y2[y][x] = norm2(tmpImage->r(y, x), tmpImage->g(y, x), tmpImage->b(y, x), wprof) / 65535.f;//norm ?
+                                            if(ghsbpwpvalue[1] < reasonable_limit_white_point) {//comparison between the calculated WP and the reasonable limit
+                                                Y2[y][x] = norm2(tmpImage->r(y, x), tmpImage->g(y, x), tmpImage->b(y, x), wprof) / 65535.f;//norm2
+                                            } else {
+                                                Y2[y][x] = norm_3(tmpImage->r(y, x), tmpImage->g(y, x), tmpImage->b(y, x), wprof, ghsbpwpvalue[1] / reasonable_limit_white_point) / 65535.f;//norm_3
+                                            }
                                             float l = xlogf(rtengine::max(Y2[y][x], 1e-9f));
                                             float ll = round(l * base_posterization) / base_posterization;
                                             Yc[y][x] = xexpf(ll);
@@ -18611,15 +18675,21 @@ void ImProcFunctions::Lab_Local(
                                     float Bo = 0.f;
                                     if(met == 0) {
                                         float tlc = Yc[i][j];
-                                        tlc = rtengine::max(tlc, noise);                               
+                                        tlc = rtengine::max(tlc, noise);
                                         float ci = GHT(tlc, B, D, LP, SP, HP, c, strtype);
                                         float flc = ci / tlc;
-                                        float gh = norm2(r, g, b, wprof);//Calculate Luminance in function working profile Wprof  norm ?
+                                        float gh = 0.f;
+                                        if(ghsbpwpvalue[1]  < reasonable_limit_white_point) {//comparison between the calculated WP and the reasonable limit
+                                            gh = norm2(r, g, b, wprof);//Calculate Luminance in function working profile Wprof and norm2
+                                        } else {
+                                            gh = norm_3(r, g, b, wprof, ghsbpwpvalue[1] / reasonable_limit_white_point);//Calculate Luminance in function working profile Wprof and norm_3
+                                        }
+
                                         gh = rtengine::max(gh, noise);
                                         float Mgh = GHT(gh, B, D, LP, SP, HP, c, strtype);//ghs transform with "luminance"
                                         float fgh = Mgh / gh;
                                         fgh = intp(blend, flc, fgh);
-                                        
+          
                                         Ro = r * fgh;//new values for r, g, b
                                         Go = g * fgh;
                                         Bo = b * fgh;
@@ -18634,7 +18704,7 @@ void ImProcFunctions::Lab_Local(
                                         Ro = GHT(r, B, D, LP, SP, HP, c, strtype);//ghs R RGB standard
                                         Go = GHT(g, B, D, LP, SP, HP, c, strtype);//ghs G RGB standard
                                         Bo = GHT(b, B, D, LP, SP, HP, c, strtype);//ghs B RGB standard
-                                        
+          
                                         float fgh = 0.333f * ((Ro / r) + (Go / g) + (Bo /b));//linear average of the 3 channels
                                         apply_sat(Ro, Go, Bo, fgh, gh);//always apply saturation
                                     }
@@ -18672,7 +18742,7 @@ void ImProcFunctions::Lab_Local(
                             const std::unique_ptr<LabImage> labtemp(new LabImage(bfw, bfh));
                             rgb2lab(*tmpImage, *labtemp, params->icm.workingProfile);
                             const float satreal = ghschro;
-                
+
                             DiagonalCurve color_satur({//curve for smoothing chroma ++
                                 DCT_NURBS,
                                 0, 0,
@@ -18724,8 +18794,9 @@ void ImProcFunctions::Lab_Local(
                                 }
                             lab2rgb(*labtemp, *tmpImage, params->icm.workingProfile);
                         }
-                        
-                        if(params->locallab.spots.at(sp).ghs_agx == true) {
+          
+                        if(params->locallab.spots.at(sp).ghsMatmet != "none") {
+
 #ifdef _OPENMP
         #   pragma omp parallel for schedule(dynamic,16) if (multiThread)
 #endif                                            
@@ -18737,11 +18808,11 @@ void ImProcFunctions::Lab_Local(
                                     std::array<float, 3> rgb_in{r, g, b};
                                     float rout = 0.f;
                                     float gout = 0.f;
-                                    float bout = 0.f;                             
-                                    Color::agx_trans(rgb_in, inv_agx_T, rout, gout, bout);
-                                    tmpImage->r(i, j) = rtengine::max(0.00001f, rout);//avoid negatives values which are mathematically possible due to the values 
+                                    float bout = 0.f;
+                                    Color::agx_trans(rgb_in, inv_lms_T, rout, gout, bout);
+                                    tmpImage->r(i, j) = rtengine::max(0.00001f, rout);//avoid negative values which are mathematically possible due to the values 
                                     tmpImage->g(i, j) = rtengine::max(0.00001f, gout);//​​of the inverse matrix and the possible 'overflows' of the GHS calculations if the user uses very strong settings
-                                    tmpImage->b(i, j) = rtengine::max(0.00001f, bout);                                                          
+                                    tmpImage->b(i, j) = rtengine::max(0.00001f, bout);
                                 }
                         }
  
@@ -18769,15 +18840,13 @@ void ImProcFunctions::Lab_Local(
             #pragma omp parallel for if (multiThread)
 #endif                       
                             for (int i = 0; i < bfh; ++i)
-                                for (int j = 0; j < bfw; ++j) {                           
+                                for (int j = 0; j < bfw; ++j) {
                                     tmpImage->r(i, j) = rtengine::max(0.00001f, tmpImage->r(i, j));//0.00001f to avoid crash after SE with RGB functions
                                     tmpImage->g(i, j) = rtengine::max(0.00001f, tmpImage->g(i, j));
                                     tmpImage->b(i, j) = rtengine::max(0.00001f, tmpImage->b(i, j));
                                 }
                         }
 
-
- 
                         rgb2lab(*tmpImage, *bufexpfin, params->icm.workingProfile);
 
                         tmpImage.reset();
@@ -18789,7 +18858,7 @@ void ImProcFunctions::Lab_Local(
                         float rad = kmod * params->locallab.spots.at(sp).ghs_LC;
                         float stren = 15.f * (1.f + D);//take into account D stretch
                         if(D > 0.002f) {//to preserve settings WP and BP
-                            loccont(bfw, bfh, bufexpfin.get(), rad, stren , sk); //local contrast in L (Lab) mode.
+                            loccont(bfw, bfh, bufexpfin.get(), rad, stren, sk); //local contrast in L (Lab) mode.
                         }
                     }
                 }
@@ -18831,8 +18900,6 @@ void ImProcFunctions::Lab_Local(
                     }
                 }
             //end gradient
-                
-                
             }
 
             if (lp.enaSHMask && lp.recothrs != 1.f) {
@@ -18865,7 +18932,7 @@ void ImProcFunctions::Lab_Local(
                     bufexpfin->b[x][y] = intp(repart, bufexporig->b[x][y], bufexpfin->b[x][y]);
                 }
             }
-            
+
             if (lp.recothrs >= 1.f) {
                 if(call == ca1 || call == ca2 || call == ca3) {//call == 2 to run in mode plain image
                     transit_shapedetect2(sp, 0.f, 0.f, call, 9, bufexporig.get(), bufexpfin.get(), originalmaskSH.get(), hueref, chromaref, lumaref, sobelref, 0.f, nullptr, lp, original, transformed, nullptr, LocalLabGradientMode::STANDARD, cx, cy, sk);
