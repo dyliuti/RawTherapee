@@ -2227,8 +2227,10 @@ void FileCatalog::toggleRightPanel()
 }
 
 
-void FileCatalog::selectImage (Glib::ustring fname, bool clearFilters)
+void FileCatalog::selectImage (Glib::ustring fname, Glib::ustring directory, bool clearFilters)
 {
+    if ( directory.empty() ) return;
+
     if (clearFilters) { // clear all filters
         Query->set_text("");
         categoryButtonToggled(bFilterClear, false);
@@ -2239,13 +2241,25 @@ void FileCatalog::selectImage (Glib::ustring fname, bool clearFilters)
         }
     }
 
-    fileBrowser->selectImage(fname);
-    imageToSelect_fname = "";
+    if ( directory != selectedDirectory ) {
+        // Special case, when the user opens an image to the editor, travels directories in the file browser
+        // and then wants to return to the directory of the file that is opened in the editor.
+        BrowsePath->set_text(directory);
+        // reload or refresh thumbs and select image
+        buttonBrowsePathPressed ();
+        // the actual selection of image will be handled asynchronously at the end of FileCatalog::previewsFinishedUI
+        imageToSelect_fname = fname;
+    } else {
+        fileBrowser->selectImage(fname);
+        imageToSelect_fname = "";
+    }
 }
 
 
-void FileCatalog::openNextPreviousEditorImage (Glib::ustring fname, bool clearFilters, eRTNav nextPrevious)
+void FileCatalog::openNextPreviousEditorImage (Glib::ustring fname, Glib::ustring directory, bool clearFilters, eRTNav nextPrevious)
 {
+    if ( directory.empty() ) return;
+
     if (clearFilters) { // clear all filters
         Query->set_text("");
         categoryButtonToggled(bFilterClear, false);
@@ -2256,9 +2270,20 @@ void FileCatalog::openNextPreviousEditorImage (Glib::ustring fname, bool clearFi
         }
     }
 
-    fileBrowser->openNextPreviousEditorImage(fname, nextPrevious);
-    refImageForOpen_fname = "";
-    actionNextPrevious = NAV_NONE;
+    if ( directory != selectedDirectory ) {
+        // Special case, when the user opens an image to the editor, travels directories in the file browser
+        // and then wants to continue with SHIFT+F4/F3
+        BrowsePath->set_text(directory);
+        // reload or refresh thumbs and select image
+        buttonBrowsePathPressed ();
+        // the actual selection of image will be handled asynchronously at the end of FileCatalog::previewsFinishedUI
+        refImageForOpen_fname = fname;
+        actionNextPrevious = nextPrevious;
+    } else {
+        fileBrowser->openNextPreviousEditorImage(fname, nextPrevious);
+        refImageForOpen_fname = "";
+        actionNextPrevious = NAV_NONE;
+    }
 }
 
 bool FileCatalog::handleShortcutKey (GdkEventKey* event)
