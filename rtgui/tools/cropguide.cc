@@ -121,8 +121,9 @@ void CropGuide::setupPresets()
         preset.visibility_button = visible_button;
         updateImage(visible_button, false);
         visible_button->set_relief(Gtk::RELIEF_NONE);
-        preset.visibility_conn = visible_button->signal_toggled().connect(sigc::bind(
-                sigc::mem_fun(this, &CropGuide::onPresetToggled), i));
+        preset.visibility_conn = visible_button->signal_button_release_event().connect(
+            sigc::bind(sigc::mem_fun(*this, &CropGuide::onPresetToggled), i));
+
         grid->attach(*visible_button, 0, curr_row);
 
         auto label = Gtk::manage(new Gtk::Label(M(GUIDE_TYPE_OPTIONS.at(i))));
@@ -421,16 +422,36 @@ void CropGuide::enabledChanged()
     }
 }
 
-void CropGuide::onPresetToggled(size_t index)
+bool CropGuide::onPresetToggled(GdkEventButton* event, size_t index)
 {
-    auto& preset = m_presets.at(index);
-    bool is_visible = preset.visibility_button->get_active();
-    updateImage(preset.visibility_button, is_visible);
-    preset.is_dirty = true;
+    if (event->state & GDK_CONTROL_MASK) {
+        Preset& preset = m_presets.at(index);
+        preset.visibility_button->toggled();
+        bool is_visible = preset.visibility_button->get_active();
+        updateImage(preset.visibility_button, is_visible);
+        preset.is_dirty = true;
+    } else {
+        for (size_t i = 0; i < m_presets.size(); i++) {
+            Preset& preset = m_presets[i];
+
+            if (i == index) {
+                preset.visibility_button->toggled();
+                bool is_visible = preset.visibility_button->get_active();
+                updateImage(preset.visibility_button, is_visible);
+                preset.is_dirty = true;
+            } else {
+                preset.visibility_button->set_active(false);
+                updateImage(preset.visibility_button, false);
+                preset.is_dirty = true;
+            }
+        }
+    }
 
     if (listener && getEnabled()) {
         listener->panelChanged(EvCropGuidePresetChanged, M(GUIDE_TYPE_OPTIONS.at(index)));
     }
+
+    return true;
 }
 
 void CropGuide::onGoldenTriangleMirror()

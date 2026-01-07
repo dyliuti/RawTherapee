@@ -66,7 +66,7 @@ public:
     void adjusterChanged(Adjuster* adj, double newVal) override;
 
     void enabledChanged() override;
-    void onPresetToggled(size_t index);
+    bool onPresetToggled(GdkEventButton* event, size_t index);
     void onGoldenTriangleMirror();
     void onGoldenTriangleReset();
     void onGoldenRatioRotate();
