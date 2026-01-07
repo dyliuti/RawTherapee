@@ -2676,10 +2676,11 @@ TP_CROP_SELECTCROP;Select
 TP_CROP_W;Width
 TP_CROP_X;Left
 TP_CROP_Y;Top
-TP_CROP_GUIDE_ASPECT_RATIO;Choose new aspect ratio guide:
+TP_CROP_GUIDE_ASPECT_RATIO;Inscribed aspect ratio crop guides:
 TP_CROP_GUIDE_BLEED;Bleed
 TP_CROP_GUIDE_LABEL;Crop Guide
 TP_CROP_GUIDE_NO_ASPECT_RATIO_GUIDES;No aspect ratio guides
+TP_CROP_GUIDE_TOOLTIP;Display preview-only guides for the current crop.\n\nInscribed aspect ratio guides fit the selected aspect ratio in the current crop. The orientation is determined automatically based on the crop aspect ratio.\n\n<b>Click</b> - Enable only the selected preset\n<b>Ctrl-Click</b> - Enable the selected preset as an additional guide
 TP_DARKFRAME_AUTOSELECT;Auto-selection
 TP_DARKFRAME_LABEL;Dark-Frame
 TP_DEFRINGE_LABEL;Defringe

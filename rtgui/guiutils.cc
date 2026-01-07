@@ -537,18 +537,14 @@ void MyExpander::setEnabled(bool isEnabled)
     }
 }
 
-void MyExpander::setEnabledTooltipMarkup(Glib::ustring tooltipMarkup)
+void MyExpander::setEnabledTooltipMarkup(const Glib::ustring& tooltipMarkup)
 {
-    if (useEnabled) {
-        statusImage->set_tooltip_markup(tooltipMarkup);
-    }
+    headerHBox->set_tooltip_markup(tooltipMarkup);
 }
 
-void MyExpander::setEnabledTooltipText(Glib::ustring tooltipText)
+void MyExpander::setEnabledTooltipText(const Glib::ustring& tooltipText)
 {
-    if (useEnabled) {
-        statusImage->set_tooltip_text(tooltipText);
-    }
+    headerHBox->set_tooltip_text(tooltipText);
 }
 
 void MyExpander::set_expanded( bool expanded )

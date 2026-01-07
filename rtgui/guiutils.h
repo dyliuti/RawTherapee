@@ -300,9 +300,9 @@ public:
     /// If not inconsistent, set the enabled button to true or false and emit the message if the state is different
     /// If inconsistent, set the internal value to true or false, but do not update the image and do not emit the message
     void setEnabled(bool isEnabled);
-    /// Adds a Tooltip to the Enabled button, if it exist ; do nothing otherwise
-    void setEnabledTooltipMarkup(Glib::ustring tooltipMarkup);
-    void setEnabledTooltipText(Glib::ustring tooltipText);
+    /// Adds a tooltip to the header
+    void setEnabledTooltipMarkup(const Glib::ustring& tooltipMarkup);
+    void setEnabledTooltipText(const Glib::ustring& tooltipText);
 
     /// Get the header widget. It'll send back the Gtk::Label* if it has been instantiated with a simple text
     Gtk::Widget* getLabelWidget() const

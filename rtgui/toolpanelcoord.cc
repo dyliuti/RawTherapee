@@ -190,11 +190,12 @@ const std::vector<ToolTree> LOCALLAB_PANEL_TOOLS = {
 const std::vector<ToolTree> TRANSFORM_PANEL_TOOLS = {
     {
         .id = Tool::CROP_TOOL,
-        .children = {},
-    },
-    {
-        .id = Tool::CROP_GUIDE,
-        .children = {},
+        .children = {
+            {
+                .id = Tool::CROP_GUIDE,
+                .children = {},
+            },
+        },
     },
     {
         .id = Tool::RESIZE_TOOL,

@@ -76,6 +76,8 @@ CropGuide::CropGuide()
 {
     setupEvents();
 
+    setEnabledTooltipMarkup(M("TP_CROP_GUIDE_TOOLTIP"));
+
     setupPresets();
     pack_start(*Gtk::manage(new Gtk::Separator()));
     setupAspectRatioGuides();
