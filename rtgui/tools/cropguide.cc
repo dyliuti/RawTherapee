@@ -47,6 +47,60 @@ constexpr std::array<const char*, 9> GUIDE_TYPE_OPTIONS = {
 };
 // clang-format on
 
+// Bleed basis combo box data reusing text from resize tool
+constexpr int EMPTY_COMBO_INDEX = -1;
+constexpr int INDEX_BASIS_SCALE = 0;
+constexpr int INDEX_BASIS_WIDTH = 1;
+constexpr int INDEX_BASIS_HEIGHT = 2;
+constexpr int INDEX_BASIS_LONG = 3;
+constexpr int INDEX_BASIS_SHORT = 4;
+constexpr int INDEX_BASIS_UNCHANGED = 5;
+constexpr std::array<const char*, 5> BLEED_BASIS = {
+    "TP_RESIZE_SCALE",
+    "TP_RESIZE_WIDTH",
+    "TP_RESIZE_HEIGHT",
+    "TP_RESIZE_LONG",
+    "TP_RESIZE_SHORT"
+};
+
+int mapBasis(CropGuideParams::Basis basis)
+{
+    using Basis = CropGuideParams::Basis;
+    switch (basis) {
+        case Basis::SCALE:
+            return INDEX_BASIS_SCALE;
+        case Basis::WIDTH:
+            return INDEX_BASIS_WIDTH;
+        case Basis::HEIGHT:
+            return INDEX_BASIS_HEIGHT;
+        case Basis::LONG:
+            return INDEX_BASIS_LONG;
+        case Basis::SHORT:
+            return INDEX_BASIS_SHORT;
+        default:
+            return INDEX_BASIS_SCALE;
+    }
+}
+
+CropGuideParams::Basis mapBasis(int comboIndex)
+{
+    using Basis = CropGuideParams::Basis;
+    switch (comboIndex) {
+        case INDEX_BASIS_SCALE:
+            return Basis::SCALE;
+        case INDEX_BASIS_WIDTH:
+            return Basis::WIDTH;
+        case INDEX_BASIS_HEIGHT:
+            return Basis::HEIGHT;
+        case INDEX_BASIS_LONG:
+            return Basis::LONG;
+        case INDEX_BASIS_SHORT:
+            return Basis::SHORT;
+        default:
+            return Basis::SCALE;
+    }
+}
+
 void updateImage(Gtk::ToggleButton* button, bool is_enabled)
 {
     if (is_enabled) {
@@ -63,16 +117,16 @@ void updateImage(Gtk::ToggleButton* button, bool is_enabled)
 const Glib::ustring CropGuide::TOOL_NAME = "cropguide";
 
 CropGuide::CropGuide()
-    : FoldableToolPanel(this, TOOL_NAME, M("TP_CROP_GUIDE_LABEL"), false, true)
-    , m_aspect_ratio_store(Gio::ListStore<AspectRatioModel>::create())
-    , m_presets{}
-    , m_mirror_golden_triangle(false)
-    , m_dirty_mirror_golden_triangle(false)
-    , m_rotate_golden_ratio(false)
-    , m_dirty_rotate_golden_ratio(false)
-    , m_mirror_golden_ratio(false)
-    , m_dirty_mirror_golden_ratio(false)
-    , m_dirty_aspect_ratios(false)
+    : FoldableToolPanel(this, TOOL_NAME, M("TP_CROP_GUIDE_LABEL"), false, true),
+      m_aspect_ratio_store(Gio::ListStore<AspectRatioModel>::create()),
+      m_presets{},
+      m_mirror_golden_triangle(false),
+      m_dirty_mirror_golden_triangle(false),
+      m_rotate_golden_ratio(false),
+      m_dirty_rotate_golden_ratio(false),
+      m_mirror_golden_ratio(false),
+      m_dirty_mirror_golden_ratio(false),
+      m_dirty_aspect_ratios(false)
 {
     setupEvents();
 
@@ -86,6 +140,21 @@ CropGuide::CropGuide()
     m_bleed = Gtk::manage(new Adjuster(M("TP_CROP_GUIDE_BLEED"), 0, 10, 1, 0));
     m_bleed->setAdjusterListener(this);
     pack_start(*m_bleed);
+
+    Gtk::Box* basis_box = Gtk::manage(new Gtk::Box());
+    // Reuse text from resize tool
+    auto basis_label = Gtk::manage(new Gtk::Label(M("TP_RESIZE_APPLIESTO")));
+    basis_box->pack_start(*basis_label, false, false);
+    m_basis = Gtk::manage(new MyComboBoxText());
+    for (auto label : BLEED_BASIS) {
+        m_basis->append(M(label));
+    }
+    m_basis->set_active(INDEX_BASIS_SCALE);
+    basis_box->pack_start(*m_basis, true, true);
+    pack_start(*basis_box);
+
+    m_basis_changed = m_basis->signal_changed().connect(
+        sigc::mem_fun(*this, &CropGuide::onBasisChanged));
 
     show_all();
 }
@@ -101,6 +170,8 @@ void CropGuide::setupEvents()
         m->newEvent(MINUPDATE, "HISTORY_MSG_CROP_GUIDE_ASPECT_RATIO_PRESET_CHANGED");
     EvCropGuideBleedChanged =
         m->newEvent(MINUPDATE, "HISTORY_MSG_CROP_GUIDE_BLEED_CHANGED");
+    EvCropGuideBasisChanged =
+        m->newEvent(MINUPDATE, "HISTORY_MSG_CROP_GUIDE_BLEED_BASIS_CHANGED");
 }
 
 void CropGuide::setupPresets()
@@ -280,7 +351,8 @@ void CropGuide::read(const rtengine::procparams::ProcParams* pp,
                      const ParamsEdited* pedited)
 {
     DisableListener disable_listener(this);
-    BlockAdjusterEvents blockBleed(m_bleed);
+    BlockAdjusterEvents block_bleed(m_bleed);
+    ConnectionBlocker block_basis(m_basis_changed);
 
     setEnabled(pp->cropGuide.enabled);
     m_mirror_golden_triangle = pp->cropGuide.mirror_golden_triangle;
@@ -338,6 +410,11 @@ void CropGuide::read(const rtengine::procparams::ProcParams* pp,
     if (pedited) {
         m_dirty_aspect_ratios = pedited->cropGuide.aspect_ratios;
     }
+
+    m_basis->set_active(mapBasis(pp->cropGuide.basis));
+    if (pedited && !pedited->cropGuide.basis) {
+        m_basis->set_active(EMPTY_COMBO_INDEX);
+    }
 }
 
 void CropGuide::write(rtengine::procparams::ProcParams* pp, ParamsEdited* pedited)
@@ -381,6 +458,11 @@ void CropGuide::write(rtengine::procparams::ProcParams* pp, ParamsEdited* pedite
         params.blue = model->color.get_blue();
 
         pp->cropGuide.aspect_ratios.push_back(std::move(params));
+    }
+
+    pp->cropGuide.basis = mapBasis(m_basis->get_active_row_number());
+    if (pedited) {
+        pedited->cropGuide.basis = m_basis->get_active_row_number() != INDEX_BASIS_UNCHANGED;
     }
 }
 
@@ -600,6 +682,13 @@ void CropGuide::onAspectRatioPresetRemoved(size_t index)
     if (listener && getEnabled()) {
         listener->panelChanged(EvCropGuideAspectRatioPresetChanged,
                                preset->aspect_ratio.label);
+    }
+}
+
+void CropGuide::onBasisChanged()
+{
+    if (listener && (getEnabled() || batchMode)) {
+        listener->panelChanged(EvCropGuideBasisChanged, m_basis->get_active_text());
     }
 }
 

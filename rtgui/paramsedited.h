@@ -417,6 +417,7 @@ struct CropGuideParamsEdited {
     bool mirror_golden_ratio;
     bool aspect_ratios;
     bool bleed;
+    bool basis;
 };
 
 struct CoarseTransformParamsEdited {

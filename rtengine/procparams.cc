@@ -130,6 +130,12 @@ namespace CropGuide {
     DEFINE_KEY(GOLDEN_RATIO_MIRROR, "GoldenRatioMirror");
     DEFINE_KEY(ASPECT_RATIOS, "AspectRatios");
     DEFINE_KEY(BLEED, "Bleed");
+    DEFINE_KEY(BASIS, "Basis");
+    DEFINE_KEY(BASIS_SCALE, "Scale");
+    DEFINE_KEY(BASIS_WIDTH, "Width");
+    DEFINE_KEY(BASIS_HEIGHT, "Height");
+    DEFINE_KEY(BASIS_LONG, "Long");
+    DEFINE_KEY(BASIS_SHORT, "Short");
 
     DEFINE_KEY(NAME, "Name");
     DEFINE_KEY(RED, "Red");
@@ -349,6 +355,16 @@ void loadCropGuideParams(
                       params.mirror_golden_ratio, edited.mirror_golden_ratio);
     assignFromKeyfile(keyFile, group, BLEED, params.bleed, edited.bleed);
 
+    using Basis = CropGuideParams::Basis;
+    const std::map<std::string, Basis> basis_mapping = {
+        {BASIS_SCALE, Basis::SCALE},
+        {BASIS_WIDTH, Basis::WIDTH},
+        {BASIS_HEIGHT, Basis::HEIGHT},
+        {BASIS_LONG, Basis::LONG},
+        {BASIS_SHORT, Basis::SHORT}
+    };
+    assignFromKeyfile(keyFile, group, BASIS, basis_mapping, params.basis, edited.basis);
+
     auto parse_aspect_ratios = [&](const char* data) {
         cJSON* json = cJSON_Parse(data);
         if (!json) return;
@@ -459,6 +475,16 @@ void saveCropGuideParams(
                   GOLDEN_RATIO_MIRROR, params.mirror_golden_ratio, keyFile);
     saveToKeyfile(!pedited || pedited->cropGuide.bleed, group, BLEED, params.bleed,
                   keyFile);
+
+    using Basis = CropGuideParams::Basis;
+    const std::map<Basis, const char*> basis_mapping = {
+        {Basis::SCALE, BASIS_SCALE},
+        {Basis::WIDTH, BASIS_WIDTH},
+        {Basis::HEIGHT, BASIS_HEIGHT},
+        {Basis::LONG, BASIS_LONG},
+        {Basis::SHORT, BASIS_SHORT},
+    };
+    saveToKeyfile(!pedited || pedited->cropGuide.basis, group, BASIS, basis_mapping, params.basis, keyFile);
 
     auto dump_aspect_ratios = [&]() {
         cJSON* serialized_aspect_ratios = cJSON_CreateArray();
@@ -2093,11 +2119,12 @@ bool CropGuideParams::AspectRatioParams::operator==(const AspectRatioParams& oth
 }
 
 CropGuideParams::CropGuideParams()
-    : enabled(true)
-    , mirror_golden_triangle(false)
-    , rotate_golden_ratio(false)
-    , mirror_golden_ratio(false)
-    , bleed(0)
+    : enabled(true),
+      mirror_golden_triangle(false),
+      rotate_golden_ratio(false),
+      mirror_golden_ratio(false),
+      bleed(0),
+      basis(Basis::SCALE)
 {
 }
 
@@ -2109,7 +2136,8 @@ bool CropGuideParams::operator==(const CropGuideParams& other) const
         && rotate_golden_ratio == other.rotate_golden_ratio
         && mirror_golden_ratio == other.mirror_golden_ratio
         && aspect_ratios == other.aspect_ratios
-        && bleed == other.bleed;
+        && bleed == other.bleed
+        && basis == other.basis;
 }
 
 CoarseTransformParams::CoarseTransformParams() :

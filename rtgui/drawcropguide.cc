@@ -156,6 +156,80 @@ void drawCropGuides(const Cairo::RefPtr<Cairo::Context>& cr,
     util.drawAspectRatios();
 }
 
+CropRect calculateScaleBleedRect(const CropRect& crop_rect, double bleed)
+{
+    // outer = inner + 2 * bleed * inner = (1 + 2 * bleed) * inner
+    double scale = (1.0 + 2.0 * bleed / 100.0);
+
+    double w = crop_rect.x1 - crop_rect.x0;
+    double h = crop_rect.y1 - crop_rect.y0;
+    double new_w = w / scale;
+    double new_h = h / scale;
+
+    double dx = (w - new_w) / 2.0;
+    double dy = (h - new_h) / 2.0;
+
+    CropRect bleed_rect = crop_rect;
+    bleed_rect.x0 += dx;
+    bleed_rect.y0 += dy;
+    bleed_rect.x1 -= dx;
+    bleed_rect.y1 -= dy;
+
+    return bleed_rect;
+}
+
+CropRect calculateUniformBleedRect(const CropRect& crop_rect, double bleed, bool use_width)
+{
+    // outer = inner + 2 * bleed * inner = (1 + 2 * bleed) * inner
+    double scale = (1.0 + 2.0 * bleed / 100.0);
+
+    double w = crop_rect.x1 - crop_rect.x0;
+    double h = crop_rect.y1 - crop_rect.y0;
+
+    double new_w = 0.0;
+    double new_h = 0.0;
+    if (use_width) {
+        new_w = w / scale;
+        new_h = std::max(0.0, h - (w - new_w));
+    } else {
+        new_h = h / scale;
+        new_w = std::max(0.0, w - (h - new_h));
+    }
+
+    double dx = (w - new_w) / 2.0;
+    double dy = (h - new_h) / 2.0;
+
+    CropRect bleed_rect = crop_rect;
+    bleed_rect.x0 += dx;
+    bleed_rect.y0 += dy;
+    bleed_rect.x1 -= dx;
+    bleed_rect.y1 -= dy;
+
+    return bleed_rect;
+}
+
+CropRect calculateBleedRect(const CropRect& crop_rect, const CropGuideParams& params)
+{
+    if (params.bleed <= 0) return crop_rect;
+
+    double w = crop_rect.x1 - crop_rect.x0;
+    double h = crop_rect.y1 - crop_rect.y0;
+
+    switch (params.basis) {
+        case CropGuideParams::Basis::WIDTH:
+            return calculateUniformBleedRect(crop_rect, params.bleed, true);
+        case CropGuideParams::Basis::HEIGHT:
+            return calculateUniformBleedRect(crop_rect, params.bleed, false);
+        case CropGuideParams::Basis::LONG:
+            return calculateUniformBleedRect(crop_rect, params.bleed, w > h);
+        case CropGuideParams::Basis::SHORT:
+            return calculateUniformBleedRect(crop_rect, params.bleed, w < h);
+        case CropGuideParams::Basis::SCALE:
+        default:
+            return calculateScaleBleedRect(crop_rect, params.bleed);
+    }
+}
+
 }  // namespace
 
 void GuideDrawer::drawRuleOfThirds()
@@ -699,39 +773,22 @@ void drawCrop(const Cairo::RefPtr<Cairo::Context>& cr,
     if (cropGuideOverride == CropGuideOverride::NO_GUIDES) return;
 
     // Rectangle around the cropped area for drawing crop guide frame
-    CropRect crop_rect {
+    CropRect cropRect {
         /*.x0 =*/ std::round(c1x) + imx + 0.5,
         /*.y0 =*/ std::round(c1y) + imy + 0.5,
         /*.x1 =*/ std::round(c2x) + imx + 0.5,
         /*.y1 =*/ std::round(c2y) + imy + 0.5
     };
     // If bleed is enabled, shrink the crop rect to simulate the bleed margin
-    CropRect bleed_rect = crop_rect;
-    {
-        // outer = inner + 2 * bleed * inner = (1 + 2 * bleed) * inner
-        double scale = (1.0 + 2.0 * cropGuideParams.bleed / 100.0);
-
-        double w = crop_rect.x1 - crop_rect.x0;
-        double h = crop_rect.y1 - crop_rect.y0;
-        double new_w = w / scale;
-        double new_h = h / scale;
-
-        double dx = (w - new_w) / 2.0;
-        double dy = (h - new_h) / 2.0;
-
-        bleed_rect.x0 += dx;
-        bleed_rect.y0 += dy;
-        bleed_rect.x1 -= dx;
-        bleed_rect.y1 -= dy;
-    }
+    CropRect bleedRect = calculateBleedRect(cropRect, cropGuideParams);
 
     if (fullImageVisible) {
-        crop_rect.x1 = std::min(crop_rect.x1, imx + imw - 0.5);
-        crop_rect.y1 = std::min(crop_rect.y1, imy + imh - 0.5);
+        cropRect.x1 = std::min(cropRect.x1, imx + imw - 0.5);
+        cropRect.y1 = std::min(cropRect.y1, imy + imh - 0.5);
 
-        bleed_rect.x1 = std::min(bleed_rect.x1, imx + imw - 0.5);
-        bleed_rect.y1 = std::min(bleed_rect.y1, imy + imh - 0.5);
+        bleedRect.x1 = std::min(bleedRect.x1, imx + imw - 0.5);
+        bleedRect.y1 = std::min(bleedRect.y1, imy + imh - 0.5);
     }
 
-    drawCropGuides(cr, crop_rect, bleed_rect, cropGuideParams, cropGuideOverride);
+    drawCropGuides(cr, cropRect, bleedRect, cropGuideParams, cropGuideOverride);
 }

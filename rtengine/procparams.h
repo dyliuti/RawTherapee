@@ -747,6 +747,8 @@ struct CropGuideParams {
     static constexpr size_t NUM_PRESETS = 9;
     static_assert(NUM_PRESETS == PresetIndex::CENTERED_SQUARE + 1);
 
+    enum class Basis { SCALE, WIDTH, HEIGHT, LONG, SHORT };
+
     struct AspectRatioParams {
         bool enabled;
         size_t preset_index;
@@ -769,6 +771,7 @@ struct CropGuideParams {
     bool rotate_golden_ratio;
     bool mirror_golden_ratio;
     int bleed;
+    Basis basis;
 
     CropGuideParams();
 

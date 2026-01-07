@@ -102,6 +102,7 @@ private:
     void onAspectRatioPresetToggled(Gtk::ToggleButton* button, size_t index);
     void onAspectRatioPresetPickColor(size_t index, ColorPreview* preview);
     void onAspectRatioPresetRemoved(size_t index);
+    void onBasisChanged();
 
     void refreshAvailableAspectRatios();
     int compareAspectRatioModels(const Glib::RefPtr<const AspectRatioModel>& lhs,
@@ -129,8 +130,12 @@ private:
 
     bool m_dirty_aspect_ratios;
 
+    MyComboBoxText* m_basis;
+    sigc::connection m_basis_changed;
+
     rtengine::ProcEvent EvCropGuideEnabled;
     rtengine::ProcEvent EvCropGuidePresetChanged;
     rtengine::ProcEvent EvCropGuideAspectRatioPresetChanged;
     rtengine::ProcEvent EvCropGuideBleedChanged;
+    rtengine::ProcEvent EvCropGuideBasisChanged;
 };
