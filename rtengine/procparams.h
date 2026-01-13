@@ -536,8 +536,14 @@ struct ColorAppearanceParams {
     double        qbright;
     double        chroma;
     double        schroma;
+    double        schromared;
+    double        schromagreen;
+    double        schromablue;
     double        mchroma;
     double        colorh;
+    double        colorhred;
+    double        colorhgreen;
+    double        colorhblue;
     double        rstprotection;
     bool          surrsource;
     bool          gamut;
@@ -1157,7 +1163,8 @@ struct ColorManagementParams {
         BETA_RGB,
         BEST_RGB,
         CUSTOM,
-        CUSTOM_GRID
+        CUSTOM_GRID,
+        CUSTOM_POL
     };
 
     enum class Cat {
@@ -1197,6 +1204,14 @@ struct ColorManagementParams {
     double grey;
     double blux;
     double bluy;
+    
+    double redrot;
+    double redsat;
+    double grerot;
+    double gresat;
+    double blurot;
+    double blusat;
+    
     double refi;
     double shiftx;
     double shifty;

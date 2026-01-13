@@ -578,7 +578,9 @@ void ImProcFunctions::ciecam_02float(CieImage* ncie, float adap, int pW, int pwb
 
         //viewing condition for surround
         if (params->colorappearance.surround == "Average") {
-            f2 = 1.0f, c2 = 0.69f, nc2 = 1.0f;
+            f2  = 1.0f;
+            c2  = 0.69f;
+            nc2 = 1.0f;
         } else if (params->colorappearance.surround == "Dim") {
             f2  = 0.9f;
             c2  = 0.59f;
@@ -752,6 +754,13 @@ void ImProcFunctions::ciecam_02float(CieImage* ncie, float adap, int pW, int pwb
         }
 
         const float hue = params->colorappearance.colorh;
+        const float huered = params->colorappearance.colorhred;
+        const float schrred = params->colorappearance.schromared;
+        const float huegreen = params->colorappearance.colorhgreen;
+        const float schrgreen = params->colorappearance.schromagreen;
+        const float hueblue = params->colorappearance.colorhblue;
+        const float schrblue = params->colorappearance.schromablue;
+
         const float rstprotection = 100. - params->colorappearance.rstprotection;
 
         // extracting data from 'params' to avoid cache flush (to be confirmed)
@@ -1171,6 +1180,44 @@ void ImProcFunctions::ciecam_02float(CieImage* ncie, float adap, int pW, int pwb
                         Jpro = SQR((10.f * Qpro) / wh);
                     }
 
+                    if((hpro > 340.f && hpro <= 360.f) || (hpro > 0.f && hpro <= 100.f)) {//Red CIECAM 
+                        hpro = hpro + 0.555f * huered;//rotation Red
+                        spro = spro * (1.f + (schrred / 100.f));//change Red saturation 
+                        float Cp = (spro * spro * Qpro) / (1000000.f);
+                        Cpro = Cp * 100.f;
+
+
+                        if (hpro < 0.0f) {
+                            hpro += 360.0f;    //hue
+                        }
+                    }
+
+                    if((hpro > 100.f && hpro <= 190)) {//Green CIECAM 
+                        hpro = hpro + 0.555f * huegreen;//Rotation Green
+                        spro = spro * (1.f + (schrgreen / 100.f));//change Green saturation 
+                        float Cp = (spro * spro * Qpro) / (1000000.f);//Evaluate Chroma with Brightness Q and saturation
+                        Cpro = Cp * 100.f;
+
+                        if (hpro < 0.0f) {
+                            hpro += 360.0f;    //hue
+                        }
+                    }
+
+                    if((hpro > 190.f && hpro <= 340)) {//blue CIECAM 
+                        hpro = hpro + 0.555f * hueblue;//Rotation Blue
+                        spro = spro * (1.f + (schrblue / 100.f));//change Blue saturation 
+                        float Cp = (spro * spro * Qpro) / (1000000.f);
+                        Cpro = Cp * 100.f;
+
+                        if (hpro < 0.0f) {
+                            hpro += 360.0f;    //hue
+                        }
+                    }
+                    //We could have introduced Yellow, more in line with the CIECAM concept...but that would have confused (I think) users 'used' to R, G, B
+                    //red CIECAM 340 - 100
+                    //green CIECAM 100 - 190
+                    //blue CIECAM 190 - 340
+
                     // we cannot have all algorithms with all chroma curves
                     if (alg == 0) {
                         Jpro = CAMBrightCurveJ[Jpro * 327.68f]; //lightness CIECAM02 + contrast
@@ -1180,6 +1227,12 @@ void ImProcFunctions::ciecam_02float(CieImage* ncie, float adap, int pW, int pwb
                         float sres;
                         Ciecam02::curvecolorfloat(chr, Cp, sres, 1.8f);
                         Color::skinredfloat(Jpro, hpro, sres, Cp, 55.f, 30.f, 1, rstprotection, 100.f, Cpro);
+                        hpro = hpro + hue;
+
+                        if (hpro < 0.0f) {
+                            hpro += 360.0f;    //hue
+                        }
+                        
                     } else if (alg == 1)  {
                         // Lightness saturation
                         Jpro = CAMBrightCurveJ[Jpro * 327.68f]; //lightness CIECAM02 + contrast
@@ -1194,6 +1247,12 @@ void ImProcFunctions::ciecam_02float(CieImage* ncie, float adap, int pW, int pwb
                         Color::skinredfloat(Jpro, hpro, sres, Sp, dred, protect_red, 0, rstprotection, 100.f, spro);
                         Qpro = QproFactor * sqrtf(Jpro);
                         Cpro = (spro * spro * Qpro) / (10000.0f);
+                        hpro = hpro + hue;
+
+                        if (hpro < 0.0f) {
+                            hpro += 360.0f;    //hue
+                        }
+                        
                     } else if (alg == 2) {
                         //printf("Qp0=%f ", Qpro);
 
@@ -1212,6 +1271,12 @@ void ImProcFunctions::ciecam_02float(CieImage* ncie, float adap, int pW, int pwb
                         Cpro = Mpro / coe;
                         Qpro = (Qpro == 0.f ? epsil : Qpro); // avoid division by zero
                         spro = 100.0f * sqrtf(Mpro / Qpro);
+                        hpro = hpro + hue;
+
+                        if (hpro < 0.0f) {
+                            hpro += 360.0f;    //hue
+                        }
+                        
                     } else { /*if(alg == 3) */
                         Qpro = CAMBrightCurveQ[(float)(Qpro * coefQ)] / coefQ;   //brightness and contrast
 

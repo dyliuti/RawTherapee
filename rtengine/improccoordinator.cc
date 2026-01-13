@@ -41,6 +41,7 @@
 #include "refreshmap.h"
 #include "utils.h"
 #include "rt_algo.h"
+#include "rtgui/labgrid.h"
 
 #include "rtgui/options.h"
 
@@ -1475,6 +1476,9 @@ void ImProcCoordinator::updatePreviewImage(int todo, bool panningRelatedChange)
                 float savmadl[21];//just to intialize, not used here - but in dcrop.cc
                 float ghsbwslider[2] = {0.f, 1.f};// Black and white point auto sliders
                 float ghssym = 0.f;//info symmetry point
+                float ghsmid = 0.f;//info estimated men luminance (Mid grey) %
+                float ghsmaxrgb = 0.f;//info maximum RGB data after GHS
+                float ghs3sig = 0.f;//Info 3 standard deviations
                 float ghscolor[4] = {0.f, 0.f, 0.f, 0.f};
                 bool ghsauto = params->locallab.spots.at(sp).ghs_autobw;
                 bool ghsautsp = false;//SP auto
@@ -1542,7 +1546,7 @@ void ImProcCoordinator::updatePreviewImage(int todo, bool panningRelatedChange)
                               huerblu, chromarblu, lumarblu, huer, chromar, lumar, sobeler, lastsav, false, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                               minCD, maxCD, mini, maxi, Tmean, Tsigma, Tmin, Tmax,
                               meantm, stdtm, meanreti, stdreti, fab, maxicam, rdx, rdy, grx, gry, blx, bly, meanx, meany, meanxe, meanye, prim, ill, contsig, lightsig, slopeg, linkrgb,
-                              resi, sharc, denocont, ghsbpwp, ghsbpwpvalue, savmadl, ghsbwslider, ghssym, ghsautsp, ghscolor);
+                              resi, sharc, denocont, ghsbpwp, ghsbpwpvalue, savmadl, ghsbwslider, ghssym, ghsautsp, ghscolor, ghsmid, ghsmaxrgb, ghs3sig);
 
                 fabrefp[sp] = fab;
                 //Illuminant
@@ -1661,12 +1665,15 @@ void ImProcCoordinator::updatePreviewImage(int todo, bool panningRelatedChange)
 
 
 
-                LocallabListener::locallabshGHSbw locshghsbw;//ghs Black and white point infos
+                LocallabListener::locallabshGHSbw locshghsbw;//ghs Black and white point infos, SP, middle grey, max RGB
                     for(int j = 0; j < 2; j++) {
                         locshghsbw.ghsbw[j] = ghsbpwp[j];
                         locshghsbw.ghsbwvalue[j] = ghsbpwpvalue[j];
-                        locshghsbw.ghs_sym = ghssym;
                     }
+                    locshghsbw.ghs_sym = ghssym;
+                    locshghsbw.ghs_mid = ghsmid;
+                    locshghsbw.ghs_maxrgb = ghsmaxrgb;
+                    locshghsbw.ghs_3sig = ghs3sig;
                     locshghsbw.ghs_color[0] = ghscolor[0];
                     locshghsbw.ghs_color[1] = ghscolor[1];
                     locshghsbw.ghs_color[2] = ghscolor[2];
@@ -1748,7 +1755,7 @@ void ImProcCoordinator::updatePreviewImage(int todo, bool panningRelatedChange)
                     }
 
                     if (params->locallab.spots.at(sp).expshadhigh && params->locallab.spots.at(sp).shMethod == "ghs") {
-                        locallListener->ghsbwChanged(locallshgshbw,params->locallab.selspot);//Black and White point infos and SP auto
+                        locallListener->ghsbwChanged(locallshgshbw,params->locallab.selspot);//Black and White point infos, SP auto, Middle grey, max RGB
                     }
 
                     /*
@@ -2250,9 +2257,10 @@ void ImProcCoordinator::updatePreviewImage(int todo, bool panningRelatedChange)
                     }
                     ipf.toneEqualizer(tmpImage1.get(), params, prof, scale, false);
                 }
+                double p[6] = {0., 0., 0., 0., 0., 0.};
 
-                ipf.workingtrc(0, tmpImage1.get(), tmpImage1.get(), GW, GH, -5, prof, 2.4, 12.92310, 0, ill, 0, 0,  rdx, rdy, grx, gry, blx, bly, meanx, meany, meanxe, meanye, dummy, true, false, false, false);
-                ipf.workingtrc(0, tmpImage1.get(), tmpImage1.get(), GW, GH, 5, prof, gamtone, slotone, catc, illum, prim, locprim,  rdx, rdy, grx, gry, blx, bly, meanx, meany, meanxe, meanye, dummy, false, true, true, gamutcontrol);
+                ipf.workingtrc(0, tmpImage1.get(), tmpImage1.get(), GW, GH, -5, prof, 2.4, 12.92310, 0, ill, 0, 0,  rdx, rdy, grx, gry, blx, bly, meanx, meany, meanxe, meanye, p, dummy, true, false, false, false);
+                ipf.workingtrc(0, tmpImage1.get(), tmpImage1.get(), GW, GH, 5, prof, gamtone, slotone, catc, illum, prim, locprim,  rdx, rdy, grx, gry, blx, bly, meanx, meany, meanxe, meanye, p, dummy, false, true, true, gamutcontrol);
                 float satu = params->icm.wapsat;
                 if(satu > 0.f) {
                     ipf.apsatur(0, tmpImage1.get(), tmpImage2.get(), GW, GH, satu) ;      
@@ -2301,27 +2309,26 @@ void ImProcCoordinator::updatePreviewImage(int todo, bool panningRelatedChange)
 
                 tmpImage1.reset();
 
-                if (prim == 14) {//pass red gre blue xy in function of area dats Ciexy
+                if (prim == 14) {//pass red gre blue xy in function of area data Ciexy  - prim = 14 correspond to ColorManagementParams::Primaries::CUSTOM_GRID
                     float redgraphx =  params->icm.labgridcieALow;
                     float redgraphy =  params->icm.labgridcieBLow;
                     float blugraphx =  params->icm.labgridcieAHigh;
                     float blugraphy =  params->icm.labgridcieBHigh;
                     float gregraphx =  params->icm.labgridcieGx;
                     float gregraphy =  params->icm.labgridcieGy;
-                    float redxx = 0.55f * (redgraphx + 1.f) - 0.1f;
+                    constexpr float INV_OFFSET_MODIFIER = 1.f / OFFSET_MODIFIER;
+                    float redxx = INV_OFFSET_MODIFIER * (redgraphx + 1.f) - CIExy_MARGIN;
                     redxx = rtengine::LIM(redxx, 0.41f, 1.f);
-                    float redyy = 0.55f * (redgraphy + 1.f) - 0.1f;
+                    float redyy = INV_OFFSET_MODIFIER * (redgraphy + 1.f) - CIExy_MARGIN;
                     redyy = rtengine::LIM(redyy, 0.f, 0.7f);
-                    float bluxx = 0.55f * (blugraphx + 1.f) - 0.1f;
+                    float bluxx = INV_OFFSET_MODIFIER * (blugraphx + 1.f) - CIExy_MARGIN;
                     bluxx = rtengine::LIM(bluxx, -0.1f, 0.5f);
-                    float bluyy = 0.55f * (blugraphy + 1.f) - 0.1f;
+                    float bluyy = INV_OFFSET_MODIFIER * (blugraphy + 1.f) - CIExy_MARGIN;
                     bluyy = rtengine::LIM(bluyy, -0.1f, 0.5f);
-
-                    float grexx = 0.55f * (gregraphx + 1.f) - 0.1f;
+                    float grexx = INV_OFFSET_MODIFIER * (gregraphx + 1.f) - CIExy_MARGIN;
                     grexx = rtengine::LIM(grexx, -0.1f, 0.4f);
-                    float greyy = 0.55f * (gregraphy + 1.f) - 0.1f;
+                    float greyy = INV_OFFSET_MODIFIER * (gregraphy + 1.f) - CIExy_MARGIN;
                     greyy = rtengine::LIM(greyy, 0.5f, 1.f);
-
                     if (primListener) {
                         primListener->primChanged(redxx, redyy, bluxx, bluyy, grexx, greyy);
                     }
@@ -2398,7 +2405,11 @@ void ImProcCoordinator::updatePreviewImage(int todo, bool panningRelatedChange)
                     wy = wx * arefi + brefi;
 
                     if (primListener) {
-                        primListener->iprimChanged(r_x, r_y, b_x, b_y, g_x, g_y, wx, wy, meanx, meany);
+                        if( params->icm.wprim != ColorManagementParams::Primaries::CUSTOM_POL) {
+                            primListener->iprimChanged(r_x, r_y, b_x, b_y, g_x, g_y, wx, wy, meanx, meany);
+                        } else {
+                            primListener->iprimChanged(p[0], p[1], p[4] ,p[5], p[2], p[3], wx, wy, meanx, meany);
+                        }
                     }
                 }
             }

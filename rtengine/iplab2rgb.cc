@@ -30,6 +30,8 @@
 #include "rtengine.h"
 #include "settings.h"
 #include "utils.h"
+#include <fmt/format.h>
+#include "rtgui/labgrid.h"
 
 namespace rtengine
 {
@@ -741,31 +743,100 @@ void ImProcFunctions::apsatur(int sp, Imagefloat* tmpImage, Imagefloat* tmpImage
                     apply_satcie(R0, G0, B0, amp, fcie2, satu);//always apply saturation
                     tmpImage->r(y, x) = R0 * 65535.f;
                     tmpImage->g(y, x) = G0 * 65535.f;
-                    tmpImage->b(y, x) = B0 * 65535.f;                                     
+                    tmpImage->b(y, x) = B0 * 65535.f;
                 }               
 }
 
 
+// code taken from Darktable - and adapted to Rawtherapee
+// It was only used to calculate polar coordinates. Why reinvent the wheel when it's already been done elsewhere?
+constexpr float determinant(float a, float b, float c, float d)
+{
+    return a * d - b * c;
+}
+
+
+float intersect_line_segments(float x1, float y1,
+                              float x2, float y2,
+                              float x3, float y3,
+                              float x4, float y4)
+{
+    const float denominator = determinant(x1 - x2, x3 - x4, y1 - y2, y3 - y4);
+    if (denominator == 0.0) {
+        return FLT_MAX; // lines don't intersect
+    }
+
+    const float t = determinant(x1 - x3, x3 - x4, y1 - y3, y3 - y4) / denominator;
+    if (t >= 0.0) {
+        return t;
+    }
+    return FLT_MAX; // intersection is in the wrong direction
+}
+
+
+float find_distance_to_edge(float primaries[3][2], float cos_angle, float sin_angle, cmsCIExyY xyd)
+{
+    const float whitepoint[2] = {(float) xyd.x, (float) xyd.y};
+    const float x1 = whitepoint[0];
+    const float y1 = whitepoint[1];
+    const float x2 = x1 + cos_angle;
+    const float y2 = y1 + sin_angle;
+
+    float distance_to_edge = FLT_MAX;
+    for (int i = 0; i < 3; i = i+1) {
+        const int next_i = (i + 1) % 3;
+        const float x3 = primaries[i][0];
+        const float y3 = primaries[i][1];
+        const float x4 = primaries[next_i][0];
+        const float y4 = primaries[next_i][1];
+        const float distance = intersect_line_segments(x1, y1, x2, y2, x3, y3, x4, y4);
+        if (distance < distance_to_edge) {
+            distance_to_edge = distance;
+        }
+    }
+
+    return distance_to_edge;
+}
+
+void rotate_and_scale_primary(float primaries[3][2], float scaling, float rotation, int primary_index, float *newprimxy, cmsCIExyY xyd)
+{
+    const float whitepoint[2] = {(float) xyd.x, (float) xyd.y};//I change white point, and I use the default one (or user choice).
+
+    // Generate a custom set of tone mapping primaries by scaling
+    // and rotating the primaries of the given profile.
+    const float px = primaries[primary_index][0];
+    const float py = primaries[primary_index][1];
+    const float dx = px - whitepoint[0];
+    const float dy = py - whitepoint[1];
+    const float angle = atan2(dy, dx) + rotation;
+    const float cos_angle = cos(angle);
+    const float sin_angle = sin(angle);
+    const float distance_to_edge = find_distance_to_edge(primaries, cos_angle, sin_angle, xyd);
+    const float dx_new = scaling * distance_to_edge * cos_angle;
+    const float dy_new = scaling * distance_to_edge * sin_angle;
+    newprimxy[0] = dx_new + whitepoint[0];
+    newprimxy[1] = dy_new + whitepoint[1];
+}
+//end code Darktable
+
 void ImProcFunctions::workingtrc(int sp, Imagefloat* src, Imagefloat* dst, int cw, int ch, int mul, Glib::ustring &profile, double gampos, double slpos, int cat, int &illum, int prim, int locprim,
-                                 float &rdx, float &rdy, float &grx, float &gry, float &blx, float &bly, float &meanx, float &meany, float &meanxe, float &meanye,
+                                 float &rdx, float &rdy, float &grx, float &gry, float &blx, float &bly, float &meanx, float &meany, float &meanxe, float &meanye, double *p,
                                  cmsHTRANSFORM &transform, bool normalizeIn, bool normalizeOut, bool keepTransForm, bool gamutcontrol) const
 {
     const TMatrix wprof = ICCStore::getInstance()->workingSpaceMatrix(params->icm.workingProfile);
 
     double wb2[3][3];
     float epsilon =  0.000001f;
-    
-  //  if(gamutcontrol) {
+
 #ifdef _OPENMP
         #pragma omp parallel for
 #endif
-            for (int i = 0; i < ch; ++i)
-                for (int j = 0; j < cw; ++j) {
-                    src->r(i, j) = (float) rtengine::max(src->r(i, j), epsilon);
-                    src->g(i, j) = (float) rtengine::max(src->g(i, j), epsilon);
-                    src->b(i, j) = (float) rtengine::max(src->b(i, j), epsilon); 
-                }
-  //  }
+        for (int i = 0; i < ch; ++i)
+            for (int j = 0; j < cw; ++j) {
+                src->r(i, j) = (float) rtengine::max(src->r(i, j), epsilon);
+                src->g(i, j) = (float) rtengine::max(src->g(i, j), epsilon);
+                src->b(i, j) = (float) rtengine::max(src->b(i, j), epsilon); 
+            }
 
 
 
@@ -791,7 +862,7 @@ void ImProcFunctions::workingtrc(int sp, Imagefloat* src, Imagefloat* dst, int c
 
         for (int i = 0; i < bfh ; ++i) {
             const int ii = i * precision;
-            
+
             if (ii < ch) {
                 for (int j = 0, jj = 0; j < bfw ; ++j, jj += precision) {
                     provis->r(i, j) = src->r(ii, jj);
@@ -836,7 +907,7 @@ void ImProcFunctions::workingtrc(int sp, Imagefloat* src, Imagefloat* dst, int c
         meanx /= (bfh * bfw);
         meany /= (bfh * bfw);
         meanx += 0.005f;
-        meany += 0.005f; //ampirical mean delta with value end in process
+        meany += 0.005f; //empirical mean delta with value end in process
 
         if (settings->verbose) {
             printf("Estimation dominant color : x=%f y=%f\n", (double) meanx, (double) meany);
@@ -942,7 +1013,7 @@ void ImProcFunctions::workingtrc(int sp, Imagefloat* src, Imagefloat* dst, int c
     double Wz = 1.0;
     cmsCIExyY xyD;
 
-    if (locprim == 1  && mul == 5) {
+    if (locprim == 1  && mul == 5) {//Selective editing
         rdx = params->locallab.spots.at(sp).redxl;
         rdy = params->locallab.spots.at(sp).redyl;
         grx = params->locallab.spots.at(sp).grexl;
@@ -1006,27 +1077,28 @@ void ImProcFunctions::workingtrc(int sp, Imagefloat* src, Imagefloat* dst, int c
             Wz = 1.;
             xyD = {0.333333, 0.333333, 1.0};
         }
-
     }
 
-    if (prim == 14 && locprim == 0 && mul == 5) {//convert datas area to xy
+    if (prim == 14 && locprim == 0 && mul == 5) {//convert data area to xy - Abstract Profile
         float redgraphx =  params->icm.labgridcieALow;
         float redgraphy =  params->icm.labgridcieBLow;
         float blugraphx =  params->icm.labgridcieAHigh;
         float blugraphy =  params->icm.labgridcieBHigh;
         float gregraphx =  params->icm.labgridcieGx;
         float gregraphy =  params->icm.labgridcieGy;
-        redxx = 0.55f * (redgraphx + 1.f) - 0.1f;
+        constexpr float INV_OFFSET_MODIFIER = 1.f / OFFSET_MODIFIER;
+
+        redxx = INV_OFFSET_MODIFIER * (redgraphx + 1.f) - CIExy_MARGIN;
         redxx = rtengine::LIM(redxx, 0.41f, 1.f);//limit values for xy (arbitrary)
-        redyy = 0.55f * (redgraphy + 1.f) - 0.1f;
+        redyy = INV_OFFSET_MODIFIER * (redgraphy + 1.f) - CIExy_MARGIN;
         redyy = rtengine::LIM(redyy, 0.f, 0.7f);
-        bluxx = 0.55f * (blugraphx + 1.f) - 0.1f;
+        bluxx = INV_OFFSET_MODIFIER * (blugraphx + 1.f) - CIExy_MARGIN;
         bluxx = rtengine::LIM(bluxx, -0.1f, 0.5f);
-        bluyy = 0.55f * (blugraphy + 1.f) - 0.1f;
+        bluyy = INV_OFFSET_MODIFIER * (blugraphy + 1.f) - CIExy_MARGIN;
         bluyy = rtengine::LIM(bluyy, -0.1f, 0.49f);
-        grexx = 0.55f * (gregraphx + 1.f) - 0.1f;
+        grexx = INV_OFFSET_MODIFIER * (gregraphx + 1.f) - CIExy_MARGIN;
         grexx = rtengine::LIM(grexx, -0.1f, 0.4f);
-        greyy = 0.55f * (gregraphy + 1.f) - 0.1f;
+        greyy = INV_OFFSET_MODIFIER * (gregraphy + 1.f) - CIExy_MARGIN;
         greyy = rtengine::LIM(greyy, 0.5f, 1.f);
     }
 
@@ -1066,9 +1138,8 @@ void ImProcFunctions::workingtrc(int sp, Imagefloat* src, Imagefloat* dst, int c
         D60 = 6005  // for ACES AP0 and AP1
     };
     double tempv4 = 5003.;
-    double p[6]; //primaries
 
-    if (locprim == 0 && mul == 5) {
+    if (locprim == 0 && mul == 5) {//Abstract profile
         switch (ColorManagementParams::Primaries(prim)) {
             case ColorManagementParams::Primaries::DEFAULT: {
                 break;
@@ -1139,12 +1210,17 @@ void ImProcFunctions::workingtrc(int sp, Imagefloat* src, Imagefloat* dst, int c
                 break;
             }
 
+            case ColorManagementParams::Primaries::CUSTOM_POL: {
+                profile = "Custompol";
+                break;
+            }
+
             case ColorManagementParams::Primaries::CUSTOM_GRID: {
                 profile = "Custom";
                 break;
             }
         }
-    } else if (locprim == 1 && mul == 5) {
+    } else if (locprim == 1 && mul == 5) {//Selective Editing
         //local primaries
         if (prim == 1) {
             p[0] = 0.6400;    // sRGB primaries
@@ -1181,7 +1257,7 @@ void ImProcFunctions::workingtrc(int sp, Imagefloat* src, Imagefloat* dst, int c
             bly = p[5];
 
         } else if (prim == 3) {
-            p[0] = 0.7347;    //ProPhoto and default primaries
+            p[0] = 0.7347;    //ProPhoto 
             p[1] = 0.2653;
             p[2] = 0.1596;
             p[3] = 0.8404;
@@ -1197,7 +1273,7 @@ void ImProcFunctions::workingtrc(int sp, Imagefloat* src, Imagefloat* dst, int c
             bly = p[5];
 
         } else if (prim == 4) {
-            p[0] = 0.7080;    // Rec2020 primaries
+            p[0] = 0.7080;    // Rec2020 and default primaries
             p[1] = 0.2920;
             p[2] = 0.1700;
             p[3] = 0.7970;
@@ -1336,7 +1412,7 @@ void ImProcFunctions::workingtrc(int sp, Imagefloat* src, Imagefloat* dst, int c
             gry = p[3];
             blx = p[4];
             bly = p[5];
-       } else if (prim == 15) {
+       } else if (prim == 15) {//not used in Selective Editing 
             p[0] = rdx;
             p[1] = rdy;
             p[2] = grx;
@@ -1344,14 +1420,14 @@ void ImProcFunctions::workingtrc(int sp, Imagefloat* src, Imagefloat* dst, int c
             p[4] = blx;
             p[5] = bly;
         } else {
-            p[0] = 0.7347;    //ProPhoto and default primaries
-            p[1] = 0.2653;
-            p[2] = 0.1596;
-            p[3] = 0.8404;
-            p[4] = 0.0366;
-            p[5] = 0.0001;
-            Wx = 0.964295676;
-            Wz = 0.825104603;
+            p[0] = 0.7080;  // Rec2020 and default primaries - normaly never used.
+            p[1] = 0.2920;
+            p[2] = 0.1700;
+            p[3] = 0.7970;
+            p[4] = 0.1310;
+            p[5] = 0.0460;
+            Wx = 0.95045471;
+            Wz = 1.08905029;
             rdx = p[0];
             rdy = p[1];
             grx = p[2];
@@ -1359,8 +1435,6 @@ void ImProcFunctions::workingtrc(int sp, Imagefloat* src, Imagefloat* dst, int c
             blx = p[4];
             bly = p[5];
         }
-
-
     }
 
     if (settings->verbose  && prim != 0) {
@@ -1383,7 +1457,6 @@ void ImProcFunctions::workingtrc(int sp, Imagefloat* src, Imagefloat* dst, int c
             five = -mul;
         }
 
-        //  int select_temp = 1; //5003K
         constexpr double eps = 0.000000001; // not divide by zero
 
         //primaries for 10 working profiles ==> output profiles
@@ -1458,7 +1531,7 @@ void ImProcFunctions::workingtrc(int sp, Imagefloat* src, Imagefloat* dst, int c
                 Wz = 0.825104603;
 
             } else if (profile == "Rec2020") {
-                p[0] = 0.7080;    // Rec2020 primaries
+                p[0] = 0.7080;    // Rec2020 primaries and default
                 p[1] = 0.2920;
                 p[2] = 0.1700;
                 p[3] = 0.7970;
@@ -1516,7 +1589,7 @@ void ImProcFunctions::workingtrc(int sp, Imagefloat* src, Imagefloat* dst, int c
                 Wz = 1.008825184;
 
             } else if (profile == "ProPhoto") {
-                p[0] = 0.7347;    //ProPhoto and default primaries
+                p[0] = 0.7347;    //ProPhoto
                 p[1] = 0.2653;
                 p[2] = 0.1596;
                 p[3] = 0.8404;
@@ -1526,7 +1599,7 @@ void ImProcFunctions::workingtrc(int sp, Imagefloat* src, Imagefloat* dst, int c
                 Wx = 0.964295676;
                 Wz = 0.825104603;
 
-            } else if (profile == "Custom") {
+            } else if (profile == "Custom" || profile == "Custompol") {
                 p[0] = redxx;
                 p[1] = redyy;
                 p[2] = grexx;
@@ -1535,12 +1608,15 @@ void ImProcFunctions::workingtrc(int sp, Imagefloat* src, Imagefloat* dst, int c
                 p[5] = bluyy;
 
             } else {
-                p[0] = 0.7347;    //default primaries always unused
-                p[1] = 0.2653;
-                p[2] = 0.1596;
-                p[3] = 0.8404;
-                p[4] = 0.0366;
-                p[5] = 0.0001;
+                p[0] = 0.7080;    // default Rec2020 primaries always unused
+                p[1] = 0.2920;
+                p[2] = 0.1700;
+                p[3] = 0.7970;
+                p[4] = 0.1310;
+                p[5] = 0.0460;
+                illum = toUnderlying(ColorManagementParams::Illuminant::D65);
+                Wx = 0.95045471;
+                Wz = 1.08905029;
             }
         }
 
@@ -1566,7 +1642,6 @@ void ImProcFunctions::workingtrc(int sp, Imagefloat* src, Imagefloat* dst, int c
         }
 
         // 7 parameters for smoother curves
-//        cmsCIExyY xyD;
 
         Glib::ustring ills = "D50";
 
@@ -1700,7 +1775,7 @@ void ImProcFunctions::workingtrc(int sp, Imagefloat* src, Imagefloat* dst, int c
                     ills = "Tungsten 1500K";
                     break;
                 }
-                
+
                 case ColorManagementParams::Illuminant::E: {
                     Wx = 1.;
                     Wz = 1.;
@@ -1708,7 +1783,50 @@ void ImProcFunctions::workingtrc(int sp, Imagefloat* src, Imagefloat* dst, int c
                     ills = "E";
                     break;
                 }
-                
+
+            }
+        }
+        if (profile == "Custompol") {//rotation and saturation primaries only with Abstract Profile
+            float primaries[3][2];
+            primaries[0][0] = p[0];
+            primaries[0][1] = p[1];
+            primaries[1][0] = p[2];
+            primaries[1][1] = p[3];
+            primaries[2][0] = p[4];
+            primaries[2][1] = p[5];
+            float r_inset = params->icm.redsat;
+            float r_rotation = params->icm.redrot;
+            float g_inset = params->icm.gresat;
+            float g_rotation = params->icm.grerot;
+            float b_inset =  params->icm.blusat;
+            float b_rotation = params->icm.blurot;
+            const float inset[3] = { r_inset / 100, g_inset / 100, b_inset / 100 };
+            const float rad = RT_PI / 180.0;
+            const float rotation[3] = { r_rotation * rad, g_rotation * rad, b_rotation * rad };
+            float newprimxy[2];
+            for (int i = 0; i < 3; i++) { 
+                newprimxy[0] = 0.f;
+                newprimxy[1] = 0.f;
+                rotate_and_scale_primary(primaries, 1.f - inset[i], rotation[i], i , newprimxy, xyD);//xyD takes into account the default illuminant or the one chosen by the user
+                if(i == 0) {
+                    p[0] = newprimxy[0];
+                    p[1] = newprimxy[1];
+                    if(rtengine::settings->verbose) {
+                        fmt::println("newRx_prim={} newRy_prim={}", newprimxy[0], newprimxy[1]);
+                    }
+                } else if (i == 1) {
+                    p[2] = newprimxy[0];
+                    p[3] = newprimxy[1];
+                    if(rtengine::settings->verbose) {
+                        fmt::println("newGx_prim={} newGy_prim={}", newprimxy[0], newprimxy[1]);
+                    }
+                } else if (i == 2) {
+                    p[4] = newprimxy[0];
+                    p[5] = newprimxy[1];
+                    if(rtengine::settings->verbose) {
+                        fmt::println("newBx_prim={} newBy_prim={}", newprimxy[0], newprimxy[1]);
+                    }
+                }
             }
         }
 
@@ -1749,7 +1867,7 @@ void ImProcFunctions::workingtrc(int sp, Imagefloat* src, Imagefloat* dst, int c
                 //xyz in TMatrix format
             }
         }
-
+        //White point xy
         //D41  0.377984  0.381229
         //D55  0.332424  0.347426
         //D80  0.293755  0.309185
@@ -1844,7 +1962,7 @@ void ImProcFunctions::workingtrc(int sp, Imagefloat* src, Imagefloat* dst, int c
 
 // alternative to find dominant color xy
 // Not use :
-//  1) GUI complex at least for mean
+//  1) GUI complex at least for me
 //  2) small difference for meanxe, meanye with meanx , meany above in most cases
         /*
                 if (locprim == 1) {

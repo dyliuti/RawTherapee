@@ -305,10 +305,16 @@ struct ColorAppearanceParamsEdited {
     bool qbright;
     bool chroma;
     bool schroma;
+    bool schromared;
+    bool schromagreen;
+    bool schromablue;
     bool mchroma;
     bool contrast;
     bool qcontrast;
     bool colorh;
+    bool colorhred;
+    bool colorhgreen;
+    bool colorhblue;
     bool rstprotection;
     bool surrsource;
     bool gamut;
@@ -1197,6 +1203,7 @@ public:
         bool greyl;
         bool bluxl;
         bool bluyl;
+        
         bool refi;
         bool shiftxl;
         bool shiftyl;
@@ -1453,6 +1460,13 @@ struct ColorManagementParamsEdited {
     bool grey;
     bool blux;
     bool bluy;
+    bool redrot;
+    bool redsat;
+    bool grerot;
+    bool gresat;
+    bool blurot;
+    bool blusat;
+    
     bool refi;
     bool shiftx;
     bool shifty;

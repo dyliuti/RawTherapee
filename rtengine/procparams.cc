@@ -1407,11 +1407,17 @@ ColorAppearanceParams::ColorAppearanceParams() :
     qbright(0.0),
     chroma(0.0),
     schroma(0.0),
+    schromared(0.0),
+    schromagreen(0.0),
+    schromablue(0.0),
     mchroma(0.0),
     colorh(0.0),
+    colorhred(0.0),
+    colorhgreen(0.0),
+    colorhblue(0.0),
     rstprotection(0.0),
     surrsource(false),
-    gamut(true),
+    gamut(false),
     datacie(false),
     tonecie(false),
     tempout(5003),
@@ -1457,8 +1463,14 @@ bool ColorAppearanceParams::operator ==(const ColorAppearanceParams& other) cons
         && qbright == other.qbright
         && chroma == other.chroma
         && schroma == other.schroma
+        && schromared == other.schromared
+        && schromagreen == other.schromagreen
+        && schromablue == other.schromablue
         && mchroma == other.mchroma
         && colorh == other.colorh
+        && colorhred == other.colorhred
+        && colorhgreen == other.colorhgreen
+        && colorhblue == other.colorhblue
         && rstprotection == other.rstprotection
         && surrsource == other.surrsource
         && gamut == other.gamut
@@ -2396,6 +2408,12 @@ ColorManagementParams::ColorManagementParams() :
     grey(0.7970),
     blux(0.1310),
     bluy(0.0460),
+    redrot(0.),
+    redsat(0.),
+    grerot(0.),
+    gresat(0.),
+    blurot(0.),
+    blusat(0.),
     refi(0.),
     shiftx(0.),
     shifty(0.),
@@ -2453,6 +2471,13 @@ bool ColorManagementParams::operator ==(const ColorManagementParams& other) cons
         && grey == other.grey
         && blux == other.blux
         && bluy == other.bluy
+        && redrot == other.redrot
+        && redsat == other.redsat
+        && grerot == other.grerot
+        && gresat == other.gresat
+        && blurot == other.blurot
+        && blusat == other.blusat
+        
         && refi == other.refi
         && shiftx == other.shiftx
         && shifty == other.shifty
@@ -3936,10 +3961,16 @@ int ProcParams::save(const Glib::ustring& fname, const Glib::ustring& fname2, bo
         saveToKeyfile(!pedited || pedited->colorappearance.qbright, "Color appearance", "Q-Bright", colorappearance.qbright, keyFile);
         saveToKeyfile(!pedited || pedited->colorappearance.chroma, "Color appearance", "C-Chroma", colorappearance.chroma, keyFile);
         saveToKeyfile(!pedited || pedited->colorappearance.schroma, "Color appearance", "S-Chroma", colorappearance.schroma, keyFile);
+        saveToKeyfile(!pedited || pedited->colorappearance.schromared, "Color appearance", "S-Chroma-red", colorappearance.schromared, keyFile);
+        saveToKeyfile(!pedited || pedited->colorappearance.schromagreen, "Color appearance", "S-Chroma-green", colorappearance.schromagreen, keyFile);
+        saveToKeyfile(!pedited || pedited->colorappearance.schromablue, "Color appearance", "S-Chroma-blue", colorappearance.schromablue, keyFile);
         saveToKeyfile(!pedited || pedited->colorappearance.mchroma, "Color appearance", "M-Chroma", colorappearance.mchroma, keyFile);
         saveToKeyfile(!pedited || pedited->colorappearance.contrast, "Color appearance", "J-Contrast", colorappearance.contrast, keyFile);
         saveToKeyfile(!pedited || pedited->colorappearance.qcontrast, "Color appearance", "Q-Contrast", colorappearance.qcontrast, keyFile);
         saveToKeyfile(!pedited || pedited->colorappearance.colorh, "Color appearance", "H-Hue", colorappearance.colorh, keyFile);
+        saveToKeyfile(!pedited || pedited->colorappearance.colorhred, "Color appearance", "H-Hue-red", colorappearance.colorhred, keyFile);
+        saveToKeyfile(!pedited || pedited->colorappearance.colorhgreen, "Color appearance", "H-Hue-green", colorappearance.colorhgreen, keyFile);
+        saveToKeyfile(!pedited || pedited->colorappearance.colorhblue, "Color appearance", "H-Hue-blue", colorappearance.colorhblue, keyFile);
         saveToKeyfile(!pedited || pedited->colorappearance.rstprotection, "Color appearance", "RSTProtection", colorappearance.rstprotection, keyFile);
         saveToKeyfile(!pedited || pedited->colorappearance.adapscen, "Color appearance", "AdaptScene", colorappearance.adapscen, keyFile);
         saveToKeyfile(!pedited || pedited->colorappearance.autoadapscen, "Color appearance", "AutoAdapscen", colorappearance.autoadapscen, keyFile);
@@ -4290,7 +4321,9 @@ int ProcParams::save(const Glib::ustring& fname, const Glib::ustring& fname2, bo
                 {ColorManagementParams::Primaries::BETA_RGB, "bet"},
                 {ColorManagementParams::Primaries::BEST_RGB, "bst"},
                 {ColorManagementParams::Primaries::CUSTOM, "cus"},
-                {ColorManagementParams::Primaries::CUSTOM_GRID, "cusgr"}
+                {ColorManagementParams::Primaries::CUSTOM_GRID, "cusgr"},
+                {ColorManagementParams::Primaries::CUSTOM_POL, "cuspol"}
+                
             },
             icm.wprim,
             keyFile
@@ -4328,6 +4361,14 @@ int ProcParams::save(const Glib::ustring& fname, const Glib::ustring& fname2, bo
         saveToKeyfile(!pedited || pedited->icm.grey, "Color Management", "Grey", icm.grey, keyFile);
         saveToKeyfile(!pedited || pedited->icm.blux, "Color Management", "Blux", icm.blux, keyFile);
         saveToKeyfile(!pedited || pedited->icm.bluy, "Color Management", "Bluy", icm.bluy, keyFile);
+        
+        saveToKeyfile(!pedited || pedited->icm.redrot, "Color Management", "Redrot", icm.redrot, keyFile);
+        saveToKeyfile(!pedited || pedited->icm.redsat, "Color Management", "Redsat", icm.redsat, keyFile);
+        saveToKeyfile(!pedited || pedited->icm.grerot, "Color Management", "Grerot", icm.grerot, keyFile);
+        saveToKeyfile(!pedited || pedited->icm.gresat, "Color Management", "Gresat", icm.gresat, keyFile);
+        saveToKeyfile(!pedited || pedited->icm.blurot, "Color Management", "Blurot", icm.blurot, keyFile);
+        saveToKeyfile(!pedited || pedited->icm.blusat, "Color Management", "Blusat", icm.blusat, keyFile);
+        
         saveToKeyfile(!pedited || pedited->icm.refi, "Color Management", "Refi", icm.refi, keyFile);
         saveToKeyfile(!pedited || pedited->icm.shiftx, "Color Management", "Shiftx", icm.shiftx, keyFile);
         saveToKeyfile(!pedited || pedited->icm.shifty, "Color Management", "Shifty", icm.shifty, keyFile);
@@ -5326,11 +5367,17 @@ int ProcParams::load(const Glib::ustring& fname, ParamsEdited* pedited)
             assignFromKeyfile(keyFile, "Color appearance", "Q-Bright", colorappearance.qbright, pedited->colorappearance.qbright);
             assignFromKeyfile(keyFile, "Color appearance", "C-Chroma", colorappearance.chroma, pedited->colorappearance.chroma);
             assignFromKeyfile(keyFile, "Color appearance", "S-Chroma", colorappearance.schroma, pedited->colorappearance.schroma);
+            assignFromKeyfile(keyFile, "Color appearance", "S-Chroma-red", colorappearance.schromared, pedited->colorappearance.schromared);
+            assignFromKeyfile(keyFile, "Color appearance", "S-Chroma-green", colorappearance.schromagreen, pedited->colorappearance.schromagreen);
+            assignFromKeyfile(keyFile, "Color appearance", "S-Chroma-blue", colorappearance.schromablue, pedited->colorappearance.schromablue);
             assignFromKeyfile(keyFile, "Color appearance", "M-Chroma", colorappearance.mchroma, pedited->colorappearance.mchroma);
             assignFromKeyfile(keyFile, "Color appearance", "RSTProtection", colorappearance.rstprotection, pedited->colorappearance.rstprotection);
             assignFromKeyfile(keyFile, "Color appearance", "J-Contrast", colorappearance.contrast, pedited->colorappearance.contrast);
             assignFromKeyfile(keyFile, "Color appearance", "Q-Contrast", colorappearance.qcontrast, pedited->colorappearance.qcontrast);
             assignFromKeyfile(keyFile, "Color appearance", "H-Hue", colorappearance.colorh, pedited->colorappearance.colorh);
+            assignFromKeyfile(keyFile, "Color appearance", "H-Hue-red", colorappearance.colorhred, pedited->colorappearance.colorhred);
+            assignFromKeyfile(keyFile, "Color appearance", "H-Hue-green", colorappearance.colorhgreen, pedited->colorappearance.colorhgreen);
+            assignFromKeyfile(keyFile, "Color appearance", "H-Hue-blue", colorappearance.colorhblue, pedited->colorappearance.colorhblue);
             assignFromKeyfile(keyFile, "Color appearance", "AdaptScene", colorappearance.adapscen, pedited->colorappearance.adapscen);
             assignFromKeyfile(keyFile, "Color appearance", "AutoAdapscen", colorappearance.autoadapscen, pedited->colorappearance.autoadapscen);
             assignFromKeyfile(keyFile, "Color appearance", "YbScene", colorappearance.ybscen, pedited->colorappearance.ybscen);
@@ -5878,7 +5925,9 @@ int ProcParams::load(const Glib::ustring& fname, ParamsEdited* pedited)
                         {"bet", ColorManagementParams::Primaries::BETA_RGB},
                         {"bst", ColorManagementParams::Primaries::BEST_RGB},
                         {"cus", ColorManagementParams::Primaries::CUSTOM},
-                        {"cusgr", ColorManagementParams::Primaries::CUSTOM_GRID}
+                        {"cusgr", ColorManagementParams::Primaries::CUSTOM_GRID},
+                        {"cuspol", ColorManagementParams::Primaries::CUSTOM_POL}
+                        
                     },
                     icm.wprim,
                     pedited->icm.wprim
@@ -5939,6 +5988,14 @@ int ProcParams::load(const Glib::ustring& fname, ParamsEdited* pedited)
             assignFromKeyfile(keyFile, "Color Management", "Grey", icm.grey, pedited->icm.grey);
             assignFromKeyfile(keyFile, "Color Management", "Blux", icm.blux, pedited->icm.blux);
             assignFromKeyfile(keyFile, "Color Management", "Bluy", icm.bluy, pedited->icm.bluy);
+            
+            assignFromKeyfile(keyFile, "Color Management", "Redrot", icm.redrot, pedited->icm.redrot);
+            assignFromKeyfile(keyFile, "Color Management", "Redsat", icm.redsat, pedited->icm.redsat);
+            assignFromKeyfile(keyFile, "Color Management", "Grerot", icm.grerot, pedited->icm.grerot);
+            assignFromKeyfile(keyFile, "Color Management", "Gresat", icm.gresat, pedited->icm.gresat);
+            assignFromKeyfile(keyFile, "Color Management", "Blurot", icm.blurot, pedited->icm.blurot);
+            assignFromKeyfile(keyFile, "Color Management", "Blusat", icm.blusat, pedited->icm.blusat);
+            
             assignFromKeyfile(keyFile, "Color Management", "Refi", icm.refi, pedited->icm.refi);
             assignFromKeyfile(keyFile, "Color Management", "Shiftx", icm.shiftx, pedited->icm.shiftx);
             assignFromKeyfile(keyFile, "Color Management", "Shifty", icm.shifty, pedited->icm.shifty);

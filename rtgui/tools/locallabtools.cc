@@ -4327,6 +4327,8 @@ LocallabShadow::LocallabShadow():
     ghs_B(Gtk::manage(new Adjuster(M("TP_LOCALLAB_GHS_B"), -5.0, 15.0, 0.001, 0.0))),
     ghs_SP(Gtk::manage(new Adjuster(M("TP_LOCALLAB_GHS_SP"), 0.0, 1.0, 0.00001, 0.015))),
     ghssymLabel(Gtk::manage(new Gtk::Label("---"))),
+    ghsmidLabel(Gtk::manage(new Gtk::Label("---"))),
+    ghsmaxrgbLabel(Gtk::manage(new Gtk::Label("---"))),
     ghs_LP(Gtk::manage(new Adjuster(M("TP_LOCALLAB_GHS_LP"), 0.0, 1.0, 0.00001, 0.0))),
     ghs_HP(Gtk::manage(new Adjuster(M("TP_LOCALLAB_GHS_HP"), 0.0, 1.0, 0.00001, 1.0))),
     LC_Frame(Gtk::manage(new Gtk::Frame(M("TP_LOCALLAB_GHS_LC_FRAME")))),
@@ -4380,7 +4382,6 @@ LocallabShadow::LocallabShadow():
     Evlocallabghs_SP = m->newEvent(AUTOEXP, "HISTORY_MSG_LOCAL_GHS_SP");
     EvlocallabautoSPson = m->newEvent(AUTOEXP, "HISTORY_MSG_LOCAL_AUTOSP");
     EvlocallabautoSPoff = m->newEvent(AUTOEXP, "HISTORY_MSG_LOCAL_AUTOSP");
-    
     Evlocallabghs_LP = m->newEvent(AUTOEXP, "HISTORY_MSG_LOCAL_GHS_LP");
     Evlocallabghs_HP = m->newEvent(AUTOEXP, "HISTORY_MSG_LOCAL_GHS_HP");
     Evlocallabghs_LC = m->newEvent(AUTOEXP, "HISTORY_MSG_LOCAL_GHS_LC");
@@ -4422,7 +4423,9 @@ LocallabShadow::LocallabShadow():
     ghsMatmet->append(M("TP_LOCALLAB_GHSMAT1"));
     ghsMatmet->append(M("TP_LOCALLAB_GHSMAT2"));
     ghsMatmet->append(M("TP_LOCALLAB_GHSMAT3"));
-    ghsMatmet->set_active(1);// Default to AgX (index 1)
+    ghsMatmet->append(M("TP_LOCALLAB_GHSMAT4"));
+    ghsMatmet->append(M("TP_LOCALLAB_GHSMAT5"));
+    ghsMatmet->set_active(0);//I think it's better to keep 'none' (index 0) and let the user choose their preferred mode.
     ghsMatmetConn = ghsMatmet->signal_changed().connect(sigc::mem_fun(*this, &LocallabShadow::ghsMatmetChanged));
 
     for (const auto multiplier : multipliersh) {
@@ -4467,7 +4470,15 @@ LocallabShadow::LocallabShadow():
     ghssymLabel->set_line_wrap();
     ghssymLabel->set_justify(Gtk::Justification::JUSTIFY_CENTER);
     setExpandAlignProperties(ghssymLabel, true, false, Gtk::ALIGN_CENTER, Gtk::ALIGN_START);
-    
+
+    ghsmidLabel->set_line_wrap();
+    ghsmidLabel->set_justify(Gtk::Justification::JUSTIFY_CENTER);
+    setExpandAlignProperties(ghsmidLabel, true, false, Gtk::ALIGN_CENTER, Gtk::ALIGN_START);
+
+    ghsmaxrgbLabel->set_line_wrap();
+    ghsmaxrgbLabel->set_justify(Gtk::Justification::JUSTIFY_CENTER);
+    setExpandAlignProperties(ghsmaxrgbLabel, true, false, Gtk::ALIGN_CENTER, Gtk::ALIGN_START);
+
     ghs_LP->setAdjusterListener(this);
     ghs_HP->setAdjusterListener(this);
     ghs_LC->setAdjusterListener(this);
@@ -4638,6 +4649,8 @@ LocallabShadow::LocallabShadow():
 
     ghsBox->pack_start(*LC_Frame);
     ghsBox->pack_start(*ghs_smooth);
+    ghsBox->pack_start(*ghsmidLabel);
+    ghsBox->pack_start(*ghsmaxrgbLabel);
 
     ghsFrame->add(*ghsBox);
     pack_start(*ghsFrame);
@@ -4720,9 +4733,9 @@ void LocallabShadow::autoSPChanged(float radius)
                 ghs_SP->addAutoButton(M("TP_LOCALLAB_SPRADIUS_TOOLTIP"));
                 ghs_SP->setValue(radius);
             }
-            
+
             enableListener();
-            nbsym2++;                       
+            nbsym2++;
             if(nbsym2 < 2) {
                 adjusterChanged(ghs_SP, 0);
             }
@@ -4885,7 +4898,8 @@ void LocallabShadow::updateAdviceTooltips(const bool showTooltips)
         chromaskSH->set_tooltip_text(M("TP_LOCALLAB_CHROMASK_TOOLTIP"));
         slomaskSH->set_tooltip_text(M("TP_LOCALLAB_SLOMASK_TOOLTIP"));
         lapmaskSH->set_tooltip_text(M("TP_LOCALLAB_LAPRAD1_TOOLTIP"));
-        
+        ghsmaxrgbLabel->set_tooltip_text(M("TP_LOCALLAB_GHSMAXRGB_TOOLTIP"));
+        ghsmidLabel->set_tooltip_text(M("TP_LOCALLAB_GHSMAXRGB_TOOLTIP"));
         /*
         highlights->set_tooltip_text(M("TP_LOCALLAB_NUL_TOOLTIP"));
         h_tonalwidth->set_tooltip_text(M("TP_LOCALLAB_NUL_TOOLTIP"));
@@ -4940,6 +4954,8 @@ void LocallabShadow::updateAdviceTooltips(const bool showTooltips)
         blendmaskSH->set_tooltip_text("");
         radmaskSH->set_tooltip_text("");
         lapmaskSH->set_tooltip_text("");
+        ghsmaxrgbLabel->set_tooltip_text("");
+        ghsmidLabel->set_tooltip_text("");
         mask2SHCurveEditorG->set_tooltip_text("");
         LmaskSHshape->setTooltip("");
         maskSHCurveEditorG->set_tooltip_markup("");
@@ -5063,14 +5079,18 @@ void LocallabShadow::read(const rtengine::procparams::ProcParams* pp, const Para
             ghsMatmet->set_active(0);
         } else if (spot.ghsMatmet == "agx") {
             ghsMatmet->set_active(1);
-        } else if (spot.ghsMatmet == "JZ") {//I chose JZ rather than JzAzBz because we're dealing with a cognitive bias.
+        } else if (spot.ghsMatmet == "JZxyz") {//Same comment as "JZ" under but without cognitive bias, by using XYZ data instead of RGB.
+            ghsMatmet->set_active(2);
+        } else if (spot.ghsMatmet == "cat16xyz") {//Same comment as "cat16" under but without cognitive bias, by using XYZ data instead of RGB.
+            ghsMatmet->set_active(3);
+        } else if (spot.ghsMatmet == "JZ") {//I chose JZ rather than JzAzBz because we're dealing with a cognitive bias in RGB mode.
                                             //it corresponds to original LMS JzAzBz matrix without PQ, whitout Absolute luminance, whitout "az and bz" and applied to RGB values
                                             //If I had chosen JzAzBz, the reader might believe we are using the JzAzBz model, which is not the case.
                                             //But to 'simplify' the GUI, JzAzBz and Cat16 appear... this reassures users, but it's more than likely false.
-            ghsMatmet->set_active(2);
-        } else if (spot.ghsMatmet == "cat16") {//It's essentially the same for Cat16 as for JZ
-                                               //it's a simplifying cognitive bias, but I kept the term here because the difference is smaller.
-            ghsMatmet->set_active(3);
+            ghsMatmet->set_active(4);
+        } else if (spot.ghsMatmet == "cat16") {//It's essentially the same for Cat16 as for JZ. Note that this is not CIECAM, but only the use of the conversion matrix
+                                               //it's a simplifying cognitive bias, but I kept the term here because the difference is often smaller.
+            ghsMatmet->set_active(5);
         }
 
         for (int i = 0; i < 6; i++) {
@@ -5087,7 +5107,7 @@ void LocallabShadow::read(const rtengine::procparams::ProcParams* pp, const Para
         ghs_B->setValue((double)spot.ghs_B);
         ghs_SP->setValue((double)spot.ghs_SP);
         ghs_SP->setAutoValue(spot.SPAutoRadius);
-        
+
         ghs_LP->setValue((double)spot.ghs_LP);
         ghs_HP->setValue((double)spot.ghs_HP);
         ghs_LC->setValue((double)spot.ghs_LC);
@@ -5231,8 +5251,12 @@ void LocallabShadow::write(rtengine::procparams::ProcParams* pp, ParamsEdited* p
         } else if (ghsMatmet->get_active_row_number() == 1) {
             spot.ghsMatmet = "agx";
         } else if (ghsMatmet->get_active_row_number() == 2) {
-            spot.ghsMatmet = "JZ";
+            spot.ghsMatmet = "JZxyz";
         } else if (ghsMatmet->get_active_row_number() == 3) {
+            spot.ghsMatmet = "cat16xyz";
+        } else if (ghsMatmet->get_active_row_number() == 4) {
+            spot.ghsMatmet = "JZ";
+        } else if (ghsMatmet->get_active_row_number() == 5) {
             spot.ghsMatmet = "cat16";
         }
 
@@ -5379,7 +5403,7 @@ void LocallabShadow::adjusterChanged(Adjuster* a, double newval)
                 ghs_agx->set_sensitive(false);
                 ghsMatmet->set_sensitive(false);
                 ghs_LC->set_sensitive(true);
-                ghs_MID->set_sensitive(true);              
+                ghs_MID->set_sensitive(true);
             } else {
                 if (ghs_autobw->get_active()) {
                     ghs_BLP->set_sensitive(false);
@@ -5720,10 +5744,10 @@ void LocallabShadow::updateghsbw2(double ghsb, double ghsw, bool ghsaut)//auto G
    );
   
 }
-void LocallabShadow::updateghsbw(int bp, int wp, double minbp, double maxwp, double symev, double maxR, double maxG, double maxB, double drghs, bool ghsau) //update informations for Black point and White point
+void LocallabShadow::updateghsbw(int bp, int wp, double minbp, double maxwp, double symev, double midgrey, double maxrgb, double sig3, double maxR, double maxG, double maxB, double drghs, bool ghsau) //update informations for Black point and White point
 {
     idle_register.add(
-    [this, bp, wp, minbp, maxwp, symev, maxR, maxG, maxB, drghs, ghsau]() -> bool {
+    [this, bp, wp, minbp, maxwp, symev, midgrey, maxrgb, sig3, maxR, maxG, maxB, drghs, ghsau]() -> bool {
         GThreadLock lock; // All GUI access from idle_add callbacks or separate thread HAVE to be protected
         
         if (ghsMethod->get_active_row_number() == 0 || ghsMethod->get_active_row_number() == 1) {//only in RGB mode
@@ -5734,7 +5758,26 @@ void LocallabShadow::updateghsbw(int bp, int wp, double minbp, double maxwp, dou
         } else {
             ghssymLabel->set_text(M("TP_LOCALLAB_GHSSYMNO"));
         }
-        
+
+        if (ghsMethod->get_active_row_number() == 0 || ghsMethod->get_active_row_number() == 1) {//only in RGB mode
+            ghsmidLabel->set_text(
+                Glib::ustring::compose(M("TP_LOCALLAB_GHSMIDGREY"),
+                                    Glib::ustring::format(std::fixed, std::setprecision(3), midgrey))
+            );
+        } else {
+            ghsmidLabel->set_text(M("TP_LOCALLAB_GHSMIDGREYNO"));
+        }
+
+        if (ghsMethod->get_active_row_number() == 0 || ghsMethod->get_active_row_number() == 1) {//only in RGB mode
+            ghsmaxrgbLabel->set_text(
+                Glib::ustring::compose(M("TP_LOCALLAB_GHSMAXRGB"),
+                                    Glib::ustring::format(std::fixed, std::setprecision(3), maxrgb),
+                                    Glib::ustring::format(std::fixed, std::setprecision(3), sig3))
+            );
+        } else {
+            ghsmaxrgbLabel->set_text(M("TP_LOCALLAB_GHSMAXRGBNO"));
+        }
+
         ghsbpwpLabels->set_text(
             Glib::ustring::compose(M("TP_LOCALLAB_GHSBPWP"),
                                    Glib::ustring::format(std::fixed, std::setprecision(0), bp),
@@ -5894,7 +5937,6 @@ void LocallabShadow::updateGUIToMode(const modeType new_type)
             ghs_slope->hide();
             Lab_Frame->hide();
             ghs_inv->hide();
-            
             break;
 
         case Normal:
@@ -6374,7 +6416,7 @@ void LocallabShadow::updateShadowGUIsym()
     double secur = 0.001;//keep range security to avoid crash and wrong GUI - no or small incidence on usage
     double HPL = rtengine::LIM(tempSP - secur, 0.0001, 0.9999);
     double BPH = rtengine::LIM(tempSP + secur, 0.0001, 0.9999);
-    ghs_LP->setLimits(0., HPL, 0.00001, 0.0);//
+    ghs_LP->setLimits(0., HPL, 0.00001, 0.0);
     ghs_HP->setLimits(BPH, 1.0, 0.00001, 0.0);
     //avoid crash at limits
     if(tempHP - tempSP <= 0.) {
