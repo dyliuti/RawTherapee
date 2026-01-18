@@ -293,7 +293,6 @@ private:
 
     Thumbnail* openThm;  // may get invalid on external delete event
     Glib::ustring fname;  // must be saved separately
-    Glib::ustring imageDirectory;   ///< Needed when resetting file catalog to match the image opened in the editor. This value can be a substring of the full image path.
 
     int selectedFrame;
 

@@ -1258,9 +1258,8 @@ void EditorPanel::open (Thumbnail* tmb, rtengine::InitialImage* isrc)
     openThm = tmb;
 
     fname = openThm->getFileName();
-    imageDirectory = "";
     if ( fPanel && fPanel->fileCatalog ) {
-        imageDirectory = fPanel->fileCatalog->lastSelectedDir();
+        fPanel->fileCatalog->saveResetState();
     }
     lastSaveAsFileName = removeExtension (Glib::path_get_basename (fname));
 
@@ -1894,7 +1893,7 @@ bool EditorPanel::handleShortcutKey (GdkEventKey* event)
 
                 case GDK_KEY_y: // synchronize filebrowser with image in Editor
                     if (!App::get().isSimpleEditor() && fPanel && !fname.empty()) {
-                        fPanel->fileCatalog->selectImage (fname, imageDirectory, false);
+                        fPanel->fileCatalog->selectImage (fname, false);
                         return true;
                     }
 
@@ -1902,7 +1901,7 @@ bool EditorPanel::handleShortcutKey (GdkEventKey* event)
 
                 case GDK_KEY_x: // clear filters and synchronize filebrowser with image in Editor
                     if (!App::get().isSimpleEditor() && fPanel && !fname.empty()) {
-                        fPanel->fileCatalog->selectImage (fname, imageDirectory, true);
+                        fPanel->fileCatalog->selectImage (fname, true);
                         return true;
                     }
 
@@ -2313,21 +2312,21 @@ bool EditorPanel::saveImmediately (const Glib::ustring &filename, const SaveForm
 void EditorPanel::openPreviousEditorImage()
 {
     if (!App::get().isSimpleEditor() && fPanel && !fname.empty()) {
-        fPanel->fileCatalog->openNextPreviousEditorImage (fname, imageDirectory, false, NAV_PREVIOUS);
+        fPanel->fileCatalog->openNextPreviousEditorImage (fname, NAV_PREVIOUS);
     }
 }
 
 void EditorPanel::openNextEditorImage()
 {
     if (!App::get().isSimpleEditor() && fPanel && !fname.empty()) {
-        fPanel->fileCatalog->openNextPreviousEditorImage (fname, imageDirectory, false, NAV_NEXT);
+        fPanel->fileCatalog->openNextPreviousEditorImage (fname, NAV_NEXT);
     }
 }
 
 void EditorPanel::syncFileBrowser()   // synchronize filebrowser with image in Editor
 {
     if (!App::get().isSimpleEditor() && fPanel && !fname.empty()) {
-        fPanel->fileCatalog->selectImage (fname, imageDirectory, false);
+        fPanel->fileCatalog->selectImage (fname, false);
     }
 }
 

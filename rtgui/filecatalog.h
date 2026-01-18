@@ -61,9 +61,21 @@ private:
         Glib::ustring filePath;
     };
 
+    /**
+    * @brief DirectoryResetInfo
+    * Data that is used to reset the file catalog contents if user uses Y,X or SHIFT+F3/F4
+    */
+    struct DirectoryResetInfo {
+        DirectoryResetInfo() : recursive(false) {}
+
+        bool          recursive;    ///< If recursive directories is enabled
+        Glib::ustring directory;    ///< The value of selectedDirectory
+    };
+
     FilePanel* filepanel;
     Gtk::Box* hBox;
     Glib::ustring selectedDirectory;
+    DirectoryResetInfo resetData;
     int selectedDirectoryId;
     bool enabled;
     bool inTabMode;  // Tab mode has e.g. different progress bar handling
@@ -254,7 +266,9 @@ public:
     void showRecursiveToggled();
     bool capture_event(GdkEventButton* event);
     void filterChanged ();
-    void runFilterDialog ();
+
+    void saveResetState (); 
+    bool restoreResetState ();
 
     void on_realize() override;
     void reparseDirectory ();
@@ -284,8 +298,8 @@ public:
     {
         fileBrowser->openPrevImage();
     }
-    void selectImage (Glib::ustring fname, Glib::ustring directory, bool clearFilters);
-    void openNextPreviousEditorImage (Glib::ustring fname, Glib::ustring directory, bool clearFilters, eRTNav nextPrevious);
+    void selectImage (Glib::ustring fname, bool clearFilters);
+    void openNextPreviousEditorImage (Glib::ustring fname, eRTNav nextPrevious);
 
     bool handleShortcutKey (GdkEventKey* event);
     bool handleShortcutKeyRelease(GdkEventKey *event);
