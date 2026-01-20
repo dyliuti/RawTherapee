@@ -1803,19 +1803,23 @@ void FileCatalog::saveResetState ()
 
 bool FileCatalog::restoreResetState ()
 {
-    if (resetData.directory.empty() || resetData.directory == selectedDirectory) { 
-        return false;
+    //
+    // BUG --   If the filmstrip is empty before the reset, it will not reset back to a fully working state.
+    //          User needs to flip to File Browser and back to make it work correctly.
+
+    if (resetData.recursive != App::get().options().browseRecursive) {
+        App::get().mut_options().browseRecursive = resetData.recursive;
+        bRecursive->set_active(resetData.recursive);
     }
 
-    // Set recursive option
-    App::get().mut_options().browseRecursive = resetData.recursive;
-    bRecursive->set_active(resetData.recursive);
+    if (resetData.directory != selectedDirectory) {
+        BrowsePath->set_text(resetData.directory);
+        buttonBrowsePathPressed ();
 
-    // Change directory
-    BrowsePath->set_text(resetData.directory);
-    buttonBrowsePathPressed ();
+        return true;
+    }
 
-    return true;
+    return false;
 }
 
 void FileCatalog::reparseDirectory ()
@@ -2262,7 +2266,7 @@ void FileCatalog::selectImage (Glib::ustring fname, bool clearFilters)
         }
     }
 
-    if ( restoreResetState() ) {
+    if (restoreResetState()) {
         // Directory was changed -
         // If the user has traversed around directories in the File Browser and now wants to
         // reset the file catalog to the directory of the opened image with X or Y key
@@ -2278,7 +2282,7 @@ void FileCatalog::selectImage (Glib::ustring fname, bool clearFilters)
 
 void FileCatalog::openNextPreviousEditorImage (Glib::ustring fname, eRTNav nextPrevious)
 {
-    if ( restoreResetState() ) {
+    if (restoreResetState()) {
         // Directory was changed -
         // If the user has traversed around directories in the File Browser and now wants to
         // continue from the image opened in the editor with SHIFT+F3/F4 keys

@@ -63,7 +63,7 @@ private:
 
     /**
     * @brief DirectoryResetInfo
-    * Data that is used to reset the file catalog contents if user uses Y,X or SHIFT+F3/F4
+    * Data that is used to reset the file catalog contents if user presses Y,X or SHIFT+F3/F4
     */
     struct DirectoryResetInfo {
         DirectoryResetInfo() : recursive(false) {}
