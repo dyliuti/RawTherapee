@@ -509,6 +509,9 @@ struct ColorAppearanceParams {
     int           degreeout;
     bool          autodegreeout;
     std::vector<double> curve;
+    std::vector<double> curvered;
+    std::vector<double> curvegreen;
+    std::vector<double> curveblue;
     std::vector<double> curve2;
     std::vector<double> curve3;
     TcMode     curveMode;
@@ -1133,6 +1136,14 @@ struct ColorManagementParams {
         LINEAR
     };
 
+    enum class Wwgamut {
+        NONE,
+        REC2020,
+        ADOBE,
+        SRGB,
+        DCIP3
+    };
+
     enum class Illuminant {
         DEFAULT,
         D41,
@@ -1184,6 +1195,7 @@ struct ColorManagementParams {
 
     Glib::ustring workingProfile;
     WorkingTrc workingTRC;
+    Wwgamut wgamut;
     Illuminant will;
     Primaries wprim;
     Cat wcat;
@@ -1194,6 +1206,8 @@ struct ColorManagementParams {
     double sigmatrc;
     double offstrc;
     double residtrc;
+    double wgampower;
+    double wgamgain;
     int pyrwavtrc;
     std::vector<double> opacityCurveWLI;   
     bool wsmoothcie;

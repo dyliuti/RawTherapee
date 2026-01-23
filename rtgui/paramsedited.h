@@ -277,6 +277,9 @@ struct ImpulseDenoiseParamsEdited {
 
 struct ColorAppearanceParamsEdited {
     bool curve;
+    bool curvered;
+    bool curvegreen;
+    bool curveblue;
     bool curve2;
     bool curve3;
     bool curveMode;
@@ -1439,12 +1442,15 @@ struct ColorManagementParamsEdited {
 
     bool workingProfile;
     bool workingTRC;
+    bool wgamut;
     bool wGamma;
     bool wSlope;
     bool wmidtcie;
     bool sigmatrc;
     bool offstrc;
     bool residtrc;
+    bool wgampower;
+    bool wgamgain;
     bool pyrwavtrc;
     bool opacityCurveWLI;
 

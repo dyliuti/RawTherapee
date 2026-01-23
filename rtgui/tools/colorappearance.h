@@ -118,6 +118,9 @@ private:
     rtengine::ProcEvent EvCATschromagreen;
     rtengine::ProcEvent EvCATcolorhblue;
     rtengine::ProcEvent EvCATschromablue;
+    rtengine::ProcEvent EvCATCurvered;
+    rtengine::ProcEvent EvCATCurvegreen;
+    rtengine::ProcEvent EvCATCurveblue;
 
 
     bool bgTTipQuery (int x, int y, bool keyboard_tooltip, const Glib::RefPtr<Gtk::Tooltip>& tooltip);
@@ -166,6 +169,7 @@ private:
     MyComboBoxText* modelmethod;
     MyComboBoxText* catmethod;
 
+
     //Adjuster* edge;
     Gtk::CheckButton* surrsource;
     Gtk::CheckButton* gamut;
@@ -196,10 +200,17 @@ private:
     CurveEditorGroup* curveEditorG;
     CurveEditorGroup* curveEditorG2;
     CurveEditorGroup* curveEditorG3;
+    CurveEditorGroup* curveEditorGred;
+    CurveEditorGroup* curveEditorGgreen;
+    CurveEditorGroup* curveEditorGblue;
 
     DiagonalCurveEditor* shape;
     DiagonalCurveEditor* shape2;
     DiagonalCurveEditor* shape3;
+    DiagonalCurveEditor* shapered;
+    DiagonalCurveEditor* shapegreen;
+    DiagonalCurveEditor* shapeblue;
+
     double nextCcam, nextCcamout, nextCadap;
     int nextYbscn;
     bool lastAutoDegree;

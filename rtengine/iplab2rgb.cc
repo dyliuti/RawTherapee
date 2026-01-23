@@ -469,8 +469,8 @@ void ImProcFunctions::preserv(LabImage *nprevl, LabImage *provis, int cw, int ch
 // Aggressiveness of the compression curve
 //const float PWR = 1.2;
 
-//Jacques Desmis December 2025
-void ImProcFunctions::gamutcompr( Imagefloat *src, Imagefloat *dst, float &mac, float &mac0, float &mac1, float &mac2) const
+//Jacques Desmis January 2026
+void ImProcFunctions::gamutcompr( Imagefloat *src, Imagefloat *dst, int beginend, float &mac, float &mac0, float &mac1, float &mac2) const
 {
      if (settings->verbose) {
         printf("Apply compression gamut \n");
@@ -568,25 +568,35 @@ void ImProcFunctions::gamutcompr( Imagefloat *src, Imagefloat *dst, float &mac, 
         beta[2][2] = 0.7845090;
 
     Matrix out = {};
-
-    if (params->cg.colorspace == "rec2020") {
-        out = Rec2020;
-    } else if  (params->cg.colorspace == "prophoto") {
-        out = prophoto;
-    } else if  (params->cg.colorspace == "adobe") {
-        out = adobe;
-    } else if  (params->cg.colorspace == "srgb") {
-        out = srgb;
-    } else if  (params->cg.colorspace == "dcip3") {
-        out = dcip3;
-    } else if  (params->cg.colorspace == "acesp1") {
-        out = acesp1;
-   } else if  (params->cg.colorspace == "beta") {
-        out = beta;
-    } else {
-        out = acesp1; // Should never happen, but just in case.
-    }
-
+    if (beginend == 0) {//at the beginning of the process
+        if (params->cg.colorspace == "rec2020") {
+            out = Rec2020;
+        } else if  (params->cg.colorspace == "prophoto") {
+            out = prophoto;
+        } else if  (params->cg.colorspace == "adobe") {
+            out = adobe;
+        } else if  (params->cg.colorspace == "srgb") {
+            out = srgb;
+        } else if  (params->cg.colorspace == "dcip3") {
+            out = dcip3;
+        } else if  (params->cg.colorspace == "acesp1") {
+            out = acesp1;
+        } else if  (params->cg.colorspace == "beta") {
+            out = beta;
+        } else {
+            out = acesp1;// Should never happen, but just in case.
+        }
+    } else if (beginend == 1) {//at the end of the process. Only 4 cases, which are the cases, at this stage, actually possible 
+        if(params->icm.wgamut == ColorManagementParams::Wwgamut::REC2020) {
+            out = Rec2020;
+        } else if(params->icm.wgamut == ColorManagementParams::Wwgamut::ADOBE) {
+            out = adobe;
+        } else if(params->icm.wgamut == ColorManagementParams::Wwgamut::SRGB) {
+            out = srgb;
+        } else if(params->icm.wgamut == ColorManagementParams::Wwgamut::DCIP3) {
+            out = dcip3;
+        }
+}
     Matrix inv_out = {};
     if (!rtengine::invertMatrix(out, inv_out)) {//invert matrix
         printf("Matrix is not invertible, skipping\n");
@@ -605,6 +615,8 @@ void ImProcFunctions::gamutcompr( Imagefloat *src, Imagefloat *dst, float &mac, 
     }
 
     //parameters from GUI
+    /* 
+    //old manner to do with only 1 case 'beginning'
     const auto thc = static_cast<float>(params->cg.th_c);
     const auto thm = static_cast<float>(params->cg.th_m);
     const auto thy = static_cast<float>(params->cg.th_y);
@@ -613,6 +625,32 @@ void ImProcFunctions::gamutcompr( Imagefloat *src, Imagefloat *dst, float &mac, 
     const auto dy = static_cast<float>(params->cg.d_y);
     const auto pw = static_cast<float>(params->cg.pwr);
     const bool roll = params->cg.rolloff;
+    */
+    //beginning of process with GUI compressgamut.cc
+    float thc = static_cast<float>(params->cg.th_c);
+    float thm = static_cast<float>(params->cg.th_m);
+    float thy = static_cast<float>(params->cg.th_y);
+    float dc = static_cast<float>(params->cg.d_c);
+    float dm = static_cast<float>(params->cg.d_m);
+    float dy = static_cast<float>(params->cg.d_y);
+    float pw = static_cast<float>(params->cg.pwr);
+    bool roll = params->cg.rolloff;
+    
+    if (beginend == 1) {//with GUI Icmpanel.cc
+        //take values from ART CTL - odt.ctl - Copyright (c) 2023 Thatcher Freeman
+        //It's considerably simpler at the end of the process. We don't have (at least in theory) the problems related to data completely out of gamut (Sunset, LEDs).
+        //This needs to be confirmed by testing and possibly changed.
+        //I made small changes
+        thc = 0.8f; //0.85f;
+        thm = 0.75f;//0.75f
+        thy = 0.85f;//0.95f;
+        dc = 1.15f;//1.10f
+        dm = 1.25f;//1.20f
+        dy = 1.5f;//1.5f
+        pw = params->icm.wgampower;
+        roll = true;
+    }
+
 
     const std::array<float, 3> th{thc, thm, thy};//set parameter GUI in th
     const std::array<float, 3> dl{dc, dm, dy};//set parameter GUI in dl
@@ -820,7 +858,7 @@ void rotate_and_scale_primary(float primaries[3][2], float scaling, float rotati
 //end code Darktable
 
 void ImProcFunctions::workingtrc(int sp, Imagefloat* src, Imagefloat* dst, int cw, int ch, int mul, Glib::ustring &profile, double gampos, double slpos, int cat, int &illum, int prim, int locprim,
-                                 float &rdx, float &rdy, float &grx, float &gry, float &blx, float &bly, float &meanx, float &meany, float &meanxe, float &meanye, double *p,
+                                 float &rdx, float &rdy, float &grx, float &gry, float &blx, float &bly, float &meanx, float &meany, float &meanxe, float &meanye, float &maxdat, double *p,
                                  cmsHTRANSFORM &transform, bool normalizeIn, bool normalizeOut, bool keepTransForm, bool gamutcontrol) const
 {
     const TMatrix wprof = ICCStore::getInstance()->workingSpaceMatrix(params->icm.workingProfile);
@@ -1637,7 +1675,7 @@ void ImProcFunctions::workingtrc(int sp, Imagefloat* src, Imagefloat* dst, int c
         gammaParams[3] = 1. / slpos;
         gammaParams[5] = 0.0;
         gammaParams[6] = 0.0;
-        if(rtengine::settings->verbose) {         
+        if (rtengine::settings->verbose) {         
             printf("ga0=%f ga1=%f ga2=%f ga3=%f ga4=%f\n", gammaParams[0], gammaParams[1], gammaParams[2], gammaParams[3], gammaParams[4]);
         }
 
@@ -1808,7 +1846,7 @@ void ImProcFunctions::workingtrc(int sp, Imagefloat* src, Imagefloat* dst, int c
                 newprimxy[0] = 0.f;
                 newprimxy[1] = 0.f;
                 rotate_and_scale_primary(primaries, 1.f - inset[i], rotation[i], i , newprimxy, xyD);//xyD takes into account the default illuminant or the one chosen by the user
-                if(i == 0) {
+                if (i == 0) {
                     p[0] = newprimxy[0];
                     p[1] = newprimxy[1];
                     if(rtengine::settings->verbose) {
