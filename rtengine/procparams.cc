@@ -138,6 +138,7 @@ namespace CropGuide {
     DEFINE_KEY(BASIS_SHORT, "Short");
 
     DEFINE_KEY(NAME, "Name");
+    DEFINE_KEY(IS_PORTRAIT, "IsPortrait");
     DEFINE_KEY(RED, "Red");
     DEFINE_KEY(GREEN, "Green");
     DEFINE_KEY(BLUE, "Blue");
@@ -419,6 +420,13 @@ void loadCropGuideParams(
                     } else {
                         entry.enabled = false;
                     }
+                    const cJSON* is_portrait =
+                        cJSON_GetObjectItemCaseSensitive(obj, IS_PORTRAIT);
+                    if (cJSON_IsTrue(is_portrait)) {
+                        entry.is_portrait = true;
+                    } else {
+                        entry.is_portrait = false;
+                    }
 
                     parse_color(obj, RED, entry.red);
                     parse_color(obj, GREEN, entry.green);
@@ -498,6 +506,11 @@ void saveCropGuideParams(
                 cJSON_AddTrueToObject(obj, TOOL_ENABLED);
             } else {
                 cJSON_AddFalseToObject(obj, TOOL_ENABLED);
+            }
+            if (entry.is_portrait) {
+                cJSON_AddTrueToObject(obj, IS_PORTRAIT);
+            } else {
+                cJSON_AddFalseToObject(obj, IS_PORTRAIT);
             }
 
             auto name = getAspectRatioLabel(entry.preset_index);
@@ -2101,17 +2114,19 @@ void CropParams::mapToResized(int resizedWidth, int resizedHeight, int scale, in
 }
 
 CropGuideParams::AspectRatioParams::AspectRatioParams(size_t preset_index)
-    : enabled(false)
-    , preset_index(preset_index)
-    , red(1.0)
-    , green(1.0)
-    , blue(1.0)
+    : enabled(false),
+      is_portrait(false),
+      preset_index(preset_index),
+      red(1.0),
+      green(1.0),
+      blue(1.0)
 {
 }
 
 bool CropGuideParams::AspectRatioParams::operator==(const AspectRatioParams& other) const
 {
     return enabled == other.enabled
+        && is_portrait == other.is_portrait
         && preset_index == other.preset_index
         && red == other.red
         && green == other.green

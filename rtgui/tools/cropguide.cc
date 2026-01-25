@@ -332,6 +332,16 @@ Gtk::Widget* CropGuide::createAspectRatioModelControls(
         item->index,
         color_preview));
 
+    auto rotate_button = Gtk::manage(new Gtk::Button());
+    rotate_button->set_image(*Gtk::manage(
+        new RTImage("rotate-right-small", Gtk::ICON_SIZE_BUTTON)));
+    rotate_button->set_relief(Gtk::RELIEF_NONE);
+    box->pack_start(*rotate_button, false, false);
+
+    rotate_button->signal_clicked().connect(sigc::bind(
+        sigc::mem_fun(this, &CropGuide::onAspectRatioPresetRotate),
+        item->index));
+
     auto remove_button = Gtk::manage(new Gtk::Button());
     remove_button->set_image(*Gtk::manage(
         new RTImage("cancel-small", Gtk::ICON_SIZE_BUTTON)));
@@ -394,6 +404,7 @@ void CropGuide::read(const rtengine::procparams::ProcParams* pp,
     for (const auto& param : pp->cropGuide.aspect_ratios) {
         auto& preset = m_aspect_ratio_presets.at(param.preset_index);
         preset->active = true;
+        preset->is_portrait = param.is_portrait;
         preset->visible = param.enabled;
 
         Gdk::RGBA color;
@@ -453,6 +464,7 @@ void CropGuide::write(rtengine::procparams::ProcParams* pp, ParamsEdited* pedite
 
         CropGuideParams::AspectRatioParams params(model->index);
         params.enabled = model->visible;
+        params.is_portrait = model->is_portrait;
         params.red = model->color.get_red();
         params.green = model->color.get_green();
         params.blue = model->color.get_blue();
@@ -655,6 +667,18 @@ void CropGuide::onAspectRatioPresetPickColor(size_t index, ColorPreview* preview
     m_dirty_aspect_ratios = true;
 
     preview->setRgb(color.get_red(), color.get_green(), color.get_blue());
+
+    if (listener && getEnabled()) {
+        listener->panelChanged(EvCropGuideAspectRatioPresetChanged,
+                               preset->aspect_ratio.label);
+    }
+}
+
+void CropGuide::onAspectRatioPresetRotate(size_t index)
+{
+    auto& preset = m_aspect_ratio_presets.at(index);
+    preset->is_portrait = !preset->is_portrait;
+    m_dirty_aspect_ratios = true;
 
     if (listener && getEnabled()) {
         listener->panelChanged(EvCropGuideAspectRatioPresetChanged,

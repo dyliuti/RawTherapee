@@ -85,6 +85,7 @@ private:
 
         Gdk::RGBA color;
         bool active = false;
+        bool is_portrait = false;
         bool visible = true;
     };
 
@@ -101,6 +102,7 @@ private:
     void onAspectRatioComboChanged();
     void onAspectRatioPresetToggled(Gtk::ToggleButton* button, size_t index);
     void onAspectRatioPresetPickColor(size_t index, ColorPreview* preview);
+    void onAspectRatioPresetRotate(size_t index);
     void onAspectRatioPresetRemoved(size_t index);
     void onBasisChanged();
 

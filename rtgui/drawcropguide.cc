@@ -630,30 +630,27 @@ void GuideDrawer::drawAspectRatios()
         green = entry.green;
         blue = entry.blue;
 
-        const double aspect_ratio = getAspectRatioValue(entry.preset_index);
+        const double aspect_ratio = [&]() {
+            double result = getAspectRatioValue(entry.preset_index);
+            if ((entry.is_portrait && result > 1.0)
+                || (!entry.is_portrait && result < 1.0))
+            {
+                result = 1.0 / result;
+            }
+            return result;
+        }();
         const double inverse_aspect_ratio = 1.0 / aspect_ratio;
 
         // If the current ratio doesn't match the desired aspect ratio, use a
         // fitted and centered guide that does match the aspect ratio.
         double fitted_w = w;
         double fitted_h = h;
-
-        if (w >= h) {
-            if (rect_ratio >= aspect_ratio) {
-                fitted_w = h * aspect_ratio;
-                fitted_h = h;
-            } else {
-                fitted_w = w;
-                fitted_h = w * inverse_aspect_ratio;
-            }
+        if (rect_ratio >= aspect_ratio) {
+            fitted_w = h * aspect_ratio;
+            fitted_h = h;
         } else {
-            if (rect_ratio <= inverse_aspect_ratio) {
-                fitted_w = w;
-                fitted_h = w * aspect_ratio;
-            } else {
-                fitted_w = h * inverse_aspect_ratio;
-                fitted_h = h;
-            }
+            fitted_w = w;
+            fitted_h = w / aspect_ratio;
         }
 
         const double delta_w = w - fitted_w;
