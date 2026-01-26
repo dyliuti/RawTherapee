@@ -70,7 +70,7 @@ struct GuideDrawer {
     void drawDiagonals();
     void drawGoldenTriangle();
 
-    void drawGoldenRatio();
+    void drawGoldenRatio(double device_scale);
     void drawAspectRatios();
 
     void drawHorizontal(double ratio);
@@ -111,7 +111,8 @@ void drawCropGuides(const Cairo::RefPtr<Cairo::Context>& cr,
                     const CropRect& crop_rect,
                     const CropRect& bleed_rect,
                     const CropGuideParams& params,
-                    CropGuideOverride override)
+                    CropGuideOverride override,
+                    double device_scale)
 {
     switch (override) {
         case CropGuideOverride::FRAME:
@@ -150,7 +151,7 @@ void drawCropGuides(const Cairo::RefPtr<Cairo::Context>& cr,
         util.drawDiagonals();
         util.drawGoldenTriangle();
 
-        util.drawGoldenRatio();
+        util.drawGoldenRatio(device_scale);
     }
 
     util.drawAspectRatios();
@@ -401,7 +402,7 @@ void GuideDrawer::drawGoldenTriangle()
     drawDashedLine(x1, y0, x0 + x, y0 + y);
 }
 
-void GuideDrawer::drawGoldenRatio()
+void GuideDrawer::drawGoldenRatio(double device_scale)
 {
     if (!params.presets[PresetIndex::GOLDEN_RATIO]) return;
 
@@ -500,6 +501,7 @@ void GuideDrawer::drawGoldenRatio()
         length = fitted_h;
         limit = fitted_w * LIMIT_THRESHOLD;
     }
+    limit = std::max(limit, 10.0 * device_scale);
 
     bool clockwise = !params.mirror_golden_ratio;
     drawGoldenRatioRecursive(start_x, start_y, length, dir, limit, clockwise);
@@ -516,7 +518,7 @@ void GuideDrawer::drawGoldenRatio()
 void GuideDrawer::drawGoldenRatioRecursive(double x, double y, double length,
                                            Dir dir, double limit, bool clockwise)
 {
-    if (length <= limit || length <= 10.0) return;
+    if (length <= limit) return;
 
     double offset = length * GOLDEN_RATIO_RECIPROCAL;
 
@@ -727,7 +729,8 @@ void GuideDrawer::drawDashedArc(double xc, double yc, double r, double rad0, dou
 void drawCrop(const Cairo::RefPtr<Cairo::Context>& cr,
               double imx, double imy, double imw, double imh,
               double clipWidth, double clipHeight,
-              double startx, double starty, double scale,
+              double startx, double starty,
+              double scale, double deviceScale,
               const CropParams& cropParams,
               const CropGuideParams& cropGuideParams,
               CropGuideOverride cropGuideOverride,
@@ -787,5 +790,6 @@ void drawCrop(const Cairo::RefPtr<Cairo::Context>& cr,
         bleedRect.y1 = std::min(bleedRect.y1, imy + imh - 0.5);
     }
 
-    drawCropGuides(cr, cropRect, bleedRect, cropGuideParams, cropGuideOverride);
+    drawCropGuides(cr, cropRect, bleedRect, cropGuideParams, cropGuideOverride,
+                   deviceScale);
 }

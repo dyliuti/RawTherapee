@@ -125,7 +125,7 @@ void PreviewWindow::updatePreviewImage ()
                 break;
         };
 
-        drawCrop(cc, 0, 0, imgW, imgH, imgW, imgH, 0, 0, zoom,
+        drawCrop(cc, 0, 0, imgW, imgH, imgW, imgH, 0, 0, zoom, device.device_scale,
                  cparams,
                  previewHandler->getCropGuideParams(),
                  cropGuideOverride,
