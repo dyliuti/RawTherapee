@@ -435,6 +435,8 @@ void loadCropGuideParams(
                 }
             }
         }
+
+        cJSON_Delete(json);
     };
 
     if (keyFile.has_key(group, ASPECT_RATIOS)) {

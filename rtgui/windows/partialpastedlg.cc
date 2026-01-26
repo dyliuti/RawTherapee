@@ -1054,7 +1054,7 @@ void PartialPasteDlg::applyPaste (rtengine::procparams::ProcParams* dstPP, Param
     }
 
     if (!cropGuide->get_active ()) {
-        filterPE.crop        = falsePE.crop;
+        filterPE.cropGuide   = falsePE.cropGuide;
     }
 
     if (!resize->get_active ()) {
@@ -1245,6 +1245,9 @@ void PartialPasteDlg::applyPaste (rtengine::procparams::ProcParams* dstPP, Param
     if (!captureSharpening->get_active ()) {
         filterPE.pdsharpening.enabled   = falsePE.pdsharpening.enabled;
         filterPE.pdsharpening.contrast   = falsePE.pdsharpening.contrast;
+        filterPE.pdsharpening.noisecap   = falsePE.pdsharpening.noisecap;
+        filterPE.pdsharpening.noisecapafter   = falsePE.pdsharpening.noisecapafter;
+        filterPE.pdsharpening.showcap   = falsePE.pdsharpening.showcap;
         filterPE.pdsharpening.autoContrast   = falsePE.pdsharpening.autoContrast;
         filterPE.pdsharpening.autoRadius   = falsePE.pdsharpening.autoRadius;
         filterPE.pdsharpening.deconvradius   = falsePE.pdsharpening.deconvradius;

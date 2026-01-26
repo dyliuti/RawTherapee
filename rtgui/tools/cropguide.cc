@@ -472,9 +472,14 @@ void CropGuide::write(rtengine::procparams::ProcParams* pp, ParamsEdited* pedite
         pp->cropGuide.aspect_ratios.push_back(std::move(params));
     }
 
-    pp->cropGuide.basis = mapBasis(m_basis->get_active_row_number());
+    const int active_basis = m_basis->get_active_row_number();
+    const bool valid_basis = (active_basis > EMPTY_COMBO_INDEX)
+                             && (active_basis < INDEX_BASIS_UNCHANGED);
+    if (valid_basis) {
+        pp->cropGuide.basis = mapBasis(active_basis);
+    }
     if (pedited) {
-        pedited->cropGuide.basis = m_basis->get_active_row_number() != INDEX_BASIS_UNCHANGED;
+        pedited->cropGuide.basis = valid_basis;
     }
 }
 
@@ -485,7 +490,8 @@ void CropGuide::trimValues(rtengine::procparams::ProcParams* pp)
 
 void CropGuide::setBatchMode(bool batchMode)
 {
-    ToolPanel::setBatchMode(false);
+    ToolPanel::setBatchMode(batchMode);
+    m_basis->append(M("GENERAL_UNCHANGED"));
 }
 
 void CropGuide::setAdjusterBehavior(bool bleed)

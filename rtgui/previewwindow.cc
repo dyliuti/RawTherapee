@@ -112,16 +112,18 @@ void PreviewWindow::updatePreviewImage ()
     if (previewHandler->getCropParams().enabled) {
         const auto& cparams = previewHandler->getCropParams();
 
-        auto cropGuideOverride = []() {
-            switch (App::get().options().cropGuides) {
-                case Options::CROP_GUIDE_NONE:
-                    return CropGuideOverride::NO_GUIDES;
-                case Options::CROP_GUIDE_FRAME:
-                    return CropGuideOverride::FRAME;
-                default:
-                    return CropGuideOverride::DONT_TOUCH;
-            };
-        }();
+        CropGuideOverride cropGuideOverride;
+        switch (App::get().options().cropGuides) {
+            case Options::CROP_GUIDE_NONE:
+                cropGuideOverride = CropGuideOverride::NO_GUIDES;
+                break;
+            case Options::CROP_GUIDE_FRAME:
+                cropGuideOverride = CropGuideOverride::FRAME;
+                break;
+            default:
+                cropGuideOverride = CropGuideOverride::DONT_TOUCH;
+                break;
+        };
 
         drawCrop(cc, 0, 0, imgW, imgH, imgW, imgH, 0, 0, zoom,
                  cparams,
