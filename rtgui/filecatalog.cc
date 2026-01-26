@@ -1658,7 +1658,14 @@ void FileCatalog::categoryButtonToggled (Gtk::ToggleButton* b, bool isMouseClick
 
 void FileCatalog::showRecursiveToggled()
 {
-    App::get().mut_options().browseRecursive = bRecursive->get_active();
+    bool state = bRecursive->get_active();
+
+    if (state == App::get().options().browseRecursive) {
+        // avoid unnecessary calls to dirSelected; this can happen when file catalog is reset to an older state
+        return;
+    }
+
+    App::get().mut_options().browseRecursive = state;
 
     // Killing background threads can sometimes block the UI for a long time,
     // This may be a spot where giving the user information is needed.
@@ -1803,23 +1810,30 @@ void FileCatalog::saveResetState ()
 
 bool FileCatalog::restoreResetState ()
 {
-    //
-    // BUG --   If the filmstrip is empty before the reset, it will not reset back to a fully working state.
-    //          User needs to flip to File Browser and back to make it work correctly.
+    bool ret = false;
 
     if (resetData.recursive != App::get().options().browseRecursive) {
-        App::get().mut_options().browseRecursive = resetData.recursive;
+        // I think the program flow here needs to be explained:
+        // The App::get().mut_options().browseRecursive is indeed set by the signal of the toggle button "showRecursiveToggled()"
+        // However, the signal is handled only after the execution returns to the framework. The "buttonBrowsePathPressed()"
+        // on the other hand instantly executes "DirBrowser::selectDir". If the recursive value is not set when this executes, the
+        // directory might not contain the image of the "refImageForOpen_fname" variable or the one next to it that is supposed to
+        // be opened.
+        if (resetData.directory != selectedDirectory) {
+            // this can be set only when "DirBrowser::selectDir" is called regardless of the recursive toggle or the toggle will get blocked
+            App::get().mut_options().browseRecursive = resetData.recursive;
+        }
         bRecursive->set_active(resetData.recursive);
+        ret = true;
     }
 
     if (resetData.directory != selectedDirectory) {
         BrowsePath->set_text(resetData.directory);
         buttonBrowsePathPressed ();
-
-        return true;
+        ret = true;
     }
 
-    return false;
+    return ret;
 }
 
 void FileCatalog::reparseDirectory ()

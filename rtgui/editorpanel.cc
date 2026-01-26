@@ -1258,7 +1258,7 @@ void EditorPanel::open (Thumbnail* tmb, rtengine::InitialImage* isrc)
     openThm = tmb;
 
     fname = openThm->getFileName();
-    if ( fPanel && fPanel->fileCatalog ) {
+    if (fPanel && fPanel->fileCatalog) {
         fPanel->fileCatalog->saveResetState();
     }
     lastSaveAsFileName = removeExtension (Glib::path_get_basename (fname));

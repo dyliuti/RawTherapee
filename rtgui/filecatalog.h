@@ -62,14 +62,13 @@ private:
     };
 
     /**
-    * @brief DirectoryResetInfo
-    * Data that is used to reset the file catalog contents if user presses Y,X or SHIFT+F3/F4
-    */
+     * @brief Data that is used to reset the file catalog contents if user presses Y,X or SHIFT+F3/F4
+     */
     struct DirectoryResetInfo {
-        DirectoryResetInfo() : recursive(false) {}
-
-        bool          recursive;    ///< If recursive directories is enabled
-        Glib::ustring directory;    ///< The value of selectedDirectory
+        DirectoryResetInfo() :
+            recursive(false) {}
+        bool          recursive;
+        Glib::ustring directory;
     };
 
     FilePanel* filepanel;
@@ -267,7 +266,7 @@ public:
     bool capture_event(GdkEventButton* event);
     void filterChanged ();
 
-    void saveResetState (); 
+    void saveResetState ();
     bool restoreResetState ();
 
     void on_realize() override;
