@@ -115,13 +115,13 @@ float calcContrastThreshold2(float** luminance, int tileY, int tileX, int tilesi
     const float scale = 0.0625f / 327.68f * factor;
     std::vector<std::vector<float>> blend(tilesize - 4, std::vector<float>(tilesize - 4));
 
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
     const vfloat scalev = F2V(scale);
 #endif
 
     for(int j = tileY + 2; j < tileY + tilesize - 2; ++j) {
         int i = tileX + 2;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
         for(; i < tileX + tilesize - 5; i += 4) {
             vfloat contrastv = vsqrtf(SQRV(LVFU(luminance[j][i+1]) - LVFU(luminance[j][i-1])) + SQRV(LVFU(luminance[j+1][i]) - LVFU(luminance[j-1][i])) +
                                       SQRV(LVFU(luminance[j][i+2]) - LVFU(luminance[j][i-2])) + SQRV(LVFU(luminance[j+2][i]) - LVFU(luminance[j-2][i]))) * scalev;
@@ -143,14 +143,14 @@ float calcContrastThreshold2(float** luminance, int tileY, int tileX, int tilesi
     for (c = 1; c < 100; ++c) {
         const float contrastThreshold = c / 100.f;
         float sum = 0.f;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
         const vfloat contrastThresholdv = F2V(contrastThreshold);
         vfloat sumv = ZEROV;
 #endif
 
         for(int j = 0; j < tilesize - 4; ++j) {
             int i = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
             for(; i < tilesize - 7; i += 4) {
                 sumv += calcBlendFactor(LVFU(blend[j][i]), contrastThresholdv);
             }
@@ -159,7 +159,7 @@ float calcContrastThreshold2(float** luminance, int tileY, int tileX, int tilesi
                 sum += calcBlendFactor(blend[j][i], contrastThreshold);
             }
         }
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
         sum += vhadd(sumv);
 #endif
         if (sum <= limit) {
@@ -679,7 +679,7 @@ void buildBlendMask2(float** luminance, float **blend, int W, int H, float &cont
         #pragma omp parallel
 #endif
         {
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
             const vfloat contrastThresholdv = F2V(contrastThreshold);
             const vfloat scalev = F2V(scale);
             const vfloat amountv = F2V(amount);
@@ -690,7 +690,7 @@ void buildBlendMask2(float** luminance, float **blend, int W, int H, float &cont
 
             for(int j = 2; j < H - 2; ++j) {
                 int i = 2;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
                 for(; i < W - 5; i += 4) {
                     vfloat contrastv = vsqrtf(SQRV(LVFU(luminance[j][i+1]) - LVFU(luminance[j][i-1])) + SQRV(LVFU(luminance[j+1][i]) - LVFU(luminance[j-1][i])) +
                                               SQRV(LVFU(luminance[j][i+2]) - LVFU(luminance[j][i-2])) + SQRV(LVFU(luminance[j+2][i]) - LVFU(luminance[j-2][i]))) * scalev;
@@ -731,7 +731,7 @@ void buildBlendMask2(float** luminance, float **blend, int W, int H, float &cont
                 }
             }
 
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
             // flush denormals to zero for gaussian blur to avoid performance penalty if there are a lot of zero values in the mask
             const auto oldMode = _MM_GET_FLUSH_ZERO_MODE();
             _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
@@ -740,7 +740,7 @@ void buildBlendMask2(float** luminance, float **blend, int W, int H, float &cont
             // blur blend mask to smooth transitions
             gaussianBlur(blend, blend, W, H, blur_radius); //2.0);
 
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
             _MM_SET_FLUSH_ZERO_MODE(oldMode);
 #endif
         }
@@ -777,7 +777,7 @@ void markImpulse(int width, int height, float **const src, char **impulse, float
     {
         int i1, j1, j;
         float hpfabs, hfnbrave;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
         vfloat hfnbravev, hpfabsv;
         vfloat impthrDiv24v = F2V( impthrDiv24 );
 #endif
@@ -798,7 +798,7 @@ void markImpulse(int width, int height, float **const src, char **impulse, float
                 impulse[i][j] = (hpfabs > ((hfnbrave - hpfabs) * impthrDiv24));
             }
 
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
             for (; j < width - 5; j += 4) {
                 hfnbravev = ZEROV;

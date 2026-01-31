@@ -22795,7 +22795,7 @@ void ImProcFunctions::Lab_Local(
 
                         for (int y = 0; y < bfh; ++y) {
                                 int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                             for (; x < bfw - 3; x += 4) {
                                 STVFU(tmpImage->r(y, x), F2V(65536.f) * gammalog(LVFU(srcp->r(y, x)), F2V(gamr), F2V(slr), F2V(g_ar[3]), F2V(g_ar[4])));

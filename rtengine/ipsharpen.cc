@@ -473,7 +473,7 @@ BENCHFUN
 bool checkForStop(float** tmpIThr, float** iterCheck, int fullTileSize, int border)
 {
     for (int ii = border; ii < fullTileSize - border; ++ii) {
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
         for (int jj = border; jj < fullTileSize - border; jj += 4) {
             if (UNLIKELY(_mm_movemask_ps((vfloat)vmaskf_lt(LVFU(tmpIThr[ii][jj]), LVFU(iterCheck[ii - border][jj - border]))))) {
                 return true;
