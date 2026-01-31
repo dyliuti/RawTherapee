@@ -63,6 +63,23 @@ jobs:
             libiptcdata:p
             libjxl:p
             exiv2:p
+            ${{matrix.arch == 'x86_64' && '' || 'meson:p'}}
+
+      - name: Install SIMDe
+        if: ${{matrix.arch != 'x86_64'}}
+        run: |
+          echo "Cloning SIMDe source."
+          git clone --depth 1 --branch 'v0.8.2' 'https://github.com/simd-everywhere/simde.git'
+          echo "Setting up build directory."
+          cd simde
+          meson setup build
+          echo "Configuring build."
+          cd build
+          meson configure -D tests=False
+          echo "Building SIMDe."
+          meson compile
+          echo "Installing SIMDe."
+          meson install
 
       - name: Configure build
         run: |
@@ -83,6 +100,7 @@ jobs:
             -DCACHE_NAME_SUFFIX="$CACHE_SUFFIX" \
             -DPROC_TARGET_NUMBER="1" \
             -DLENSFUNDBDIR="share/lensfun" \
+            -DWITH_SIMDE="${{matrix.arch == 'x86_64' && 'OFF' || 'ON'}}" \
             -S . -B build
 
           echo "Recording filtered ref name."
