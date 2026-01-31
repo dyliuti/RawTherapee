@@ -23,14 +23,28 @@
 #include <iostream>
 #include <librsvg/rsvg.h>
 
-#include "../rtengine/settings.h"
+#include "rtengine/rtapp.h"
+#include "rtengine/settings.h"
 #include "guiutils.h"
 
-extern Glib::ustring argv0;
-
 // Default static parameter values
-double RTScalable::dpi = 96.;
-int RTScalable::scale = 1;
+double RTScalable::s_dpi = 96.;
+int RTScalable::s_scale = 1;
+sigc::signal<void(double, int)> RTScalable::s_signal_changed;
+
+int RTScalable::getScaleForWindow(const Gtk::Window* window)
+{
+    int scale = window->get_scale_factor();
+    // Default minimum value of 1 as scale is used to scale surface
+    return scale > 0 ? scale : 1;
+}
+
+int RTScalable::getScaleForWidget(const Gtk::Widget* widget)
+{
+    int scale = widget->get_scale_factor();
+    // Default minimum value of 1 as scale is used to scale surface
+    return scale > 0 ? scale : 1;
+}
 
 void RTScalable::getDPInScale(const Gtk::Window* window, double &newDPI, int &newScale)
 {
@@ -38,12 +52,8 @@ void RTScalable::getDPInScale(const Gtk::Window* window, double &newDPI, int &ne
         const auto screen = window->get_screen();
         newDPI = screen->get_resolution(); // Get DPI retrieved from the OS
 
-        if (window->get_scale_factor() > 0) {
-             // Get scale factor associated to the window
-            newScale = window->get_scale_factor();
-        } else {
-            newScale = 1; // Default minimum value of 1 as scale is used to scale surface
-        }
+        // Get scale factor associated to the window
+        newScale = getScaleForWindow(window);
     }
 }
 
@@ -65,7 +75,7 @@ Cairo::RefPtr<Cairo::ImageSurface> RTScalable::loadSurfaceFromIcon(const Glib::u
 
     // Get scale based on DPI and scale
     // Note: hSize not used because icon are considered squared
-    const int size = wSize;
+    const int size = RTScalable::scalePixelSize(wSize);
 
     // Looking for corresponding icon (if existing)
     const auto iconInfo = theme->lookup_icon(iconName, size);
@@ -87,7 +97,7 @@ Cairo::RefPtr<Cairo::ImageSurface> RTScalable::loadSurfaceFromIcon(const Glib::u
     // Create surface from corresponding icon
     const auto pos = iconPath.find_last_of('.');
 
-    if (pos >= 0 && pos < iconPath.length()) {
+    if (pos < iconPath.length()) {
         const auto fext = iconPath.substr(pos + 1, iconPath.length()).lowercase();
 
         // Case where iconPath is a PNG file
@@ -119,7 +129,7 @@ Cairo::RefPtr<Cairo::ImageSurface> RTScalable::loadSurfaceFromPNG(const Glib::us
         path = fname;
     } else {
         // Look for PNG file in "images" folder
-        Glib::ustring imagesFolder = Glib::build_filename(argv0, "images");
+        Glib::ustring imagesFolder = Glib::build_filename(App::get().argv0(), "images");
         path = Glib::build_filename(imagesFolder, fname);
     }
 
@@ -146,7 +156,7 @@ Cairo::RefPtr<Cairo::ImageSurface> RTScalable::loadSurfaceFromSVG(const Glib::us
         path = fname;
     } else {
         // Look for SVG file in "images" folder
-        Glib::ustring imagesFolder = Glib::build_filename(argv0, "images");
+        Glib::ustring imagesFolder = Glib::build_filename(App::get().argv0(), "images");
         path = Glib::build_filename(imagesFolder, fname);
     }
 
@@ -220,7 +230,7 @@ Cairo::RefPtr<Cairo::ImageSurface> RTScalable::loadSurfaceFromSVG(const Glib::us
             return surf;
         }
 
-        rsvg_handle_free(handle);
+        g_object_unref(handle);
 
         // Set device scale to avoid blur effect
         cairo_surface_set_device_scale(surf->cobj(),
@@ -236,28 +246,37 @@ Cairo::RefPtr<Cairo::ImageSurface> RTScalable::loadSurfaceFromSVG(const Glib::us
 void RTScalable::init(const Gtk::Window* window)
 {
     // Retrieve DPI and Scale paremeters from OS
+    double dpi = s_dpi;
+    int scale = s_scale;
     getDPInScale(window, dpi, scale);
+    setDPInScale(dpi, scale);
 }
 
 void RTScalable::setDPInScale (const Gtk::Window* window)
 {
+    double dpi = s_dpi;
+    int scale = s_scale;
     getDPInScale(window, dpi, scale);
+    setDPInScale(dpi, scale);
 }
 
 void RTScalable::setDPInScale (const double newDPI, const int newScale)
 {
-    dpi = newDPI;
-    scale = newScale;
+    if (s_dpi != newDPI || s_scale != newScale) {
+        s_dpi = newDPI;
+        s_scale = newScale;
+        s_signal_changed.emit(newDPI, newScale);
+    }
 }
 
 double RTScalable::getDPI ()
 {
-    return dpi;
+    return s_dpi;
 }
 
 int RTScalable::getScale ()
 {
-    return scale;
+    return s_scale;
 }
 
 double RTScalable::getGlobalScale()
@@ -275,4 +294,9 @@ double RTScalable::scalePixelSize(const double pixel_size)
 {
     const double s = getGlobalScale();
     return (pixel_size * s);
+}
+
+RtScopedConnection RTScalable::connectToChanged(sigc::slot<void(double, int)>&& slot)
+{
+    return RtScopedConnection(s_signal_changed.connect(std::move(slot)));
 }

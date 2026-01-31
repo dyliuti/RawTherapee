@@ -31,7 +31,7 @@
 #include "previewloader.h"
 #include "threadutils.h"
 
-#include "../rtengine/noncopyable.h"
+#include "rtengine/noncopyable.h"
 
 class FilePanel;
 class CoarsePanel;
@@ -178,8 +178,10 @@ public:
     // previewloaderlistener interface
     void previewReady (int dir_id, FileBrowserEntry* fdn) override;
     void previewsFinished (int dir_id) override;
-    void previewsFinishedUI ();
-    void _refreshProgressBar ();
+    // called asynchronously from the main event loop
+    void previewsFinishedUI(int dir_id);
+
+    void _refreshProgressBar();
 
     void setInspector(Inspector* inspector)
     {

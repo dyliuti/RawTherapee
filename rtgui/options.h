@@ -29,7 +29,8 @@
 #else
 #include <gtkmm/enums.h>
 #endif
-#include "../rtengine/settings.h"
+#include "rtengine/rtapp.h"
+#include "rtengine/settings.h"
 #include <exception>
 
 #define STARTUPDIR_CURRENT 0
@@ -310,6 +311,13 @@ public:
     int maxThumbnailWidth;
     std::size_t maxCacheEntries;
     int thumbInterp; // 0: nearest, 1: bilinear
+
+    std::vector<std::string> knownExtensions = {
+        "3fr", "arw", "arq", "cr2",  "cr3", "crf", "crw",  "dcr", "dng",
+        "fff", "iiq", "jpg", "jpeg", "jxl", "kdc", "mef",  "mos", "mrw",
+        "nef", "nrw", "orf", "ori",  "pef", "png", "raf",  "raw", "rw2",
+        "rwl", "rwz", "sr2", "srf",  "srw", "tif", "tiff", "x3f"};
+
     std::vector<Glib::ustring> parseExtensions;   // List containing all extensions type
     std::vector<int> parseExtensionsEnabled;      // List of bool to retain extension or not
     std::vector<Glib::ustring> parsedExtensions;  // List containing all retained extensions (lowercase)
@@ -331,7 +339,7 @@ public:
     bool overwriteOutputFile;
     int complexity;
     int spotmet;
-    
+
     bool inspectorWindow; // open inspector in separate window
     bool zoomOnScroll;    // translate scroll events to zoom
 
@@ -472,14 +480,16 @@ public:
     Glib::ustring lastIccDir;
     Glib::ustring lastDarkframeDir;
     Glib::ustring lastFlatfieldDir;
-	Glib::ustring lastCameraProfilesDir;
-	Glib::ustring lastLensProfilesDir;
+    Glib::ustring lastCameraProfilesDir;
+    Glib::ustring lastLensProfilesDir;
     Glib::ustring lastRgbCurvesDir;
     Glib::ustring lastLabCurvesDir;
     Glib::ustring lastRetinexDir;
     Glib::ustring lastDenoiseCurvesDir;
     Glib::ustring lastWaveletCurvesDir;
+    Glib::ustring lastIcmCurvesDir;
     Glib::ustring lastlocalCurvesDir;
+    Glib::ustring lastlocalCurvesDirghs;
     Glib::ustring lastPFCurvesDir;
     Glib::ustring lastHsvCurvesDir;
     Glib::ustring lastToneCurvesDir;
@@ -523,30 +533,21 @@ public:
     static void save();
 
     // if multiUser=false, send back the global profile path
-    Glib::ustring getPreferredProfilePath();
-    Glib::ustring getUserProfilePath();
-    Glib::ustring getGlobalProfilePath();
-    Glib::ustring findProfilePath (Glib::ustring &profName);
-    bool is_parse_extention (Glib::ustring fname);
-    bool has_retained_extention (const Glib::ustring& fname);
-    bool is_new_version();
-    bool is_extention_enabled (const Glib::ustring& ext);
-    bool is_defProfRawMissing();
-    bool is_bundledDefProfRawMissing();
-    bool is_defProfImgMissing();
-    bool is_bundledDefProfImgMissing();
+    Glib::ustring getPreferredProfilePath() const;
+    Glib::ustring getUserProfilePath() const;
+    Glib::ustring getGlobalProfilePath() const;
+    Glib::ustring findProfilePath (Glib::ustring &profName) const;
+    bool is_parse_extention (Glib::ustring fname) const;
+    bool has_retained_extention (const Glib::ustring& fname) const;
+    bool is_new_version() const;
+    bool is_extention_enabled (const Glib::ustring& ext) const;
+    bool is_defProfRawMissing() const;
+    bool is_bundledDefProfRawMissing() const;
+    bool is_defProfImgMissing() const;
+    bool is_bundledDefProfImgMissing() const;
     void setDefProfRawMissing (bool value);
     void setBundledDefProfRawMissing (bool value);
     void setDefProfImgMissing (bool value);
     void setBundledDefProfImgMissing (bool value);
     static Glib::ustring getICCProfileCopyright();
 };
-
-extern Options options;
-extern Glib::ustring argv0;
-extern Glib::ustring argv1;
-extern bool simpleEditor;
-extern bool gimpPlugin;
-extern bool remote;
-extern Glib::ustring versionString;
-extern Glib::ustring paramFileExtension;

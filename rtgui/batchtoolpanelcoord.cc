@@ -17,8 +17,8 @@
  *  along with RawTherapee.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "bayerpreprocess.h"
-#include "bayerprocess.h"
+#include "tools/bayerpreprocess.h"
+#include "tools/bayerprocess.h"
 
 #include "multilangmgr.h"
 #include "batchtoolpanelcoord.h"
@@ -148,15 +148,16 @@ void BatchToolPanelCoordinator::initSession ()
             whitebalance->setAdjusterBehavior (false, false, false, false);
             vibrance->setAdjusterBehavior (false, false);
             vignetting->setAdjusterBehavior (false, false, false, false);
-            colorappearance->setAdjusterBehavior (false, false, false, false, false, false, false, false, false, false, false, false, false, false, false);
+            colorappearance->setAdjusterBehavior (false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false);
             rotate->setAdjusterBehavior (false);
             resize->setAdjusterBehavior (false);
-            distortion->setAdjusterBehavior (false);
+            framing->setAdjusterBehavior (false, false, false, false);
+            distortion->setAdjusterBehavior (false, false);
             perspective->setAdjusterBehavior (false, false, false, false, false, false, false);
             gradient->setAdjusterBehavior (false, false, false, false);
             pcvignette->setAdjusterBehavior (false, false, false);
             cacorrection->setAdjusterBehavior (false);
-            sharpening->setAdjusterBehavior (false, false, false, false, false, false, false);
+            sharpening->setAdjusterBehavior (false, false,  false, false, false, false, false);
             prsharpening->setAdjusterBehavior (false, false, false, false, false, false, false);
             pdSharpening->setAdjusterBehavior (false, false, false);
             sharpenEdge->setAdjusterBehavior (false, false);
@@ -183,6 +184,7 @@ void BatchToolPanelCoordinator::initSession ()
             bayerrawexposure->setAdjusterBehavior (false);
             xtransrawexposure->setAdjusterBehavior (false);
         } else {
+            const Options& options = App::get().options();
 
             for (size_t i = 0; i < toolPanels.size(); i++) {
                 toolPanels.at (i)->setMultiImage (true);
@@ -193,11 +195,27 @@ void BatchToolPanelCoordinator::initSession ()
             whitebalance->setAdjusterBehavior (options.baBehav[ADDSET_WB_TEMPERATURE], options.baBehav[ADDSET_WB_GREEN], options.baBehav[ADDSET_WB_EQUAL], options.baBehav[ADDSET_WB_TEMPBIAS]);
             vibrance->setAdjusterBehavior (options.baBehav[ADDSET_VIBRANCE_PASTELS], options.baBehav[ADDSET_VIBRANCE_SATURATED]);
             vignetting->setAdjusterBehavior (options.baBehav[ADDSET_VIGN_AMOUNT], options.baBehav[ADDSET_VIGN_RADIUS], options.baBehav[ADDSET_VIGN_STRENGTH], options.baBehav[ADDSET_VIGN_CENTER]);
-            colorappearance->setAdjusterBehavior (options.baBehav[ADDSET_CAT_DEGREE], options.baBehav[ADDSET_CAT_ADAPTSCENE], options.baBehav[ADDSET_CAT_ADAPTVIEWING], options.baBehav[ADDSET_CAT_BADPIX], options.baBehav[ADDSET_CAT_LIGHT], options.baBehav[ADDSET_CAT_CHROMA], options.baBehav[ADDSET_CAT_CONTRAST], options.baBehav[ADDSET_CAT_RSTPRO], options.baBehav[ADDSET_CAT_BRIGHT], options.baBehav[ADDSET_CAT_CONTRAST_Q], options.baBehav[ADDSET_CAT_CHROMA_S], options.baBehav[ADDSET_CAT_CHROMA_M], options.baBehav[ADDSET_CAT_HUE],options.baBehav[ADDSET_CAT_DEGREEOUT], options.baBehav[ADDSET_CAT_TEMPOUT] );
+            colorappearance->setAdjusterBehavior (options.baBehav[ADDSET_CAT_DEGREE], options.baBehav[ADDSET_CAT_ADAPTSCENE], options.baBehav[ADDSET_CAT_ADAPTVIEWING], options.baBehav[ADDSET_CAT_BADPIX], options.baBehav[ADDSET_CAT_LIGHT], options.baBehav[ADDSET_CAT_CHROMA], options.baBehav[ADDSET_CAT_CONTRAST], options.baBehav[ADDSET_CAT_RSTPRO], options.baBehav[ADDSET_CAT_BRIGHT], options.baBehav[ADDSET_CAT_CONTRAST_Q], options.baBehav[ADDSET_CAT_CHROMA_S], options.baBehav[ADDSET_CAT_CHROMA_S_RED], options.baBehav[ADDSET_CAT_CHROMA_S_GREEN], options.baBehav[ADDSET_CAT_CHROMA_S_BLUE], options.baBehav[ADDSET_CAT_CHROMA_M], options.baBehav[ADDSET_CAT_HUE], options.baBehav[ADDSET_CAT_HUE_RED], options.baBehav[ADDSET_CAT_HUE_GREEN], options.baBehav[ADDSET_CAT_HUE_BLUE], options.baBehav[ADDSET_CAT_DEGREEOUT], options.baBehav[ADDSET_CAT_TEMPOUT] );
             rotate->setAdjusterBehavior (options.baBehav[ADDSET_ROTATE_DEGREE]);
             resize->setAdjusterBehavior (options.baBehav[ADDSET_RESIZE_SCALE]);
-            distortion->setAdjusterBehavior (options.baBehav[ADDSET_DIST_AMOUNT]);
-            perspective->setAdjusterBehavior (options.baBehav[ADDSET_PERSPECTIVE], options.baBehav[ADDSET_PERSP_CAM_FOCAL_LENGTH], options.baBehav[ADDSET_PERSP_CAM_SHIFT], options.baBehav[ADDSET_PERSP_CAM_ANGLE], options.baBehav[ADDSET_PERSP_PROJ_ANGLE], options.baBehav[ADDSET_PERSP_PROJ_SHIFT], options.baBehav[ADDSET_PERSP_PROJ_ROTATE]);
+            framing->setAdjusterBehavior (
+                options.baBehav[ADDSET_FRAMING_RELATIVE_SCALE],
+                options.baBehav[ADDSET_FRAMING_BORDER_RED],
+                options.baBehav[ADDSET_FRAMING_BORDER_GREEN],
+                options.baBehav[ADDSET_FRAMING_BORDER_BLUE]);
+            distortion->setAdjusterBehavior (
+                  options.baBehav[ADDSET_DIST_AMOUNT],
+                  options.baBehav[ADDSET_DIST_FOCAL_LENGTH]
+                  );
+            perspective->setAdjusterBehavior (
+                options.baBehav[ADDSET_PERSPECTIVE],
+                options.baBehav[ADDSET_PERSP_CAM_FOCAL_LENGTH],
+                options.baBehav[ADDSET_PERSP_CAM_SHIFT],
+                options.baBehav[ADDSET_PERSP_CAM_ANGLE],
+                options.baBehav[ADDSET_PERSP_PROJ_ANGLE],
+                options.baBehav[ADDSET_PERSP_PROJ_SHIFT],
+                options.baBehav[ADDSET_PERSP_PROJ_ROTATE]
+            );
             gradient->setAdjusterBehavior (options.baBehav[ADDSET_GRADIENT_DEGREE], options.baBehav[ADDSET_GRADIENT_FEATHER], options.baBehav[ADDSET_GRADIENT_STRENGTH], options.baBehav[ADDSET_GRADIENT_CENTER]);
             pcvignette->setAdjusterBehavior (options.baBehav[ADDSET_PCVIGNETTE_STRENGTH], options.baBehav[ADDSET_PCVIGNETTE_FEATHER], options.baBehav[ADDSET_PCVIGNETTE_ROUNDNESS]);
             cacorrection->setAdjusterBehavior (options.baBehav[ADDSET_CA]);
@@ -257,6 +275,7 @@ void BatchToolPanelCoordinator::initSession ()
                 pparams.sharpening.amount = pparams.sharpening.deconvamount =
                 pparams.prsharpening.amount = pparams.prsharpening.deconvamount = 0;
             }
+
             if (options.baBehav[ADDSET_SHARP_DAMPING]) { pparams.sharpening.deconvdamping = pparams.prsharpening.deconvdamping = 0; }
             if (options.baBehav[ADDSET_SHARP_ITER]) { pparams.sharpening.deconviter = pparams.prsharpening.deconviter = 0; }
             if (options.baBehav[ADDSET_SHARP_EDGETOL]) { pparams.sharpening.edges_tolerance = pparams.prsharpening.edges_tolerance = 0; }
@@ -288,11 +307,17 @@ void BatchToolPanelCoordinator::initSession ()
             if (options.baBehav[ADDSET_CAT_BRIGHT]) { pparams.colorappearance.qbright = 0; }
             if (options.baBehav[ADDSET_CAT_CHROMA]) { pparams.colorappearance.chroma = 0; }
             if (options.baBehav[ADDSET_CAT_CHROMA_S]) { pparams.colorappearance.schroma = 0; }
+            if (options.baBehav[ADDSET_CAT_CHROMA_S_RED]) { pparams.colorappearance.schromared = 0; }
+            if (options.baBehav[ADDSET_CAT_CHROMA_S_GREEN]) { pparams.colorappearance.schromagreen = 0; }
+            if (options.baBehav[ADDSET_CAT_CHROMA_S_BLUE]) { pparams.colorappearance.schromablue = 0; }
             if (options.baBehav[ADDSET_CAT_CHROMA_M]) { pparams.colorappearance.mchroma = 0; }
             if (options.baBehav[ADDSET_CAT_RSTPRO]) { pparams.colorappearance.rstprotection = 0; }
             if (options.baBehav[ADDSET_CAT_CONTRAST]) { pparams.colorappearance.contrast = 0; }
             if (options.baBehav[ADDSET_CAT_CONTRAST_Q]) { pparams.colorappearance.qcontrast = 0; }
             if (options.baBehav[ADDSET_CAT_HUE]) { pparams.colorappearance.colorh = 0; }
+            if (options.baBehav[ADDSET_CAT_HUE_RED]) { pparams.colorappearance.colorhred = 0; }
+            if (options.baBehav[ADDSET_CAT_HUE_GREEN]) { pparams.colorappearance.colorhgreen = 0; }
+            if (options.baBehav[ADDSET_CAT_HUE_BLUE]) { pparams.colorappearance.colorhblue = 0; }
             if (options.baBehav[ADDSET_CAT_DEGREEOUT]) { pparams.colorappearance.degreeout = 0; }
             if (options.baBehav[ADDSET_CAT_TEMPOUT]) { pparams.colorappearance.tempout = 0; }
             //if (options.baBehav[ADDSET_CBOOST_AMOUNT])  pparams.colorBoost.amount = 0;
@@ -313,6 +338,10 @@ void BatchToolPanelCoordinator::initSession ()
             if (options.baBehav[ADDSET_DEHAZE_STRENGTH]) { pparams.dehaze.strength = 0; }
             if (options.baBehav[ADDSET_ROTATE_DEGREE]) { pparams.rotate.degree = 0; }
             if (options.baBehav[ADDSET_RESIZE_SCALE]) { pparams.resize.scale = 0; }
+            if (options.baBehav[ADDSET_FRAMING_RELATIVE_SCALE]) { pparams.framing.relativeBorderSize = 0; }
+            if (options.baBehav[ADDSET_FRAMING_BORDER_RED]) { pparams.framing.borderRed = 0; }
+            if (options.baBehav[ADDSET_FRAMING_BORDER_GREEN]) { pparams.framing.borderGreen = 0; }
+            if (options.baBehav[ADDSET_FRAMING_BORDER_BLUE]) { pparams.framing.borderBlue = 0; }
             if (options.baBehav[ADDSET_DIST_AMOUNT]) { pparams.distortion.amount = 0; }
             if (options.baBehav[ADDSET_PERSPECTIVE]) { pparams.perspective.horizontal = pparams.perspective.vertical = 0; }
             if (options.baBehav[ADDSET_PERSP_CAM_FOCAL_LENGTH]) { pparams.perspective.camera_focal_length = pparams.perspective.camera_crop_factor = 0; }
@@ -456,9 +485,13 @@ void BatchToolPanelCoordinator::panelChanged(const rtengine::ProcEvent& event, c
             crop->write (&pparams, &pparamsEdited);
             resize->update (pparams.crop.enabled, pparams.crop.w, pparams.crop.h, w, h);
             resize->write (&pparams, &pparamsEdited);
+            framing->update (w, h);
+            framing->write (&pparams, &pparamsEdited);
         } else if (event == rtengine::EvCrop) {
             resize->update (pparams.crop.enabled, pparams.crop.w, pparams.crop.h);
             resize->write (&pparams, &pparamsEdited);
+            framing->update (w, h);
+            framing->write (&pparams, &pparamsEdited);
         }
     } else {
         // Compensate rotation on flip
@@ -732,6 +765,7 @@ void BatchToolPanelCoordinator::spotWBselected (int x, int y, Thumbnail* thm)
 
 //    toolBar->setTool (TOOL_HAND);
     if (x > 0 && y > 0 && thm) {
+        const auto& options = App::get().options();
         for (size_t i = 0; i < selected.size(); i++)
             if (selected[i] == thm) {
                 double temp;

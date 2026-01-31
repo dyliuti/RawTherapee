@@ -26,6 +26,7 @@
 #include "rt_math.h"
 #include "rtengine.h"
 #include "rtlensfun.h"
+#include "lensmetadata.h"
 #include "sleef.h"
 
 using namespace std;
@@ -335,6 +336,15 @@ namespace rtengine
 
 #define CLIPTOC(a,b,c,d) ((a)>=(b)?((a)<=(c)?(a):(d=true,(c))):(d=true,(b)))
 
+template<class A, class B, class C>
+void track_min_max(A & min, B & max, C const val)
+{
+    if (val < min)
+        min = val;
+    if (val > max)
+        max = val;
+}
+
 /**
  * Creates an inverse transformation matrix for camera-geometry-based
  * perspective correction. Unless otherwise specified, units are the same as the
@@ -420,7 +430,6 @@ homogeneous::Matrix<double> perspectiveMatrix(double camera_focal_length, double
 bool ImProcFunctions::transCoord (int W, int H, const std::vector<Coord2D> &src, std::vector<Coord2D> &red,  std::vector<Coord2D> &green, std::vector<Coord2D> &blue, double ascaleDef,
                                   const LensCorrection *pLCPMap) const
 {
-
     enum PerspType { NONE, SIMPLE, CAMERA_BASED };
     const PerspType perspectiveType = needsPerspective() ? (
             (params->perspective.method == "camera_based") ?
@@ -431,7 +440,7 @@ bool ImProcFunctions::transCoord (int W, int H, const std::vector<Coord2D> &src,
     green.clear ();
     blue.clear ();
 
-    if (!needsCA() && !needsDistortion() && !needsRotation() && !needsPerspective() && (!params->lensProf.useDist || pLCPMap == nullptr)) {
+    if (!needsCA() && !needsDistortion() && !needsRotation() && !needsPerspective() && !needsScaleAny() && (!params->lensProf.useDist || pLCPMap == nullptr)) {
         for (size_t i = 0; i < src.size(); i++) {
             red.push_back   (Coord2D (src[i].x, src[i].y));
             green.push_back (Coord2D (src[i].x, src[i].y));
@@ -441,35 +450,40 @@ bool ImProcFunctions::transCoord (int W, int H, const std::vector<Coord2D> &src,
         return false;
     }
 
-    double oW = W, oH = H;
-    double w2 = (double) oW  / 2.0 - 0.5;
-    double h2 = (double) oH  / 2.0 - 0.5;
-    double maxRadius = sqrt ( (double) ( oW * oW + oH * oH ) ) / 2;
+    const double oW = W, oH = H;
+    const double w2 = (double) oW  / 2.0 - 0.5;
+    const double h2 = (double) oH  / 2.0 - 0.5;
+    const double maxRadius = sqrt ( (double) ( oW * oW + oH * oH ) ) / 2;
 
     // auxiliary variables for distortion correction
-    bool needsDist = needsDistortion();  // for performance
-    double distAmount = params->distortion.amount;
+    const bool needsDist = needsDistortion();  // for performance
+    const double distAmount = params->distortion.amount;
 
     // auxiliary variables for rotation
-    double cost = cos (params->rotate.degree * rtengine::RT_PI / 180.0);
-    double sint = sin (params->rotate.degree * rtengine::RT_PI / 180.0);
+    const double cost = cos (params->rotate.degree * rtengine::RT_PI / 180.0);
+    const double sint = sin (params->rotate.degree * rtengine::RT_PI / 180.0);
 
-    double ascale = ascaleDef > 0 ? ascaleDef : (params->commonTrans.autofill && params->perspective.render ? getTransformAutoFill (oW, oH, pLCPMap) : 1.0);
+    const double ascale = ascaleDef > 0 ? ascaleDef : (params->commonTrans.autofill && params->perspective.render ? getTransformAutoFill (oW, oH, pLCPMap) : 1.0 / params->commonTrans.getScale());
+    const double hscale = ascale / params->commonTrans.getScaleHorizontally();
+    const double vscale = ascale / params->commonTrans.getScaleVertically();
 
     // auxiliary variables for perspective correction
     // Simple.
-    double vpdeg = params->perspective.vertical / 100.0 * 45.0;
-    double vpalpha = (90.0 - vpdeg) / 180.0 * rtengine::RT_PI;
-    double vpteta  = fabs (vpalpha - rtengine::RT_PI / 2) < 3e-4 ? 0.0 : acos ((vpdeg > 0 ? 1.0 : -1.0) * sqrt ((-oW * oW * tan (vpalpha) * tan (vpalpha) + (vpdeg > 0 ? 1.0 : -1.0) * oW * tan (vpalpha) * sqrt (16 * maxRadius * maxRadius + oW * oW * tan (vpalpha) * tan (vpalpha))) / (maxRadius * maxRadius * 8)));
-    double vpcospt = (vpdeg >= 0 ? 1.0 : -1.0) * cos (vpteta), vptanpt = tan (vpteta);
-    double hpdeg = params->perspective.horizontal / 100.0 * 45.0;
-    double hpalpha = (90.0 - hpdeg) / 180.0 * rtengine::RT_PI;
-    double hpteta  = fabs (hpalpha - rtengine::RT_PI / 2) < 3e-4 ? 0.0 : acos ((hpdeg > 0 ? 1.0 : -1.0) * sqrt ((-oH * oH * tan (hpalpha) * tan (hpalpha) + (hpdeg > 0 ? 1.0 : -1.0) * oH * tan (hpalpha) * sqrt (16 * maxRadius * maxRadius + oH * oH * tan (hpalpha) * tan (hpalpha))) / (maxRadius * maxRadius * 8)));
-    double hpcospt = (hpdeg >= 0 ? 1.0 : -1.0) * cos (hpteta), hptanpt = tan (hpteta);
+    const double vpdeg = params->perspective.vertical / 100.0 * 45.0;
+    const double vpalpha = (90.0 - vpdeg) / 180.0 * rtengine::RT_PI;
+    const double vpteta  = fabs (vpalpha - rtengine::RT_PI / 2) < 3e-4 ? 0.0 : acos ((vpdeg > 0 ? 1.0 : -1.0) * sqrt ((-oW * oW * tan (vpalpha) * tan (vpalpha) + (vpdeg > 0 ? 1.0 : -1.0) * oW * tan (vpalpha) * sqrt (16 * maxRadius * maxRadius + oW * oW * tan (vpalpha) * tan (vpalpha))) / (maxRadius * maxRadius * 8)));
+    const double vpcospt = (vpdeg >= 0 ? 1.0 : -1.0) * cos (vpteta), vptanpt = tan (vpteta);
+    const double hpdeg = params->perspective.horizontal / 100.0 * 45.0;
+    const double hpalpha = (90.0 - hpdeg) / 180.0 * rtengine::RT_PI;
+    const double hpteta  = fabs (hpalpha - rtengine::RT_PI / 2) < 3e-4 ? 0.0 : acos ((hpdeg > 0 ? 1.0 : -1.0) * sqrt ((-oH * oH * tan (hpalpha) * tan (hpalpha) + (hpdeg > 0 ? 1.0 : -1.0) * oH * tan (hpalpha) * sqrt (16 * maxRadius * maxRadius + oH * oH * tan (hpalpha) * tan (hpalpha))) / (maxRadius * maxRadius * 8)));
+    const double hpcospt = (hpdeg >= 0 ? 1.0 : -1.0) * cos (hpteta), hptanpt = tan (hpteta);
     // Camera-based.
     const double f =
             ((params->perspective.camera_focal_length > 0) ? params->perspective.camera_focal_length : PerspectiveParams::DEFAULT_CAMERA_FOCAL_LENGTH)
             * ((params->perspective.camera_crop_factor > 0) ? params->perspective.camera_crop_factor : PerspectiveParams::DEFAULT_CAMERA_CROP_FACTOR)
+            * (maxRadius / sqrt(18.0*18.0 + 12.0*12.0));
+    const double f_defish =
+            ((params->distortion.focal_length > 0) ? params->distortion.focal_length : DistortionParams::DEFAULT_FOCAL_LENGTH)
             * (maxRadius / sqrt(18.0*18.0 + 12.0*12.0));
     const double p_camera_yaw = params->perspective.camera_yaw / 180.0 * rtengine::RT_PI;
     const double p_camera_pitch = params->perspective.camera_pitch / 180.0 * rtengine::RT_PI;
@@ -491,8 +505,8 @@ bool ImProcFunctions::transCoord (int W, int H, const std::vector<Coord2D> &src,
     for (size_t i = 0; i < src.size(); i++) {
         double x_d = src[i].x, y_d = src[i].y;
 
-        y_d = ascale * (y_d - h2);     // centering x coord & scale
-        x_d = ascale * (x_d - w2);     // centering x coord & scale
+        x_d = hscale * (x_d - w2);     // centering x coord & scale
+        y_d = vscale * (y_d - h2);     // centering y coord & scale
 
         switch (perspectiveType) {
             case PerspType::NONE:
@@ -515,13 +529,25 @@ bool ImProcFunctions::transCoord (int W, int H, const std::vector<Coord2D> &src,
                 break;
         }
 
-        if (pLCPMap && params->lensProf.useDist) {
-            pLCPMap->correctDistortion(x_d, y_d, w2, h2);
+        if (params->distortion.defish) {
+            x_d /= f_defish;
+            y_d /= f_defish;
+
+            const double r = std::sqrt(x_d * x_d + y_d * y_d);
+
+            const double factor = f_defish * std::atan(r) / r;
+
+            x_d *= factor;
+            y_d *= factor;
         }
 
         // rotate
         double Dx = x_d * cost - y_d * sint;
         double Dy = x_d * sint + y_d * cost;
+
+        if (pLCPMap && params->lensProf.useDist && pLCPMap->hasDistortionCorrection()) {
+            pLCPMap->correctDistortion(Dx, Dy, w2, h2);
+        }
 
         // distortion correction
         double s = 1;
@@ -561,33 +587,21 @@ bool ImProcFunctions::transCoord (int W, int H, int x, int y, int w, int h, int&
     int y2 = y1 + h - 1;
 
     // Build all edge points and half-way points
-    std::vector<Coord2D> corners (8);
+    std::vector<Coord2D> corners (4);
     corners[0].set (x1, y1);
     corners[1].set (x1, y2);
     corners[2].set (x2, y2);
     corners[3].set (x2, y1);
-    corners[4].set ((x1 + x2) / 2, y1);
-    corners[5].set ((x1 + x2) / 2, y2);
-    corners[6].set (x1, (y1 + y2) / 2);
-    corners[7].set (x2, (y1 + y2) / 2);
 
     // Add several steps inbetween
-    int xstep = (x2 - x1) / DivisionsPerBorder;
-
-    if (xstep < 1) {
-        xstep = 1;
-    }
+    const int xstep = std::max(1, int((x2 - x1) / DivisionsPerBorder));
 
     for (int i = x1 + xstep; i <= x2 - xstep; i += xstep) {
         corners.push_back (Coord2D (i, y1));
         corners.push_back (Coord2D (i, y2));
     }
 
-    int ystep = (y2 - y1) / DivisionsPerBorder;
-
-    if (ystep < 1) {
-        ystep = 1;
-    }
+    const int ystep = std::max(1, int((y2 - y1) / DivisionsPerBorder));
 
     for (int i = y1 + ystep; i <= y2 - ystep; i += ystep) {
         corners.push_back (Coord2D (x1, i));
@@ -596,55 +610,30 @@ bool ImProcFunctions::transCoord (int W, int H, int x, int y, int w, int h, int&
 
     std::vector<Coord2D> r, g, b;
 
-    bool clipped = transCoord (W, H, corners, r, g, b, ascaleDef, pLCPMap);
+    const bool clipped = transCoord (W, H, corners, r, g, b, ascaleDef, pLCPMap);
 
-    // Merge all R G Bs into one X/Y pool
-    std::vector<Coord2D> transCorners;
-    transCorners.insert (transCorners.end(), r.begin(), r.end());
-    transCorners.insert (transCorners.end(), g.begin(), g.end());
-    transCorners.insert (transCorners.end(), b.begin(), b.end());
+    // Compute bounding box by finding min/max of all coordinates
+    xv = g[0].x;
+    double x2d = g[0].x;
 
-    // find the min/max of all coordinates, so the borders
-    double x1d = transCorners[0].x;
+    yv = g[0].y;
+    double y2d = g[0].y;
 
-    for (size_t i = 1; i < transCorners.size(); i++)
-        if (transCorners[i].x < x1d) {
-            x1d = transCorners[i].x;
-        }
+    for (size_t ii = 0; ii < r.size(); ++ii) {
+        track_min_max(xv, x2d, r[ii].x);
+        track_min_max(xv, x2d, g[ii].x);
+        track_min_max(xv, x2d, b[ii].x);
 
-    int x1v = (int) (x1d);
-
-    double y1d = transCorners[0].y;
-
-    for (size_t i = 1; i < transCorners.size(); i++)
-        if (transCorners[i].y < y1d) {
-            y1d = transCorners[i].y;
-        }
-
-    int y1v = (int) (y1d);
-
-    double x2d = transCorners[0].x;
-
-    for (size_t i = 1; i < transCorners.size(); i++)
-        if (transCorners[i].x > x2d) {
-            x2d = transCorners[i].x;
-        }
+        track_min_max(yv, y2d, r[ii].y);
+        track_min_max(yv, y2d, g[ii].y);
+        track_min_max(yv, y2d, b[ii].y);
+    }
 
     int x2v = (int)ceil (x2d);
-
-    double y2d = transCorners[0].y;
-
-    for (size_t i = 1; i < transCorners.size(); i++)
-        if (transCorners[i].y > y2d) {
-            y2d = transCorners[i].y;
-        }
-
     int y2v = (int)ceil (y2d);
 
-    xv = x1v;
-    yv = y1v;
-    wv = x2v - x1v + 1;
-    hv = y2v - y1v + 1;
+    wv = x2v - xv + 1;
+    hv = y2v - yv + 1;
 
     return clipped;
 }
@@ -660,7 +649,13 @@ void ImProcFunctions::transform (Imagefloat* original, Imagefloat* transformed, 
 
     std::unique_ptr<const LensCorrection> pLCPMap;
 
-    if (needsLensfun()) {
+    if (needsMetadata()) {
+        auto corr = MetadataLensCorrectionFinder::findCorrection(metadata);
+        if (corr) {
+            corr->initCorrections(oW, oH, params->coarse, rawRotationDeg);
+            pLCPMap = std::move(corr);
+        }
+    } else if (needsLensfun()) {
         pLCPMap = LFDatabase::getInstance()->findModifier(params->lensProf, metadata, oW, oH, params->coarse, rawRotationDeg);
     } else if (needsLCP()) { // don't check focal length to allow distortion correction for lenses without chip
         const std::shared_ptr<LCPProfile> pLCPProf = LCPStore::getInstance()->getProfile (params->lensProf.lcpFile);
@@ -676,7 +671,7 @@ void ImProcFunctions::transform (Imagefloat* original, Imagefloat* transformed, 
         }
     }
 
-    if (! (needsCA() || needsDistortion() || needsRotation() || needsPerspective() || needsLCP() || needsLensfun()) && (needsVignetting() || needsPCVignetting() || needsGradient())) {
+    if (! (needsCA() || needsDistortion() || needsRotation() || needsPerspective() || needsScaleAny() || needsLCP() || needsMetadata() || needsLensfun()) && (needsVignetting() || needsPCVignetting() || needsGradient())) {
         transformLuminanceOnly (original, transformed, cx, cy, oW, oH, fW, fH);
     } else {
         bool highQuality;
@@ -686,24 +681,8 @@ void ImProcFunctions::transform (Imagefloat* original, Imagefloat* transformed, 
             highQuality = false;
         } else {
             highQuality = true;
-            // agriggio: CA correction via the lens profile has to be
-            // performed before separately from the the other transformations
-            // (except for the coarse rotation/flipping). In order to not
-            // change the code too much, I simply introduced a new mode
-            // TRANSFORM_HIGH_QUALITY_CA, which applies *only* profile-based
-            // CA correction. So, the correction in this case occurs in two
-            // steps, using an intermediate temporary image. There's room for
-            // optimization of course...
-            if (pLCPMap && params->lensProf.useCA && pLCPMap->isCACorrectionAvailable()) {
-                tmpimg.reset(new Imagefloat(transformed->getWidth(), transformed->getHeight()));
-                dest = tmpimg.get();
-            }
         }
         transformGeneral(highQuality, original, dest, cx, cy, sx, sy, oW, oH, fW, fH, pLCPMap.get(), useOriginalBuffer);
-        
-        if (highQuality && dest != transformed) {
-            transformLCPCAOnly(dest, transformed, cx, cy, pLCPMap.get(), useOriginalBuffer);
-        }
     }
 }
 
@@ -746,7 +725,6 @@ static void calcGradientParams (int oW, int oH, const GradientParams& gradient, 
     double gradient_center_y = gradient.centerY / 200.0 + 0.5;
     double gradient_angle = gradient.degree / 180.0 * rtengine::RT_PI;
     //fprintf(stderr, "%f %f %f %f %f %d %d\n", gradient_stops, gradient_span, gradient_center_x, gradient_center_y, gradient_angle, w, h);
-
     // make 0.0 <= gradient_angle < 2 * rtengine::RT_PI
     gradient_angle = fmod (gradient_angle, 2 * rtengine::RT_PI);
 
@@ -1094,8 +1072,10 @@ void ImProcFunctions::transformGeneral(bool highQuality, Imagefloat *original, I
 
     // set up stuff, depending on the mode we are
     enum PerspType { NONE, SIMPLE, CAMERA_BASED };
-    const bool enableLCPDist = pLCPMap && params->lensProf.useDist;
+    const bool enableLCPDist = pLCPMap && params->lensProf.useDist && pLCPMap->hasDistortionCorrection();
+    const bool enableLCPCA = pLCPMap && params->lensProf.useCA && pLCPMap->hasCACorrection();
     const bool enableCA = highQuality && needsCA();
+    const bool doCACorrection = enableCA || enableLCPCA;
     const bool enableGradient = needsGradient();
     const bool enablePCVignetting = needsPCVignetting();
     const bool enableVignetting = needsVignetting();
@@ -1165,6 +1145,9 @@ void ImProcFunctions::transformGeneral(bool highQuality, Imagefloat *original, I
             ((params->perspective.camera_focal_length > 0) ? params->perspective.camera_focal_length : PerspectiveParams::DEFAULT_CAMERA_FOCAL_LENGTH)
             * ((params->perspective.camera_crop_factor > 0) ? params->perspective.camera_crop_factor : PerspectiveParams::DEFAULT_CAMERA_CROP_FACTOR)
             * (maxRadius / sqrt(18.0*18.0 + 12.0*12.0));
+    const double f_defish =
+            ((params->distortion.focal_length > 0) ? params->distortion.focal_length : DistortionParams::DEFAULT_FOCAL_LENGTH)
+            * (maxRadius / sqrt(18.0*18.0 + 12.0*12.0));
     const double p_camera_yaw = params->perspective.camera_yaw / 180.0 * rtengine::RT_PI;
     const double p_camera_pitch = params->perspective.camera_pitch / 180.0 * rtengine::RT_PI;
     const double p_camera_roll = params->perspective.camera_roll * rtengine::RT_PI_180;
@@ -1182,7 +1165,9 @@ void ImProcFunctions::transformGeneral(bool highQuality, Imagefloat *original, I
             p_projection_rotate, p_projection_shift_horiz,
             p_projection_shift_vert, p_projection_scale);
 
-    const double ascale = params->commonTrans.autofill && params->perspective.render ? getTransformAutoFill(oW, oH, pLCPMap) : 1.0;
+    const double ascale = params->commonTrans.autofill && params->perspective.render ? getTransformAutoFill(oW, oH, pLCPMap) : 1.0 / params->commonTrans.getScale();
+    const double hscale = ascale / params->commonTrans.getScaleHorizontally();
+    const double vscale = ascale / params->commonTrans.getScaleVertically();
 
     const bool darkening = (params->vignetting.amount <= 0.0);
     const bool useLog = params->commonTrans.method == "log" && highQuality;
@@ -1216,8 +1201,8 @@ void ImProcFunctions::transformGeneral(bool highQuality, Imagefloat *original, I
             double x_d = x;
             double y_d = y;
 
-            x_d = ascale * (x_d + centerFactorx);     // centering x coord & scale
-            y_d = ascale * (y_d + centerFactory);     // centering y coord & scale
+            x_d = hscale * (x_d + centerFactorx);     // centering x coord & scale
+            y_d = vscale * (y_d + centerFactory);     // centering y coord & scale
 
             switch (perspectiveType) {
                 case PerspType::NONE:
@@ -1240,25 +1225,44 @@ void ImProcFunctions::transformGeneral(bool highQuality, Imagefloat *original, I
                     break;
             }
 
-            if (enableLCPDist) {
-                pLCPMap->correctDistortion(x_d, y_d, w2, h2);
+            if (params->distortion.defish) {
+                x_d /= f_defish;
+                y_d /= f_defish;
+
+                const double r = std::sqrt(x_d * x_d + y_d * y_d);
+                const double factor = f_defish * std::atan(r) / r;
+
+                x_d *= factor;
+                y_d *= factor;
             }
 
             // rotate
-            const double Dxc = x_d * cost - y_d * sint;
-            const double Dyc = x_d * sint + y_d * cost;
+            const double Dxr = x_d * cost - y_d * sint;
+            const double Dyr = x_d * sint + y_d * cost;
 
-            // distortion correction
-            double s = 1.0;
+            for (int c = 0; c < (doCACorrection ? 3 : 1); ++c) {
+                double Dx = Dxr;
+                double Dy = Dyr;
 
-            if (enableDistortion) {
-                const double r = sqrt(Dxc * Dxc + Dyc * Dyc) / maxRadius;
-                s = 1.0 - distAmount + distAmount * r;
-            }
+                if (enableLCPDist && enableLCPCA) {
+                    pLCPMap->correctDistortionAndCA(Dx, Dy, w2, h2, c);
+                } else if (enableLCPDist) {
+                    pLCPMap->correctDistortion(Dx, Dy, w2, h2);
+                } else if (enableLCPCA) {
+                    pLCPMap->correctCA(Dx, Dy, w2, h2, c);
+                }
 
-            for (int c = 0; c < (enableCA ? 3 : 1); ++c) {
-                double Dx = Dxc * (s + chDist[c]);
-                double Dy = Dyc * (s + chDist[c]);
+                // distortion correction
+                double s = 1.0;
+
+                if (enableDistortion) {
+                    const double r = sqrt(Dx * Dx + Dy * Dy) / maxRadius;
+                    s = 1.0 - distAmount + distAmount * r;
+                }
+
+                // CA correction
+                Dx *= s + chDist[c];
+                Dy *= s + chDist[c];
 
                 // de-center
                 Dx += w2;
@@ -1278,8 +1282,8 @@ void ImProcFunctions::transformGeneral(bool highQuality, Imagefloat *original, I
                     double vignmul = 1.0;
 
                     if (enableVignetting) {
-                        const double vig_x_d = ascale * (x + cx - vig_w2); // centering x coord & scale
-                        const double vig_y_d = ascale * (y + cy - vig_h2); // centering y coord & scale
+                        const double vig_x_d = hscale * (x + cx - vig_w2); // centering x coord & scale
+                        const double vig_y_d = vscale * (y + cy - vig_h2); // centering y coord & scale
                         const double vig_Dx = vig_x_d * cost - vig_y_d * sint;
                         const double vig_Dy = vig_x_d * sint + vig_y_d * cost;
                         const double r2 = sqrt(vig_Dx * vig_Dx + vig_Dy * vig_Dy);
@@ -1305,13 +1309,13 @@ void ImProcFunctions::transformGeneral(bool highQuality, Imagefloat *original, I
                             transformed->g(y, x) = vignmul * (original->g(yc, xc) * (1.0 - Dx) * (1.0 - Dy) + original->g(yc, xc + 1) * Dx * (1.0 - Dy) + original->g(yc + 1, xc) * (1.0 - Dx) * Dy + original->g(yc + 1, xc + 1) * Dx * Dy);
                             transformed->b(y, x) = vignmul * (original->b(yc, xc) * (1.0 - Dx) * (1.0 - Dy) + original->b(yc, xc + 1) * Dx * (1.0 - Dy) + original->b(yc + 1, xc) * (1.0 - Dx) * Dy + original->b(yc + 1, xc + 1) * Dx * Dy);
                         } else if (!useLog) {
-                            if (enableCA) {
+                            if (doCACorrection) {
                                 interpolateTransformChannelsCubic(chOrig[c], xc - 1, yc - 1, Dx, Dy, chTrans[c][y][x], vignmul);
                             } else {
                                 interpolateTransformCubic(original, xc - 1, yc - 1, Dx, Dy, transformed->r(y, x), transformed->g(y, x), transformed->b(y, x), vignmul);
                             }
                         } else {
-                            if (enableCA) {
+                            if (doCACorrection) {
                                 interpolateTransformChannelsCubicLog(chOrig[c], xc - 1, yc - 1, Dx, Dy, chTrans[c][y][x], vignmul);
                             } else {
                                 interpolateTransformCubicLog(original, xc - 1, yc - 1, Dx, Dy, transformed->r(y, x), transformed->g(y, x), transformed->b(y, x), vignmul);
@@ -1325,7 +1329,7 @@ void ImProcFunctions::transformGeneral(bool highQuality, Imagefloat *original, I
                         const int x2 = LIM(xc + 1, 0, original->getWidth() - 1);
 
                         if (useLog) {
-                            if (enableCA) {
+                            if (doCACorrection) {
                                 chTrans[c][y][x] = vignmul * xexpf(chOrig[c][y1][x1] * (1.0 - Dx) * (1.0 - Dy) + chOrig[c][y1][x2] * Dx * (1.0 - Dy) + chOrig[c][y2][x1] * (1.0 - Dx) * Dy + chOrig[c][y2][x2] * Dx * Dy);
                             } else {
                                 transformed->r(y, x) = vignmul * xexpf(original->r(y1, x1) * (1.0 - Dx) * (1.0 - Dy) + original->r(y1, x2) * Dx * (1.0 - Dy) + original->r(y2, x1) * (1.0 - Dx) * Dy + original->r(y2, x2) * Dx * Dy);
@@ -1333,7 +1337,7 @@ void ImProcFunctions::transformGeneral(bool highQuality, Imagefloat *original, I
                                 transformed->b(y, x) = vignmul * xexpf(original->b(y1, x1) * (1.0 - Dx) * (1.0 - Dy) + original->b(y1, x2) * Dx * (1.0 - Dy) + original->b(y2, x1) * (1.0 - Dx) * Dy + original->b(y2, x2) * Dx * Dy);
                             }
                         } else {
-                            if (enableCA) {
+                            if (doCACorrection) {
                                 chTrans[c][y][x] = vignmul * (chOrig[c][y1][x1] * (1.0 - Dx) * (1.0 - Dy) + chOrig[c][y1][x2] * Dx * (1.0 - Dy) + chOrig[c][y2][x1] * (1.0 - Dx) * Dy + chOrig[c][y2][x2] * Dx * Dy);
                             } else {
                                 transformed->r(y, x) = vignmul * (original->r(y1, x1) * (1.0 - Dx) * (1.0 - Dy) + original->r(y1, x2) * Dx * (1.0 - Dy) + original->r(y2, x1) * (1.0 - Dx) * Dy + original->r(y2, x2) * Dx * Dy);
@@ -1343,7 +1347,7 @@ void ImProcFunctions::transformGeneral(bool highQuality, Imagefloat *original, I
                         }
                     }
                 } else {
-                    if (enableCA) {
+                    if (doCACorrection) {
                         // not valid (source pixel x,y not inside source image, etc.)
                         chTrans[c][y][x] = 0;
                     } else {
@@ -1356,77 +1360,6 @@ void ImProcFunctions::transformGeneral(bool highQuality, Imagefloat *original, I
         }
     }
 }
-
-
-void ImProcFunctions::transformLCPCAOnly(Imagefloat *original, Imagefloat *transformed, int cx, int cy, const LensCorrection *pLCPMap, bool useOriginalBuffer)
-{
-    assert(pLCPMap && params->lensProf.useCA && pLCPMap->isCACorrectionAvailable());
-    const bool useLog = params->commonTrans.method == "log";
-
-    float** chTrans[3] = {transformed->r.ptrs, transformed->g.ptrs, transformed->b.ptrs};
-
-    std::unique_ptr<Imagefloat> tempLog;
-    if (useLog) {
-        if (!useOriginalBuffer) {
-            tempLog.reset(new Imagefloat(original->getWidth(), original->getHeight()));
-            logEncode(original, tempLog.get(), multiThread);
-            original = tempLog.get();
-        } else {
-            logEncode(original, original, multiThread);
-        }
-    }
-    float** chOrig[3] = {original->r.ptrs, original->g.ptrs, original->b.ptrs};
-
-#ifdef _OPENMP
-    #pragma omp parallel for if (multiThread)
-#endif
-
-    for (int y = 0; y < transformed->getHeight(); y++) {
-        for (int x = 0; x < transformed->getWidth(); x++) {
-            for (int c = 0; c < 3; c++) {
-                double Dx = x;
-                double Dy = y;
-                
-                pLCPMap->correctCA(Dx, Dy, cx, cy, c);
-
-                // Extract integer and fractions of coordinates
-                int xc = (int)Dx;
-                Dx -= (double)xc;
-                int yc = (int)Dy;
-                Dy -= (double)yc;
-
-                // Convert only valid pixels
-                if (yc >= 0 && yc < original->getHeight() && xc >= 0 && xc < original->getWidth()) {
-
-                    // multiplier for vignetting correction
-                    if (yc > 0 && yc < original->getHeight() - 2 && xc > 0 && xc < original->getWidth() - 2) {
-                        // all interpolation pixels inside image
-                        if (!useLog) {
-                            interpolateTransformChannelsCubic(chOrig[c], xc - 1, yc - 1, Dx, Dy, chTrans[c][y][x], 1.0);
-                        } else {
-                            interpolateTransformChannelsCubicLog(chOrig[c], xc - 1, yc - 1, Dx, Dy, chTrans[c][y][x], 1.0);
-                        }
-                    } else {
-                        // edge pixels
-                        int y1 = LIM (yc,   0, original->getHeight() - 1);
-                        int y2 = LIM (yc + 1, 0, original->getHeight() - 1);
-                        int x1 = LIM (xc,   0, original->getWidth() - 1);
-                        int x2 = LIM (xc + 1, 0, original->getWidth() - 1);
-                        if (!useLog) {
-                            chTrans[c][y][x] = (chOrig[c][y1][x1] * (1.0 - Dx) * (1.0 - Dy) + chOrig[c][y1][x2] * Dx * (1.0 - Dy) + chOrig[c][y2][x1] * (1.0 - Dx) * Dy + chOrig[c][y2][x2] * Dx * Dy);
-                        } else {
-                            chTrans[c][y][x] = xexpf(chOrig[c][y1][x1] * (1.0 - Dx) * (1.0 - Dy) + chOrig[c][y1][x2] * Dx * (1.0 - Dy) + chOrig[c][y2][x1] * (1.0 - Dx) * Dy + chOrig[c][y2][x2] * Dx * Dy);
-                        }
-                    }
-                } else {
-                    // not valid (source pixel x,y not inside source image, etc.)
-                    chTrans[c][y][x] = 0;
-                }
-            }
-        }
-    }
-}
-
 
 double ImProcFunctions::getTransformAutoFill (int oW, int oH, const LensCorrection *pLCPMap) const
 {
@@ -1459,7 +1392,9 @@ bool ImProcFunctions::needsCA () const
 
 bool ImProcFunctions::needsDistortion () const
 {
-    return fabs (params->distortion.amount) > 1e-15;
+    return
+            params->distortion.defish ||
+            fabs (params->distortion.amount) > 1e-15;
 }
 
 bool ImProcFunctions::needsRotation () const
@@ -1482,7 +1417,27 @@ bool ImProcFunctions::needsPerspective () const
                     params->perspective.projection_rotate ||
                     params->perspective.projection_shift_horiz ||
                     params->perspective.projection_shift_vert ||
-                    params->perspective.projection_yaw) );
+                    params->perspective.projection_yaw));
+}
+
+bool ImProcFunctions::needsScale () const
+{
+  return std::abs(1.0 - params->commonTrans.getScale()) > 1e-6;
+}
+
+bool ImProcFunctions::needsScaleHorizontally() const
+{
+  return std::abs(1.0 - params->commonTrans.getScaleHorizontally()) > 1e-6;
+}
+
+bool ImProcFunctions::needsScaleVertically() const
+{
+  return std::abs(1.0 - params->commonTrans.getScaleVertically()) > 1e-6;
+}
+
+bool ImProcFunctions::needsScaleAny() const
+{
+  return needsScale() || needsScaleHorizontally() || needsScaleVertically();
 }
 
 bool ImProcFunctions::needsGradient () const
@@ -1498,6 +1453,11 @@ bool ImProcFunctions::needsPCVignetting () const
 bool ImProcFunctions::needsVignetting () const
 {
     return params->vignetting.amount;
+}
+
+bool ImProcFunctions::needsMetadata () const
+{
+    return params->lensProf.useMetadata();
 }
 
 bool ImProcFunctions::needsLCP () const
@@ -1517,9 +1477,8 @@ bool ImProcFunctions::needsTransform (int oW, int oH, int rawRotationDeg, const 
         std::unique_ptr<const LensCorrection> pLCPMap = LFDatabase::getInstance()->findModifier(params->lensProf, metadata, oW, oH, params->coarse, rawRotationDeg);
         needsLf = pLCPMap.get();
     }
-    return needsCA () || needsDistortion () || needsRotation () || needsPerspective () || needsGradient () || needsPCVignetting () || needsVignetting () || needsLCP() || needsLf;
+    return needsCA () || needsDistortion () || needsRotation () || needsPerspective () || needsScaleAny() || needsGradient () || needsPCVignetting () || needsVignetting () || needsLCP() || needsMetadata() || needsLf;
 }
 
 
 }
-

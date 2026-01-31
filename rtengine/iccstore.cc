@@ -38,8 +38,8 @@
 #include "iccmatrices.h"
 #include "utils.h"
 
-#include "../rtgui/options.h"
-#include "../rtgui/threadutils.h"
+#include "rtgui/options.h"
+#include "rtgui/threadutils.h"
 #include "lcms2_plugin.h"
 
 #include "color.h"
@@ -452,6 +452,8 @@ public:
         userICCDir = usrICCDir;
         fileProfiles.clear();
         fileProfileContents.clear();
+
+        const auto& options = App::get().options();
 
         if (loadAll) {
             loadProfiles(profilesDir, &fileProfiles, &fileProfileContents, nullptr, false);

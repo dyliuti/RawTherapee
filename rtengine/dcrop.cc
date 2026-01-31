@@ -36,14 +36,14 @@
 #include "refreshmap.h"
 #include "rt_math.h"
 #include "utils.h"
+#include "iccstore.h"
 
-#include "../rtgui/editcallbacks.h"
+#include "rtgui/editcallbacks.h"
 
 #pragma GCC diagnostic warning "-Wall"
 #pragma GCC diagnostic warning "-Wextra"
 namespace
 {
-
 // "ceil" rounding
 template<typename T>
 constexpr T skips(T a, T b)
@@ -55,6 +55,7 @@ constexpr T skips(T a, T b)
 
 namespace rtengine
 {
+using rtengine::TMatrix;
 
 Crop::Crop(ImProcCoordinator* parent, EditDataProvider *editDataProvider, bool isDetailWindow)
     : PipetteBuffer(editDataProvider), origCrop(nullptr), spotCrop(nullptr), laboCrop(nullptr), labnCrop(nullptr),
@@ -191,6 +192,7 @@ void Crop::update(int todo)
         if (!needsinitupdate) {
             setCropSizes(rqcropx, rqcropy, rqcropw, rqcroph, skip, true);
         }
+        
 
         //       printf("x=%d y=%d crow=%d croh=%d skip=%d\n",rqcropx, rqcropy, rqcropw, rqcroph, skip);
         //      printf("trafx=%d trafyy=%d trafwsk=%d trafHs=%d \n",trafx, trafy, trafw*skip, trafh*skip);
@@ -692,6 +694,15 @@ void Crop::update(int todo)
             parent->ipf.filmNegativeProcess(baseCrop, baseCrop, params.filmNegative);
         }
 
+        if (params.cg.enabled) {//gamut compression
+            float mac = 0.f;
+            float mac0 = 0.f;
+            float mac1 = 0.f;
+            float mac2 = 0.f;
+            int beginend = 0;
+            parent->ipf.gamutcompr(baseCrop, baseCrop, beginend, mac, mac0, mac1, mac2);
+        }
+
         delete [] min_r;
         delete [] min_b;
         delete [] lumL;
@@ -812,9 +823,11 @@ void Crop::update(int todo)
     }
 
     const bool needstransform  = parent->ipf.needsTransform(skips(parent->fw, skip), skips(parent->fh, skip), parent->imgsrc->getRotateDegree(), parent->imgsrc->getMetaData());
+    const bool cam02 = params.colorappearance.modelmethod == "02" && params.colorappearance.enabled;
+
     // transform
    // if (needstransform || ((todo & (M_TRANSFORM | M_RGBCURVE)) && params.dirpyrequalizer.cbdlMethod == "bef" && params.dirpyrequalizer.enabled && !params.colorappearance.enabled)) {
-    if (needstransform || ((todo & (M_TRANSFORM | M_RGBCURVE)) && params.dirpyrequalizer.cbdlMethod == "bef" && params.dirpyrequalizer.enabled && params.colorappearance.modelmethod != "02")) {
+    if (needstransform || ((todo & (M_TRANSFORM | M_RGBCURVE)) && params.dirpyrequalizer.cbdlMethod == "bef" && params.dirpyrequalizer.enabled && !cam02)) {
         if (!transCrop) {
             transCrop = new Imagefloat(cropw, croph);
         }
@@ -836,7 +849,7 @@ void Crop::update(int todo)
     }
 
    // if ((todo & (M_TRANSFORM | M_RGBCURVE))  && params.dirpyrequalizer.cbdlMethod == "bef" && params.dirpyrequalizer.enabled && !params.colorappearance.enabled) {
-    if ((todo & (M_TRANSFORM | M_RGBCURVE))  && params.dirpyrequalizer.cbdlMethod == "bef" && params.dirpyrequalizer.enabled && params.colorappearance.modelmethod != "02") {
+    if ((todo & (M_TRANSFORM | M_RGBCURVE))  && params.dirpyrequalizer.cbdlMethod == "bef" && params.dirpyrequalizer.enabled && !cam02) {
 
         const int W = baseCrop->getWidth();
         const int H = baseCrop->getHeight();
@@ -869,6 +882,7 @@ void Crop::update(int todo)
         auto& lmasklocalcurve2 = parent->lmasklocalcurve;
         auto& lmaskexplocalcurve2 = parent->lmaskexplocalcurve;
         auto& lmaskSHlocalcurve2 = parent->lmaskSHlocalcurve;
+       // auto& ghslocalcurve2 = parent->ghslocalcurve;
         auto& lmaskviblocalcurve2 = parent->lmaskviblocalcurve;
         auto& lmasktmlocalcurve2 = parent->lmasktmlocalcurve;
         auto& lmaskretilocalcurve2 = parent->lmaskretilocalcurve;
@@ -945,9 +959,15 @@ void Crop::update(int todo)
         auto& loccomprewavCurve = parent->loccomprewavCurve;
         auto& locedgwavCurve = parent->locedgwavCurve;
         auto& locwavCurvehue = parent->locwavCurvehue;
+        auto& locwavCurvehuecont = parent->locwavCurvehuecont;
         auto& locwavCurveden = parent->locwavCurveden;
         auto& lmasklocal_curve2 = parent->lmasklocal_curve;
         auto& loclmasCurve_wav = parent->loclmasCurve_wav;
+        //big bug found 29//11/2024
+        std::vector<LocallabListener::locallabDenoiseLC> localldenoiselc;
+        std::vector<LocallabListener::locallabDenoiseMAD> localldenoisemadl;
+        std::vector<LocallabListener::locallabsharAFT> locallsharaft;
+        std::vector<LocallabListener::locallabDenoiseLC2> localldenoiselc2;
 
         for (int sp = 0; sp < (int)params.locallab.spots.size(); sp++) {
             locRETgainCurve.Set(params.locallab.spots.at(sp).localTgaincurve);
@@ -1005,6 +1025,7 @@ void Crop::update(int todo)
             const bool locwavutili = locwavCurve.Set(params.locallab.spots.at(sp).locwavcurve);
             const bool locwavutilijz = locwavCurvejz.Set(params.locallab.spots.at(sp).locwavcurvejz);
             const bool locwavhueutili = locwavCurvehue.Set(params.locallab.spots.at(sp).locwavcurvehue);
+            const bool locwavhueutilicont = locwavCurvehuecont.Set(params.locallab.spots.at(sp).locwavcurvehuecont);
             const bool locwavdenutili = locwavCurveden.Set(params.locallab.spots.at(sp).locwavcurveden);
             const bool loclevwavutili = loclevwavCurve.Set(params.locallab.spots.at(sp).loclevwavcurve);
             const bool locconwavutili = locconwavCurve.Set(params.locallab.spots.at(sp).locconwavcurve);
@@ -1020,6 +1041,7 @@ void Crop::update(int todo)
             const bool localmaskutili = CurveFactory::diagonalCurve2Lut(params.locallab.spots.at(sp).Lmaskcurve, lmasklocalcurve2, skip);
             const bool localmaskexputili = CurveFactory::diagonalCurve2Lut(params.locallab.spots.at(sp).Lmaskexpcurve, lmaskexplocalcurve2, skip);
             const bool localmaskSHutili = CurveFactory::diagonalCurve2Lut(params.locallab.spots.at(sp).LmaskSHcurve, lmaskSHlocalcurve2, skip);
+          //  const bool localghsutili = CurveFactory::diagonalCurve2Lut(params.locallab.spots.at(sp).ghscurve, ghslocalcurve2, skip);
             const bool localmaskvibutili = CurveFactory::diagonalCurve2Lut(params.locallab.spots.at(sp).Lmaskvibcurve, lmaskviblocalcurve2, skip);
             const bool localmasktmutili = CurveFactory::diagonalCurve2Lut(params.locallab.spots.at(sp).Lmasktmcurve, lmasktmlocalcurve2, skip);
             const bool localmaskretiutili = CurveFactory::diagonalCurve2Lut(params.locallab.spots.at(sp).Lmaskreticurve, lmaskretilocalcurve2, skip);
@@ -1044,7 +1066,6 @@ void Crop::update(int todo)
             if (black < 0. && params.locallab.spots.at(sp).expMethod == "pde" ) {
                 black *= 1.5;
             }
-            std::vector<LocallabListener::locallabDenoiseLC> localldenoiselc;
 
             double cont = params.locallab.spots.at(sp).contrast;
             double huere, chromare, lumare, huerefblu, chromarefblu, lumarefblu, sobelre;
@@ -1064,7 +1085,7 @@ void Crop::update(int todo)
             float fab = 1.f;
             float maxicam = -1000.f;
             float rdx, rdy, grx, gry, blx, bly = 0.f;
-            float meanx, meany, meanxe, meanye = 0.f;
+            float meanx, meany, meanxe, meanye, maxdat = 0.f;
             int ill = 2;
             int prim = 3;
             float minCD;
@@ -1076,17 +1097,24 @@ void Crop::update(int todo)
             float Tmin;
             float Tmax;
             int lastsav;
-            float highresi = 0.f;
-            float nresi = 0.f;
-            float highresi46 =0.f;
-            float nresi46 = 0.f;
-            float Lhighresi = 0.f;
-            float Lnresi = 0.f;
-            float Lhighresi46 = 0.f;
-            float Lnresi46 = 0.f;
-            float contsig = params.locallab.spots.at(sp).contsigqcie;
+            float resi[8];
             
+            float contsig = params.locallab.spots.at(sp).contsigqcie;
+            float slopeg = 1.f;
+            bool linkrgb = true;
             float lightsig = params.locallab.spots.at(sp).lightsigqcie;
+            float sharc = 0.f;
+            float denocont = 0.f;
+            int ghsbpwp[2];
+            float ghsbpwpvalue[2];
+            float savmadl[21]  = {100.f, 100.f, 100.f, 100.f, 100.f, 100.f, 100.f, 100.f, 100.f, 100.f, 100.f, 100.f, 100.f, 100.f, 100.f, 100.f, 100.f, 100.f, 100.f, 100.f, 100.f}; 
+            float ghsbwslider[2];
+            float ghscolor[4];
+            float ghssym;
+            float ghsmid;
+            float ghsmaxrgb;
+            float ghs3sig;
+            bool ghsautsp;
 /*            huerefp[sp] = huere;
             chromarefp[sp] = chromare;
             lumarefp[sp] = lumare;
@@ -1100,7 +1128,7 @@ void Crop::update(int todo)
 
             if (sp == params.locallab.selspot) {
                 
-                parent->ipf.Lab_Local(1, sp, (float**)shbuffer, labnCrop, labnCrop, reservCrop.get(), savenormtmCrop.get(), savenormretiCrop.get(), lastorigCrop.get(), fw, fh, cropx / skip, cropy / skip, skips(parent->fw, skip), skips(parent->fh, skip), skip, locRETgainCurve, locRETtransCurve,
+                parent->ipf.Lab_Local(1, sp, (float**)shbuffer, labnCrop, labnCrop, reservCrop.get(), savenormtmCrop.get(), savenormretiCrop.get(), lastorigCrop.get(), fw, fh, cropx / skip, cropy / skip, skips(parent->fw, skip), skips(parent->fh, skip), trafx, trafy, trafw, trafh , skip, locRETgainCurve, locRETtransCurve,
                         lllocalcurve2,locallutili, 
                         cllocalcurve2, localclutili,
                         lclocalcurve2, locallcutili,
@@ -1149,6 +1177,7 @@ void Crop::update(int todo)
                         loccompwavCurve, loccompwavutili,
                         loccomprewavCurve, loccomprewavutili,
                         locwavCurvehue, locwavhueutili,
+                        locwavCurvehuecont, locwavhueutilicont,
                         locwavCurveden, locwavdenutili,
                         locedgwavCurve, locedgwavutili,
                         loclmasCurve_wav,lmasutili_wav,
@@ -1156,20 +1185,9 @@ void Crop::update(int todo)
                         huerefblu, chromarefblu, lumarefblu, huere, chromare, lumare, sobelre, lastsav, 
                         parent->previewDeltaE, parent->locallColorMask, parent->locallColorMaskinv, parent->locallExpMask, parent->locallExpMaskinv, parent->locallSHMask, parent->locallSHMaskinv, parent->locallvibMask,  parent->localllcMask, parent->locallsharMask, parent->locallcbMask, parent->locallretiMask, parent->locallsoftMask, parent->localltmMask, parent->locallblMask,
                         parent->localllogMask, parent->locall_Mask, parent->locallcieMask, minCD, maxCD, mini, maxi, Tmean, Tsigma, Tmin, Tmax,
-                        meantme, stdtme, meanretie, stdretie, fab, maxicam,rdx, rdy, grx, gry, blx, bly, meanx, meany, meanxe, meanye, prim, ill, contsig, lightsig,
-                        highresi, nresi, highresi46, nresi46, Lhighresi, Lnresi, Lhighresi46, Lnresi46);
-                        
-                        LocallabListener::locallabDenoiseLC denoiselc;
-                        denoiselc.highres = highresi;
-                        denoiselc.nres = nresi; 
-                        denoiselc.highres46 = highresi46;
-                        denoiselc.nres46 = nresi46;
-                        denoiselc.Lhighres =  Lhighresi;
-                        denoiselc.Lnres = Lnresi;
-                        denoiselc.Lhighres46 = Lhighresi46;
-                        denoiselc.Lnres46 = Lnresi46;
-                        localldenoiselc.push_back(denoiselc);
-                        
+                        meantme, stdtme, meanretie, stdretie, fab, maxicam,rdx, rdy, grx, gry, blx, bly, meanx, meany, meanxe, meanye, maxdat, prim, ill, contsig, lightsig, slopeg, linkrgb,
+                        resi, sharc, denocont, ghsbpwp, ghsbpwpvalue, savmadl, ghsbwslider, ghssym, ghsautsp, ghscolor, ghsmid, ghsmaxrgb, ghs3sig);
+
                         if (parent->previewDeltaE || parent->locallColorMask == 5 || parent->locallvibMask == 4 || parent->locallExpMask == 5 || parent->locallSHMask == 4 || parent->localllcMask == 4 || parent->localltmMask == 4 || parent->localllogMask == 4 || parent->locallsoftMask == 6 || parent->localllcMask == 4 || parent->locallcieMask == 4) {
                             params.blackwhite.enabled = false;
                             params.colorToning.enabled = false;
@@ -1199,23 +1217,8 @@ void Crop::update(int todo)
 
                         }
                         */
-                        denoiselc.highres = highresi;
-                        denoiselc.nres = nresi; 
-                        denoiselc.highres46 = highresi46;
-                        denoiselc.nres46 = nresi46;
-                        denoiselc.Lhighres =  Lhighresi;
-                        denoiselc.Lnres = Lnresi;
-                        denoiselc.Lhighres46 = Lhighresi46;
-                        denoiselc.Lnres46 = Lnresi46;
-                        localldenoiselc.push_back(denoiselc);
-                        
-                       
-                        if (parent->locallListener) {
-                            parent->locallListener->denChanged(localldenoiselc, params.locallab.selspot);
-                        }
-
             } else {
-                parent->ipf.Lab_Local(1, sp, (float**)shbuffer, labnCrop, labnCrop, reservCrop.get(), savenormtmCrop.get(), savenormretiCrop.get(), lastorigCrop.get(), fw, fh, cropx / skip, cropy / skip, skips(parent->fw, skip), skips(parent->fh, skip), skip, locRETgainCurve, locRETtransCurve,
+                parent->ipf.Lab_Local(1, sp, (float**)shbuffer, labnCrop, labnCrop, reservCrop.get(), savenormtmCrop.get(), savenormretiCrop.get(), lastorigCrop.get(), fw, fh, cropx / skip, cropy / skip, skips(parent->fw, skip), skips(parent->fh, skip), trafx, trafy, trafw , trafh, skip, locRETgainCurve, locRETtransCurve,
                         lllocalcurve2,locallutili, 
                         cllocalcurve2, localclutili,
                         lclocalcurve2, locallcutili,
@@ -1263,17 +1266,83 @@ void Crop::update(int todo)
                         loccompwavCurve, loccompwavutili,
                         loccomprewavCurve, loccomprewavutili,
                         locwavCurvehue, locwavhueutili,
+                        locwavCurvehuecont, locwavhueutilicont,
                         locwavCurveden, locwavdenutili,
                         locedgwavCurve, locedgwavutili,
                         loclmasCurve_wav,lmasutili_wav,
                         LHutili, HHutili, CHutili, HHutilijz, CHutilijz, LHutilijz, cclocalcurve2, localcutili, rgblocalcurve2, localrgbutili, localexutili, exlocalcurve2, hltonecurveloc2, shtonecurveloc2, tonecurveloc2, lightCurveloc2,
                         huerefblu, chromarefblu, lumarefblu, huere, chromare, lumare, sobelre, lastsav, false, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                         minCD, maxCD, mini, maxi, Tmean, Tsigma, Tmin, Tmax,
-                        meantme, stdtme, meanretie, stdretie, fab, maxicam, rdx, rdy, grx, gry, blx, bly, meanx, meany, meanxe, meanye, prim, ill, contsig, lightsig,
-                        highresi, nresi, highresi46, nresi46, Lhighresi, Lnresi, Lhighresi46, Lnresi46);
+                        meantme, stdtme, meanretie, stdretie, fab, maxicam, rdx, rdy, grx, gry, blx, bly, meanx, meany, meanxe, meanye, maxdat, prim, ill, contsig, lightsig, slopeg, linkrgb,
+                        resi, sharc, denocont, ghsbpwp, ghsbpwpvalue, savmadl, ghsbwslider, ghssym, ghsautsp, ghscolor, ghsmid, ghsmaxrgb, ghs3sig);
             }
+
+                       // for (int l = 0; l < 21; l++) {
+                        //    params.locallab.spots.at(sp).madlsav[l] = savmadl[l];
+                       // }
+
+                        LocallabListener::locallabDenoiseLC2 denoiselc2;
+                        denoiselc2.denocontrastaft = denocont;
+                        localldenoiselc2.push_back(denoiselc2);
             
-            
+                        LocallabListener::locallabDenoiseLC denoiselc;
+                        denoiselc.highres = resi[0];
+                        denoiselc.nres = resi[1];
+                        denoiselc.highres46 = resi[2];
+                        denoiselc.nres46 = resi[3];
+                        denoiselc.Lhighres = resi[5];
+                        denoiselc.Lnres = resi[4];
+                        denoiselc.Lhighres46 = resi[6];
+                        denoiselc.Lnres46 = resi[7];
+                        localldenoiselc.push_back(denoiselc);
+ 
+                        LocallabListener::locallabDenoiseMAD madllc;
+                        madllc.mad0 = savmadl[0];
+                        madllc.mad1 = savmadl[1];
+                        madllc.mad2 = savmadl[2];
+                        madllc.mad3 = savmadl[3];
+                        madllc.mad4 = savmadl[4];
+                        madllc.mad5 = savmadl[5];
+                        madllc.mad6 = savmadl[6];
+                        madllc.mad7 = savmadl[7];
+                        madllc.mad8 = savmadl[8];
+                        madllc.mad9 = savmadl[9];
+                        madllc.mad10 = savmadl[10];
+                        madllc.mad11 = savmadl[11];
+                        madllc.mad12 = savmadl[12];
+                        madllc.mad13 = savmadl[13];
+                        madllc.mad14 = savmadl[14];
+                        madllc.mad15 = savmadl[15];
+                        madllc.mad16 = savmadl[16];
+                        madllc.mad17 = savmadl[17];
+                        madllc.mad18 = savmadl[18];
+                        madllc.mad19 = savmadl[19];
+                        madllc.mad20 = savmadl[20];
+                        madllc.madlock = params.locallab.spots.at(sp).madllock;
+                        localldenoisemadl.push_back(madllc);
+ 
+                        LocallabListener::locallabsharAFT locsharaft;
+                        locsharaft.autocontrastaft = params.locallab.spots.at(sp).deconvAutoshar;
+                        locsharaft.sharcontrastaft = sharc;
+                        locallsharaft.push_back(locsharaft);
+                        /*
+                        if(locsharaft.autocontrastaft) {
+                            printf("Autoshar\n");
+                        } else {
+                            printf("Pa sautoshar\n");
+                        }
+                        */
+                        if (parent->locallListener) {
+                            if(params.locallab.spots.at(sp).expblur){//if not enable disable locallListener to avoid bad GUI behavior
+                                parent->locallListener->denChanged(localldenoiselc, params.locallab.selspot);
+                                if (params.locallab.spots.at(sp).lockmadl) {
+                                    parent->locallListener->madChanged(localldenoisemadl, params.locallab.selspot);
+                                }
+                                parent->locallListener->den2Changed(localldenoiselc2, params.locallab.selspot);
+                            }
+                            parent->locallListener->sharaftChanged(locallsharaft,params.locallab.selspot); 
+                        }
+
             if (sp + 1u < params.locallab.spots.size()) {
                 // do not copy for last spot as it is not needed anymore
                 lastorigCrop->CopyFrom(labnCrop);
@@ -1306,7 +1375,7 @@ void Crop::update(int todo)
     }
 
     // apply luminance operations
-    if (todo & (M_LUMINANCE + M_COLOR)) { //
+    if (todo & (M_LUMINANCE + M_COLOR)) {
         //I made a little change here. Rather than have luminanceCurve (and others) use in/out lab images, we can do more if we copy right here.
         labnCrop->CopyFrom(laboCrop);
 
@@ -1333,7 +1402,7 @@ void Crop::update(int todo)
         parent->ipf.labColorCorrectionRegions(labnCrop);
 
        // if ((params.colorappearance.enabled && !params.colorappearance.tonecie) || (!params.colorappearance.enabled)) {
-        if ((params.colorappearance.enabled && !params.colorappearance.tonecie) || (params.colorappearance.modelmethod != "02")) {
+        if ((params.colorappearance.enabled && !params.colorappearance.tonecie) || (!cam02)) {
             parent->ipf.EPDToneMap(labnCrop, 0, skip);
         }
 
@@ -1341,7 +1410,7 @@ void Crop::update(int todo)
         // for all treatments Defringe, Sharpening, Contrast detail , Microcontrast they are activated if "CIECAM" function are disabled
         if (skip == 1) {
           //  if ((params.colorappearance.enabled && !settings->autocielab)  || (!params.colorappearance.enabled)) {
-            if ((params.colorappearance.enabled && !settings->autocielab)  || (params.colorappearance.modelmethod != "02")) {
+            if ((params.colorappearance.enabled && !settings->autocielab)  || (!cam02)) {
                 parent->ipf.impulsedenoise(labnCrop);
                 parent->ipf.defringe(labnCrop);
             }
@@ -1349,7 +1418,7 @@ void Crop::update(int todo)
             parent->ipf.MLsharpen(labnCrop);
 
            // if ((params.colorappearance.enabled && !settings->autocielab)  || (!params.colorappearance.enabled)) {
-            if ((params.colorappearance.enabled && !settings->autocielab)  || (params.colorappearance.modelmethod != "02")) {
+            if ((params.colorappearance.enabled && !settings->autocielab)  || (!cam02)) {
                 parent->ipf.MLmicrocontrast(labnCrop);
                 parent->ipf.sharpening(labnCrop, params.sharpening, parent->sharpMask);
             }
@@ -1359,7 +1428,7 @@ void Crop::update(int todo)
 
         if (params.dirpyrequalizer.cbdlMethod == "aft") {
            // if (((params.colorappearance.enabled && !settings->autocielab)  || (!params.colorappearance.enabled))) {
-            if (((params.colorappearance.enabled && !settings->autocielab)  || (params.colorappearance.modelmethod != "02"))) {
+            if (((params.colorappearance.enabled && !settings->autocielab)  || (!cam02))) {
                 parent->ipf.dirpyrequalizer(labnCrop, skip);
                 //  parent->ipf.Lanczoslab (labnCrop,labnCrop , 1.f/skip);
             }
@@ -1443,7 +1512,6 @@ void Crop::update(int todo)
             WavOpacityCurveBY waOpacityCurveBY;
             WavOpacityCurveW waOpacityCurveW;
             WavOpacityCurveWL waOpacityCurveWL;
-
             LUTf wavclCurve;
 
             params.wavelet.getCurves(wavCLVCurve, wavdenoise, wavdenoiseh, wavblcurve, waOpacityCurveRG, waOpacityCurveSH, waOpacityCurveBY, waOpacityCurveW, waOpacityCurveWL);
@@ -1610,10 +1678,7 @@ void Crop::update(int todo)
                     provradius    = NULL;
                 }
 
-
             }
-        
-
 
         }
         
@@ -1622,6 +1687,23 @@ void Crop::update(int todo)
         if (params.icm.workingTRC != ColorManagementParams::WorkingTrc::NONE && params.icm.trcExp) {
             const int GW = labnCrop->W;
             const int GH = labnCrop->H;
+            if(params.icm.trcExp) {//local contrast
+                int level_hr = 7;
+                int maxlevpo = 9;
+                bool wavcurvecont = false; 
+                WaveletParams WaveParams = params.wavelet;
+                ColorManagementParams Colparams = params.icm;
+                WavOpacityCurveWL icmOpacityCurveWL;
+                Colparams.getCurves(icmOpacityCurveWL);
+                parent->ipf.complete_local_contrast(labnCrop, labnCrop, WaveParams, Colparams, icmOpacityCurveWL, skip, level_hr, maxlevpo, wavcurvecont);
+                bool enall = false;
+                enall = wavcurvecont && Colparams.wavExp;//enable message only if curve enable and Expander on
+                if (parent->primListener) {
+                    parent->primListener->wavlocChanged(float (maxlevpo), float (level_hr), enall);
+                }
+
+            }
+            
             std::unique_ptr<LabImage> provis;
             const float pres = 0.01f * params.icm.preser;
             if (pres > 0.f && params.icm.wprim != ColorManagementParams::Primaries::DEFAULT) {
@@ -1630,11 +1712,13 @@ void Crop::update(int todo)
             }
 
             const std::unique_ptr<Imagefloat> tmpImage1(new Imagefloat(GW, GH));
+            const std::unique_ptr<Imagefloat> tmpImage2(new Imagefloat(GW, GH));
 
             parent->ipf.lab2rgb(*labnCrop, *tmpImage1, params.icm.workingProfile);
+            tmpImage1.get()->copyData(tmpImage2.get());
 
-            const float gamtone = parent->params->icm.workingTRCGamma;
-            const float slotone = parent->params->icm.workingTRCSlope;
+            const float gamtone = parent->params->icm.wGamma;
+            const float slotone = parent->params->icm.wSlope;
 
             int illum = rtengine::toUnderlying(params.icm.will);
             const int prim = rtengine::toUnderlying(params.icm.wprim);
@@ -1646,10 +1730,7 @@ void Crop::update(int todo)
             int locprim = 0;
             bool gamutcontrol = params.icm.gamut;
             int catc = rtengine::toUnderlying(params.icm.wcat);
-            float rdx, rdy, grx, gry, blx, bly = 0.f;
-            float meanx, meany, meanxe, meanye = 0.f;
-            parent->ipf.workingtrc(0, tmpImage1.get(), tmpImage1.get(), GW, GH, -5, prof, 2.4, 12.92310, 0, ill, 0, 0, rdx, rdy, grx, gry, blx, bly,meanx, meany, meanxe, meanye, cmsDummy, true, false, false, false);
-            parent->ipf.workingtrc(0, tmpImage1.get(), tmpImage1.get(), GW, GH, 5, prof, gamtone, slotone, catc,  illum, prim, locprim, rdx, rdy, grx, gry, blx, bly, meanx, meany, meanxe, meanye, cmsDummy, false, true, true, gamutcontrol);
+            
             const int midton = params.icm.wmidtcie;
 
             if(midton != 0) {
@@ -1668,27 +1749,41 @@ void Crop::update(int todo)
                     params.bands[3] = sign(midton) * (mid - threshmid);     
                 }
                 parent->ipf.toneEqualizer(tmpImage1.get(), params, prof, skip, false);
-                }
+            }
+            
+            float rdx, rdy, grx, gry, blx, bly = 0.f;
+            float meanx, meany, meanxe, meanye, maxdat = 0.f;
+            double p[6] = {0., 0., 0., 0., 0., 0.};
 
-                const bool smoothi = params.icm.wsmoothcie;
-                if(smoothi) {
-                    ToneEqualizerParams params;
-                    params.enabled = true;
-                    params.regularization = 0.f;
-                    params.pivot = 0.f;
-                    params.bands[0] = 0;
-                    params.bands[1] = 0;
-                    params.bands[2] = 0;
-                    params.bands[3] = 0;
-                    params.bands[4] = -40;//arbitrary value to adapt with WhiteEvjz - here White Ev # 10
-                    params.bands[5] = -80;//8 Ev and above
-                    bool Evsix = true;
-                    if(Evsix) {//EV = 6 majority of images
-                        params.bands[4] = -15;
-                    }
-                
-                    parent->ipf.toneEqualizer(tmpImage1.get(), params, prof, skip, false);
+            parent->ipf.workingtrc(0, tmpImage1.get(), tmpImage1.get(), GW, GH, -5, prof, 2.4, 12.92310, 0, ill, 0, 0, rdx, rdy, grx, gry, blx, bly,meanx, meany, meanxe, meanye, maxdat, p, cmsDummy, true, false, false, false);
+            parent->ipf.workingtrc(0, tmpImage1.get(), tmpImage1.get(), GW, GH, 5, prof, gamtone, slotone, catc,  illum, prim, locprim, rdx, rdy, grx, gry, blx, bly, meanx, meany, meanxe, meanye, maxdat, p, cmsDummy, false, true, true, gamutcontrol);
+            float satu = params.icm.wapsat;
+            if(satu > 0.f) {
+                parent->ipf.apsatur(0, tmpImage1.get(), tmpImage2.get(), GW, GH, satu) ;    
+            }
+
+
+            const float smoothisli = params.icm.wsmoothciesli;
+            if(smoothisli > 0.f) {
+                ToneEqualizerParams params;
+                params.enabled = true;
+                params.regularization = 0.f;
+                params.pivot = 0.f;
+                params.bands[0] = 0;
+                params.bands[1] = 0;
+                params.bands[2] = 0;
+                params.bands[3] = 0;
+                params.bands[4] = -40;//arbitrary value to adapt with WhiteEvjz - here White Ev # 10
+                params.bands[5] = -80;//8 Ev and above
+                bool Evsix = true;
+                if(Evsix) {//EV = 6 majority of images
+                    params.bands[4] = -30 * smoothisli;
+                    float smmothsli5 = std::min(smoothisli, 1.f);
+                    params.bands[5] = -80 * smmothsli5;                     
                 }
+                
+                parent->ipf.toneEqualizer(tmpImage1.get(), params, prof, skip, false);
+            }
 
             parent->ipf.rgb2lab(*tmpImage1, *labnCrop, params.icm.workingProfile);
             //labnCrop and provis
@@ -1736,7 +1831,7 @@ void Crop::update(int todo)
             }
 
             float d, dj, yb; // not used after this block
-            parent->ipf.ciecam_02float(cieCrop, float (adap), 1, 2, labnCrop, &params, parent->customColCurve1, parent->customColCurve2, parent->customColCurve3,
+            parent->ipf.ciecam_02float(cieCrop, float (adap), 1, 2, labnCrop, &params, parent->customColCurve1, parent->customColCurvered, parent->customColCurvegreen,  parent->customColCurveblue, parent->customColCurve2, parent->customColCurve3,
                                        dummy, dummy, parent->CAMBrightCurveJ, parent->CAMBrightCurveQ, parent->CAMMean, 0, skip, execsharp, d, dj, yb, 1, parent->sharpMask);
         } else {
             // CIECAM is disabled, we free up its image buffer to save some space
@@ -1746,8 +1841,76 @@ void Crop::update(int todo)
 
             cieCrop = nullptr;
         }
-    }
+        bool exec = params.icm.wgamut != ColorManagementParams::Wwgamut::NONE  || params.icm.wgamgain != 0.f;
 
+        if (params.icm.workingTRC != ColorManagementParams::WorkingTrc::NONE && params.icm.trcExp  && exec) {
+
+            //compression gamut and gain at the end of process
+            const int GW = labnCrop->W;
+            const int GH = labnCrop->H;
+            TMatrix wprof = ICCStore::getInstance()->workingSpaceMatrix(params.icm.workingProfile);
+                const double wp[3][3] = {
+                    {wprof[0][0], wprof[0][1], wprof[0][2]},
+                    {wprof[1][0], wprof[1][1], wprof[1][2]},
+                    {wprof[2][0], wprof[2][1], wprof[2][2]}
+                };
+            TMatrix wiprof = ICCStore::getInstance()->workingSpaceInverseMatrix(params.icm.workingProfile);
+                const double wip[3][3] = {//improve precision with double
+                    {wiprof[0][0], wiprof[0][1], wiprof[0][2]},
+                    {wiprof[1][0], wiprof[1][1], wiprof[1][2]},
+                    {wiprof[2][0], wiprof[2][1], wiprof[2][2]}
+                };
+
+            Imagefloat* provcomp = new Imagefloat(GW, GH);
+
+#ifdef _OPENMP
+        #   pragma omp parallel for
+#endif
+            for (int i = 0; i < GH; ++i){
+                for (int j = 0; j < GW; ++j) {
+                    float X, Y, Z = 0.f;
+                    Color::Lab2XYZ(labnCrop->L[i][j], labnCrop->a[i][j], labnCrop->b[i][j] , X, Y, Z);
+                    Color::xyz2rgb(X, Y, Z, provcomp->r(i, j), provcomp->g(i, j), provcomp->b(i, j), wp);
+                }
+            }
+
+            const float gainev = pow_F(2.f, (float) params.icm.wgamgain);
+            if (params.icm.wgamgain != 0.f) {//Final gain in Ev
+           
+#ifdef _OPENMP
+        #   pragma omp parallel for
+#endif
+                for (int i = 0; i < GH; ++i){
+                    for (int j = 0; j < GW; ++j) {
+                        provcomp->r(i, j) *= gainev;
+                        provcomp->g(i, j) *= gainev;
+                        provcomp->b(i, j) *= gainev;
+                    }
+                }
+            }
+
+            float mac = 0.f;
+            float mac0 = 0.f;
+            float mac1 = 0.f;
+            float mac2 = 0.f;
+            int beginend = 1;
+            if (params.icm.wgamut != ColorManagementParams::Wwgamut::NONE) {
+                parent->ipf.gamutcompr(provcomp, provcomp, beginend, mac, mac0, mac1, mac2);
+            }
+
+#ifdef _OPENMP
+        #   pragma omp parallel for
+#endif
+            for (int i = 0; i < GH; ++i){
+                for (int j = 0; j < GW; ++j) {
+                    float x, y, z = 0.f;
+                    Color::rgbxyz (provcomp->r(i, j), provcomp->g(i, j), provcomp->b(i, j), x, y, z, wip);
+                    Color::XYZ2Lab(x, y, z, labnCrop->L[i][j], labnCrop->a[i][j], labnCrop->b[i][j]);
+            }
+            }
+            delete provcomp;
+        }
+    }
     // all pipette buffer processing should be finished now
     PipetteBuffer::setReady();
 
@@ -1850,7 +2013,7 @@ bool check_need_larger_crop_for_lcp_distortion(int fw, int fh, int x, int y, int
         return false;
     }
 
-    return (params.lensProf.useDist && (params.lensProf.useLensfun() || params.lensProf.useLcp()));
+    return (params.lensProf.useDist && (params.lensProf.useLensfun() || params.lensProf.useLcp() || params.lensProf.useMetadata()));
 }
 
 } // namespace
@@ -1859,7 +2022,7 @@ bool check_need_larger_crop_for_lcp_distortion(int fw, int fh, int x, int y, int
  * If the scale changes, this method will free all buffers and reallocate ones of the new size.
  * It will then tell to the SizeListener that size has changed (sizeChanged)
  */
-bool Crop::setCropSizes(int cropX, int cropY, int cropW, int cropH, int skip, bool internal)
+bool Crop::setCropSizes(const int cropX, const int cropY, const int cropW, const int cropH, const int skip, const bool internal)
 {
 
     if (!internal) {

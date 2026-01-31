@@ -24,8 +24,8 @@
 #include "version.h"
 #include <locale.h>
 
-#include "../rtengine/procparams.h"
-#include "../rtengine/settings.h"
+#include "rtengine/procparams.h"
+#include "rtengine/settings.h"
 
 
 namespace
@@ -58,7 +58,9 @@ CacheImageData::CacheImageData() :
     focusDist(0.f),
     iso(0),
     rating(0),
+    colorLabel(0),
     isHDR (false),
+    isDNG (false),
     isPixelShift (false),
     sensortype(rtengine::ST_NONE),
     sampleFormat(rtengine::IIOSF_UNKNOWN),
@@ -107,6 +109,10 @@ int CacheImageData::load (const Glib::ustring& fname)
 
                 if (keyFile.has_key ("General", "Rating")) {
                     rating     = keyFile.get_integer ("General", "Rating");
+                }
+
+                if (keyFile.has_key("General", "ColorLabel")) {
+                    colorLabel = keyFile.get_integer("General", "ColorLabel");
                 }
 
                 if (keyFile.has_key ("General", "InTrash")) {
@@ -192,6 +198,10 @@ int CacheImageData::load (const Glib::ustring& fname)
 
                     if (keyFile.has_key ("ExifInfo", "IsHDR")) {
                         isHDR = keyFile.get_boolean ("ExifInfo", "IsHDR");
+                    }
+
+                    if (keyFile.has_key ("ExifInfo", "IsDNG")) {
+                        isDNG = keyFile.get_boolean ("ExifInfo", "IsDNG");
                     }
 
                     if (keyFile.has_key ("ExifInfo", "IsPixelShift")) {
@@ -285,6 +295,7 @@ int CacheImageData::save (const Glib::ustring& fname)
     keyFile.set_integer ("General", "Format", format);
     keyFile.set_boolean ("General", "RecentlySaved", recentlySaved);
     keyFile.set_integer ("General", "Rating", rating);
+    keyFile.set_integer ("General", "ColorLabel", colorLabel);
 
     keyFile.set_string(INI_GROUP_XMP_SIDECAR, INI_XMP_SIDECAR_MD5, xmpSidecarMd5);
 
@@ -316,6 +327,7 @@ int CacheImageData::save (const Glib::ustring& fname)
         keyFile.set_double  ("ExifInfo", "FocusDist", focusDist);
         keyFile.set_integer ("ExifInfo", "ISO", iso);
         keyFile.set_boolean ("ExifInfo", "IsHDR", isHDR);
+        keyFile.set_boolean ("ExifInfo", "IsDNG", isDNG);
         keyFile.set_boolean ("ExifInfo", "IsPixelShift", isPixelShift);
         keyFile.set_string  ("ExifInfo", "ExpComp", expcomp);
     }
@@ -365,3 +377,17 @@ int CacheImageData::save (const Glib::ustring& fname)
     }
 }
 
+std::uint32_t CacheImageData::getFixBadPixelsConstant() const
+{
+    return 0;
+}
+
+bool CacheImageData::hasFixBadPixelsConstant() const
+{
+    return false;
+}
+
+std::vector<GainMap> CacheImageData::getGainMaps() const
+{
+    return std::vector<GainMap>();
+}

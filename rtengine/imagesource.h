@@ -1,4 +1,4 @@
-/*
+    /*
  *  This file is part of RawTherapee.
  *
  *  Copyright (c) 2004-2010 Gabor Horvath <hgabor@rawtherapee.com>
@@ -91,7 +91,7 @@ public:
 
     ~ImageSource            () override {}
     virtual int         load        (const Glib::ustring &fname) = 0;
-    virtual void        preprocess  (const procparams::RAWParams &raw, const procparams::LensProfParams &lensProf, const procparams::CoarseTransformParams& coarse, bool prepareDenoise = true) {};
+    virtual void        preprocess  (const procparams::RAWParams &raw, const procparams::LensProfParams &lensProf, const procparams::CoarseTransformParams& coarse, float &reddeha, float &greendeha, float &bluedeha, bool prepareDenoise = true) {};
     virtual void        demosaic    (const procparams::RAWParams &raw, bool autoContrast, double &contrastThreshold, bool cache = false) {};
     virtual void        retinex       (const procparams::ColorManagementParams& cmp, const procparams::RetinexParams &deh, const procparams::ToneCurveParams& Tc, LUTf & cdcurve, LUTf & mapcurve, const RetinextransmissionCurve & dehatransmissionCurve, const RetinexgaintransmissionCurve & dehagaintransmissionCurve, multi_array2D<float, 4> &conversionBuffer, bool dehacontlutili, bool mapcontlutili, bool useHsl, float &minCD, float &maxCD, float &mini, float &maxi, float &Tmean, float &Tsigma, float &Tmin, float &Tmax, LUTu &histLRETI) {};
     virtual void        retinexPrepareCurves       (const procparams::RetinexParams &retinexParams, LUTf &cdcurve, LUTf &mapcurve, RetinextransmissionCurve &retinextransmissionCurve, RetinexgaintransmissionCurve &retinexgaintransmissionCurve, bool &retinexcontlutili, bool &mapcontlutili, bool &useHsl, LUTu & lhist16RETI, LUTu & histLRETI) {};
@@ -204,15 +204,15 @@ public:
         return dirpyrdenoiseExpComp;
     }
     // functions inherited from the InitialImage interface
-    Glib::ustring getFileName () final
+    Glib::ustring getFileName() const final override
     {
         return fileName;
     }
-    cmsHPROFILE getEmbeddedProfile () final
+    cmsHPROFILE getEmbeddedProfile() const final override
     {
         return embProfile;
     }
-    const FramesMetaData* getMetaData () final
+    const FramesMetaData *getMetaData() const final override
     {
         return idata;
     }
@@ -224,6 +224,7 @@ public:
     virtual void captureSharpening(const procparams::CaptureSharpeningParams &sharpeningParams, bool showMask, double &conrastThreshold, double &radius) = 0;
     virtual void wbMul2Camera(double &rm, double &gm, double &bm) = 0;
     virtual void wbCamera2Mul(double &rm, double &gm, double &bm) = 0;
+    virtual bool getDeconvAutoRadius_capturesharpening_SE(float *out=nullptr) { return false; }
 
 };
 
