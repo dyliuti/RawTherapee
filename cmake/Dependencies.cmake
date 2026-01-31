@@ -93,6 +93,12 @@ macro(rt_setup_dependencies)
         pkg_check_modules(CANBERRA REQUIRED IMPORTED_TARGET libcanberra-gtk3)
         target_compile_definitions(PkgConfig::CANBERRA INTERFACE "USE_CANBERRA")
     endif()
+
+    if(WITH_SIMDE)
+        pkg_check_modules(SIMDE REQUIRED simde)
+        add_compile_definitions(RT_SIMDE)
+        add_compile_definitions(SIMDE_ENABLE_NATIVE_ALIASES)
+    endif()
 endmacro()
 
 macro(rt_fetch_content)
