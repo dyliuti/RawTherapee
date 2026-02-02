@@ -32,6 +32,7 @@
 #include "opthelper.h"
 #include "rt_algo.h"
 #include "rt_math.h"
+#include "simde_helper.h"
 #include "sleef.h"
 #include "imagefloat.h"
 #include "color.h"
@@ -548,8 +549,7 @@ void buildBlendMask(const float* const * luminance, float **blend, int W, int H,
                     blend[j][W - 2] = blend[j][W - 1] = blend[j][W - 3];
                 }
             }
-
-#if defined(__SSE2__) || defined(RT_SIMDE)
+#if defined(__SSE2__) || (defined(RT_SIMDE) && SIMDE_VERSION_CHECK(0, 8, 0))
             // flush denormals to zero for gaussian blur to avoid performance penalty if there are a lot of zero values in the mask
             const auto oldMode = _MM_GET_FLUSH_ZERO_MODE();
             _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
@@ -558,7 +558,7 @@ void buildBlendMask(const float* const * luminance, float **blend, int W, int H,
             // blur blend mask to smooth transitions
             gaussianBlur(blend, blend, W, H, 2.0);
 
-#if defined(__SSE2__) || defined(RT_SIMDE)
+#if defined(__SSE2__) || (defined(RT_SIMDE) && SIMDE_VERSION_CHECK(0, 8, 0))
             _MM_SET_FLUSH_ZERO_MODE(oldMode);
 #endif
         }
@@ -731,7 +731,7 @@ void buildBlendMask2(float** luminance, float **blend, int W, int H, float &cont
                 }
             }
 
-#if defined(__SSE2__) || defined(RT_SIMDE)
+#if defined(__SSE2__) || (defined(RT_SIMDE) && SIMDE_VERSION_CHECK(0, 8, 0))
             // flush denormals to zero for gaussian blur to avoid performance penalty if there are a lot of zero values in the mask
             const auto oldMode = _MM_GET_FLUSH_ZERO_MODE();
             _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
@@ -740,7 +740,7 @@ void buildBlendMask2(float** luminance, float **blend, int W, int H, float &cont
             // blur blend mask to smooth transitions
             gaussianBlur(blend, blend, W, H, blur_radius); //2.0);
 
-#if defined(__SSE2__) || defined(RT_SIMDE)
+#if defined(__SSE2__) || (defined(RT_SIMDE) && SIMDE_VERSION_CHECK(0, 8, 0))
             _MM_SET_FLUSH_ZERO_MODE(oldMode);
 #endif
         }

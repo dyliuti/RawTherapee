@@ -43,6 +43,7 @@
 #endif
 #include "rtgui/widgets/basic/thresholdselector.h"
 #include "imagesource.h"
+#include "simde_helper.h"
 
 #include "cplx_wavelet_dec.h"
 #include "ciecam02.h"
@@ -14738,7 +14739,7 @@ void ImProcFunctions::NLMeans(float **img, int strength, int detail_thresh, int 
 #endif
     {
 
-#if defined(__SSE2__) || defined(RT_SIMDE)
+#if defined(__SSE2__) || (defined(RT_SIMDE) && SIMDE_VERSION_CHECK(0, 8, 0))
         // flush denormals to zero to avoid performance penalty
         const auto oldMode = _MM_GET_FLUSH_ZERO_MODE();
         _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
@@ -14870,7 +14871,7 @@ void ImProcFunctions::NLMeans(float **img, int strength, int detail_thresh, int 
             }
         }
 
-#if defined(__SSE2__) || defined(RT_SIMDE)
+#if defined(__SSE2__) || (defined(RT_SIMDE) && SIMDE_VERSION_CHECK(0, 8, 0))
         _MM_SET_FLUSH_ZERO_MODE(oldMode);
 #endif
 
