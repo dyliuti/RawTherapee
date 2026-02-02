@@ -425,8 +425,8 @@ static INLINE vint2 vsrli2(vint2 x, int c)
     return vsrli(x, c);
 }
 #else
-#define vslli2(x,c) (vint2)_mm_slli_epi32((vint2)x, (int)c)
-#define vsrli2(x,c) (vint2)_mm_srli_epi32((vint2)x, (int)c)
+#define vslli2(x,c) (vint2)_mm_slli_epi32((vint2)(x), (int)(c))
+#define vsrli2(x,c) (vint2)_mm_srli_epi32((vint2)(x), (int)(c))
 #endif
 
 static INLINE vint2 vsrai2(vint2 x, int c)
