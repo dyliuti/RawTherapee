@@ -633,6 +633,15 @@ public:
         bool ghs_agx;
         bool ghs_smooth;
         bool ghs_inv;
+        bool mich_exp;
+        bool mich_spar;
+        bool mich_kpar;
+        bool mich_sat;
+        bool mich_out;
+        bool mich_black;
+        bool mich_white;
+        bool mich_high;
+        bool mich_jdx;
         bool multsh[7];
         bool highlights;
         bool h_tonalwidth;
