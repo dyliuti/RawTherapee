@@ -20,7 +20,7 @@ case "${_make##*/}" in
         _make_arg=
         ;;
     *)  _make="${_gmake:-make}"
-	case "$MAKEFLAGS" in
+        case "$MAKEFLAGS" in
             *--jobserver-auth*) ;;
             *)                  _make_arg="-j${LOGICAL_PROCESSORS}" ;;
         esac
