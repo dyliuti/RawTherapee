@@ -15,9 +15,9 @@ shift
 shift
 
 _gmake="$(set +e; type >/dev/null gmake && echo gmake)"  # gmake if on PATH, else empty
+_make_arg=
 case "${_make##*/}" in
     gmake|make) printf '%s\n' >&2 "-- ${0##*/} is using inherited $_make"
-        _make_arg=
         ;;
     *)  _make="${_gmake:-make}"
         case "$MAKEFLAGS" in
