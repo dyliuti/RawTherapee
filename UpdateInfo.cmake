@@ -97,7 +97,7 @@ if(REL_INFO_FILE STREQUAL REL_INFO_FILE-NOTFOUND)
         execute_process(COMMAND uname -ms OUTPUT_VARIABLE BUILDINFO_OS OUTPUT_STRIP_TRAILING_WHITESPACE)
         execute_process(COMMAND "${SHELL}" -c "LC_ALL=C ; LANG= ; export LC_ALL LANG ; DATE_FMT=\"+%a, %d %b %Y %T %z\"; date -u -d \"@${SOURCE_DATE_EPOCH}\" \"\$DATE_FMT\" 2>/dev/null || date -u -r \"${SOURCE_DATE_EPOCH}\" \"\$DATE_FMT\"" OUTPUT_VARIABLE BUILDINFO_DATE OUTPUT_STRIP_TRAILING_WHITESPACE)
         set(BUILDINFO_EPOCH "${SOURCE_DATE_EPOCH}")
-        set(BUILDINFO_UUID "git-${GIT_COMMIT_FULL}")  # use GIT_COMMIT instead of a UUID
+        set(BUILDINFO_UUID "git-${GIT_COMMIT_FULL}")  # use GIT_COMMIT_FULL instead of a UUID
     else()
         execute_process(COMMAND uname -mrs OUTPUT_VARIABLE BUILDINFO_OS OUTPUT_STRIP_TRAILING_WHITESPACE)
         string(TIMESTAMP BUILDINFO_DATE "%a, %d %b %Y %H:%M:%S %z" UTC)
