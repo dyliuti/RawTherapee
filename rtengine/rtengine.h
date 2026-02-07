@@ -52,7 +52,7 @@ class LUT;
 using LUTu = LUT<uint32_t>;
 
 class EditDataProvider;
-class GainMap;
+struct GainMap;
 
 namespace rtengine
 {
