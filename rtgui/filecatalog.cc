@@ -1045,7 +1045,7 @@ void FileCatalog::deleteRequested(const std::vector<FileBrowserEntry*>& tbe, boo
             // remove from browser
             delete fileBrowser->delEntry (fname);
             // remove from cache
-            cacheMgr->deleteEntry (fname);
+            cacheMgr->clearFromCache (fname, true);
             // delete from file system
             ::g_remove (fname.c_str ());
             // delete paramfile if found
@@ -1827,7 +1827,7 @@ void FileCatalog::reparseDirectory ()
         --previewsLoaded;
     }
     for (const auto& toDelete : fileNamesToDel) {
-        cacheMgr->deleteEntry(toDelete);
+        cacheMgr->clearFromCache(toDelete, true);
     }
 
     if (!fileNamesToDel.empty()) {
