@@ -670,8 +670,10 @@ void ToneCurve::adjusterChanged(Adjuster* a, double newval)
 
     if (a == expcomp) {
         costr = Glib::ustring::format(std::setw(3), std::fixed, std::setprecision(2), a->getValue());
+    } else if (a==hlth) {
+        costr = Glib::ustring::format(std::fixed, std::setprecision(2), a->getValue());
     } else {
-        costr = Glib::ustring::format((int)a->getValue());
+        costr = Glib::ustring::format(a->getIntValue());
     }
 
     if (a == expcomp) {
