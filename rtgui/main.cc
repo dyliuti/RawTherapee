@@ -311,7 +311,6 @@ private:
                 [] (gpointer data) -> gboolean {
                     Data *d = static_cast<Data *> (data);
                     d->filecatalog->openRequested (d->entries);
-                    d->filecatalog->selectImage (d->lastfilename, true);
                     delete d;
                     return FALSE;
                 };

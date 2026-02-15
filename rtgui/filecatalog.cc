@@ -1658,7 +1658,14 @@ void FileCatalog::categoryButtonToggled (Gtk::ToggleButton* b, bool isMouseClick
 
 void FileCatalog::showRecursiveToggled()
 {
-    App::get().mut_options().browseRecursive = bRecursive->get_active();
+    bool state = bRecursive->get_active();
+
+    if (state == App::get().options().browseRecursive) {
+        // avoid unnecessary calls to dirSelected; this can happen when file catalog is reset to an older state
+        return;
+    }
+
+    App::get().mut_options().browseRecursive = state;
 
     // Killing background threads can sometimes block the UI for a long time,
     // This may be a spot where giving the user information is needed.
@@ -1793,6 +1800,40 @@ void FileCatalog::filterChanged ()
     // this needs further analysis and cleanup
     fileBrowser->applyFilter (getFilter());
     _refreshProgressBar();
+}
+
+void FileCatalog::saveResetState ()
+{
+    resetData.directory = selectedDirectory;
+    resetData.recursive = App::get().options().browseRecursive;
+}
+
+bool FileCatalog::restoreResetState ()
+{
+    bool ret = false;
+
+    if (resetData.recursive != App::get().options().browseRecursive) {
+        // I think the program flow here needs to be explained:
+        // The App::get().mut_options().browseRecursive is indeed set by the signal of the toggle button "showRecursiveToggled()"
+        // However, the signal is handled only after the execution returns to the framework. The "buttonBrowsePathPressed()"
+        // on the other hand instantly executes "DirBrowser::selectDir". If the recursive value is not set when this executes, the
+        // directory might not contain the image of the "refImageForOpen_fname" variable or the one next to it that is supposed to
+        // be opened.
+        if (resetData.directory != selectedDirectory) {
+            // this can be set only when "DirBrowser::selectDir" is called regardless of the recursive toggle or the toggle will get blocked
+            App::get().mut_options().browseRecursive = resetData.recursive;
+        }
+        bRecursive->set_active(resetData.recursive);
+        ret = true;
+    }
+
+    if (resetData.directory != selectedDirectory) {
+        BrowsePath->set_text(resetData.directory);
+        buttonBrowsePathPressed ();
+        ret = true;
+    }
+
+    return ret;
 }
 
 void FileCatalog::reparseDirectory ()
@@ -2229,68 +2270,42 @@ void FileCatalog::toggleRightPanel()
 
 void FileCatalog::selectImage (Glib::ustring fname, bool clearFilters)
 {
+    if (clearFilters) { // clear all filters
+        Query->set_text("");
+        categoryButtonToggled(bFilterClear, false);
 
-    Glib::ustring dirname = Glib::path_get_dirname(fname);
-
-    if (!dirname.empty()) {
-        BrowsePath->set_text(dirname);
-
-
-        if (clearFilters) { // clear all filters
-            Query->set_text("");
-            categoryButtonToggled(bFilterClear, false);
-
-            // disable exif filters
-            if (filterPanel->isEnabled()) {
-                filterPanel->setEnabled (false);
-            }
+        // disable exif filters
+        if (filterPanel->isEnabled()) {
+            filterPanel->setEnabled (false);
         }
+    }
 
-        if (BrowsePath->get_text() != selectedDirectory) {
-            // reload or refresh thumbs and select image
-            buttonBrowsePathPressed ();
-            // the actual selection of image will be handled asynchronously at the end of FileCatalog::previewsFinishedUI
-            imageToSelect_fname = fname;
-        } else {
-            // FileCatalog::filterChanged ();//this will be replaced by queue_draw() in fileBrowser->selectImage
-            fileBrowser->selectImage(fname);
-            imageToSelect_fname = "";
-        }
+    if (restoreResetState()) {
+        // Directory was changed -
+        // If the user has traversed around directories in the File Browser and now wants to
+        // reset the file catalog to the directory of the opened image with X or Y key
+        //
+        // the actual selection of image will be handled asynchronously at the end of FileCatalog::previewsFinishedUI
+        imageToSelect_fname = fname;
+    } else {
+        fileBrowser->selectImage(fname);
+        imageToSelect_fname = "";
     }
 }
 
 
-void FileCatalog::openNextPreviousEditorImage (Glib::ustring fname, bool clearFilters, eRTNav nextPrevious)
+void FileCatalog::openNextPreviousEditorImage (Glib::ustring fname, eRTNav nextPrevious)
 {
-
-    Glib::ustring dirname = Glib::path_get_dirname(fname);
-
-    if (!dirname.empty()) {
-        BrowsePath->set_text(dirname);
-
-
-        if (clearFilters) { // clear all filters
-            Query->set_text("");
-            categoryButtonToggled(bFilterClear, false);
-
-            // disable exif filters
-            if (filterPanel->isEnabled()) {
-                filterPanel->setEnabled (false);
-            }
-        }
-
-        if (BrowsePath->get_text() != selectedDirectory) {
-            // reload or refresh thumbs and select image
-            buttonBrowsePathPressed ();
-            // the actual selection of image will be handled asynchronously at the end of FileCatalog::previewsFinishedUI
-            refImageForOpen_fname = fname;
-            actionNextPrevious = nextPrevious;
-        } else {
-            // FileCatalog::filterChanged ();//this was replace by queue_draw() in fileBrowser->selectImage
-            fileBrowser->openNextPreviousEditorImage(fname, nextPrevious);
-            refImageForOpen_fname = "";
-            actionNextPrevious = NAV_NONE;
-        }
+    if (restoreResetState()) {
+        // Directory was changed -
+        // If the user has traversed around directories in the File Browser and now wants to
+        // continue from the image opened in the editor with SHIFT+F3/F4 keys
+        refImageForOpen_fname = fname;
+        actionNextPrevious = nextPrevious;
+    } else {
+        fileBrowser->openNextPreviousEditorImage(fname, nextPrevious);
+        refImageForOpen_fname = "";
+        actionNextPrevious = NAV_NONE;
     }
 }
 

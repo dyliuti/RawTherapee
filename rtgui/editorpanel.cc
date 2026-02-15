@@ -1258,6 +1258,9 @@ void EditorPanel::open (Thumbnail* tmb, rtengine::InitialImage* isrc)
     openThm = tmb;
 
     fname = openThm->getFileName();
+    if (fPanel && fPanel->fileCatalog) {
+        fPanel->fileCatalog->saveResetState();
+    }
     lastSaveAsFileName = removeExtension (Glib::path_get_basename (fname));
 
     previewHandler = new PreviewHandler ();
@@ -2309,14 +2312,14 @@ bool EditorPanel::saveImmediately (const Glib::ustring &filename, const SaveForm
 void EditorPanel::openPreviousEditorImage()
 {
     if (!App::get().isSimpleEditor() && fPanel && !fname.empty()) {
-        fPanel->fileCatalog->openNextPreviousEditorImage (fname, false, NAV_PREVIOUS);
+        fPanel->fileCatalog->openNextPreviousEditorImage (fname, NAV_PREVIOUS);
     }
 }
 
 void EditorPanel::openNextEditorImage()
 {
     if (!App::get().isSimpleEditor() && fPanel && !fname.empty()) {
-        fPanel->fileCatalog->openNextPreviousEditorImage (fname, false, NAV_NEXT);
+        fPanel->fileCatalog->openNextPreviousEditorImage (fname, NAV_NEXT);
     }
 }
 
