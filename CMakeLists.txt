@@ -195,6 +195,7 @@ option(WITH_PROF "Build with profiling instrumentation" OFF)
 option(WITH_SYSTEM_KLT "Build using system KLT library." OFF)
 option(WITH_SYSTEM_LIBRAW "Build using system LibRaw library." OFF)
 option(OPTION_OMP "Build with OpenMP support" ON)
+option(WITH_SIMDE "Build with SIMD Everywhere support" OFF)
 option(
     STRICT_MUTEX
     "True (recommended): MyMutex will behave like POSIX Mutex; False: MyMutex will behave like POSIX RecMutex; Note: forced to ON for Debug builds"

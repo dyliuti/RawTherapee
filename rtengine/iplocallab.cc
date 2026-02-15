@@ -43,6 +43,7 @@
 #endif
 #include "rtgui/widgets/basic/thresholdselector.h"
 #include "imagesource.h"
+#include "simde_helper.h"
 
 #include "cplx_wavelet_dec.h"
 #include "ciecam02.h"
@@ -457,7 +458,7 @@ float igammalog(float x, float p, float s, float g2, float g4)
     return x <= g2 ? x / s : pow_F((x + g4) / (1.f + g4), p);//continuous
 }
 
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 vfloat igammalog(vfloat x, vfloat p, vfloat s, vfloat g2, vfloat g4)
 {
     //  return x <= g2 ? x / s : pow_F((x + g4) / (1.f + g4), p);//continuous
@@ -470,7 +471,7 @@ float gammalog(float x, float p, float s, float g3, float g4)
     return x <= g3 ? x * s : (1.f + g4) * xexpf(xlogf(x) / p) - g4;//used by Nlmeans
 }
 
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 vfloat gammalog(vfloat x, vfloat p, vfloat s, vfloat g3, vfloat g4)
 {
     //  return x <= g3 ? x * s : (1.f + g4) * xexpf(xlogf(x) / p) - g4;//continuous
@@ -3766,7 +3767,7 @@ void ImProcFunctions::ciecamloc_02float(struct local_params& lp, int sp, LabImag
     const float pow1 = pow_F(1.64f - pow_F(0.29f, n), 0.73f);
     float nj, nbbj, ncbj, czj, awj, flj;
     Ciecam02::initcam2float(yb2, pilotout, f2,  la2,  xw2,  yw2,  zw2, nj, dj, nbbj, ncbj, czj, awj, flj, c16, plum);
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
     const float reccmcz = 1.f / (c2 * czj);
 #endif
     const float epsil = 0.0001f;
@@ -4678,14 +4679,14 @@ void ImProcFunctions::ciecamloc_02float(struct local_params& lp, int sp, LabImag
             }
         }
 
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
         int bufferLength = ((width + 3) / 4) * 4; // bufferLength has to be a multiple of 4
 #endif
 #ifdef _OPENMP
         #pragma omp parallel if (multiThread)
 #endif
         {
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
             // one line buffer per channel and thread
             float Jbuffer[bufferLength] ALIGNED16;
             float Cbuffer[bufferLength] ALIGNED16;
@@ -4699,7 +4700,7 @@ void ImProcFunctions::ciecamloc_02float(struct local_params& lp, int sp, LabImag
 #endif
 
             for (int i = 0; i < height; i++) {
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
                 // vectorized conversion from Lab to jchqms
                 int k;
                 vfloat c655d35 = F2V(655.35f);
@@ -4753,7 +4754,7 @@ void ImProcFunctions::ciecamloc_02float(struct local_params& lp, int sp, LabImag
                 for (int j = 0; j < width; j++) {
                     float J, C, h, Q, M, s;
 
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
                     // use precomputed values from above
                     J = Jbuffer[j];
                     C = Cbuffer[j];
@@ -4952,7 +4953,7 @@ void ImProcFunctions::ciecamloc_02float(struct local_params& lp, int sp, LabImag
                     h = hpro;
                     s = spro;
 
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
                     // write to line buffers
                     Jbuffer[j] = J;
                     Cbuffer[j] = C;
@@ -4977,7 +4978,7 @@ void ImProcFunctions::ciecamloc_02float(struct local_params& lp, int sp, LabImag
 #endif
                 }
 
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
                 // process line buffers
                 float *xbuffer = Qbuffer;
                 float *ybuffer = Mbuffer;
@@ -6870,7 +6871,7 @@ void ImProcFunctions::retinex_pde(const float * datain, float * dataout, int bfw
         #pragma omp parallel if (multiThread)
 #endif
         {
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
             const vfloat exponentv = F2V(exponent);
 #endif
 #ifdef _OPENMP
@@ -6879,7 +6880,7 @@ void ImProcFunctions::retinex_pde(const float * datain, float * dataout, int bfw
 
             for (int y = 0; y < bfh ; y++) {//mix two fftw Laplacian : plein if dE near ref
                 int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                 for (; x < bfw - 3; x += 4) {
                     STVFU(data_fft[y * bfw + x], intp(pow_F(LVFU(dE[y * bfw + x]), exponentv), LVFU(data_fft[y * bfw + x]), LVFU(data_fft04[y * bfw + x])));
@@ -7247,7 +7248,7 @@ void ImProcFunctions::maskcalccol(int call, bool invmask, bool pde, int bfw, int
         #pragma omp parallel if (multiThread)
 #endif
         {
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
             float atan2Buffer[bfw] ALIGNED64;
 //            float atan2BufferH[bfw] ALIGNED64;
 #endif
@@ -7256,7 +7257,7 @@ void ImProcFunctions::maskcalccol(int call, bool invmask, bool pde, int bfw, int
 #endif
 
             for (int ir = 0; ir < bfh; ir++) {
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                 if (lochhmasCurve && lhmasutili) {
                     int i = 0;
@@ -7307,7 +7308,7 @@ void ImProcFunctions::maskcalccol(int call, bool invmask, bool pde, int bfw, int
                     }
 
                     if (lochhmasCurve && lhmasutili) {
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
                         const float huema = atan2Buffer[jr];
 #else
                         // const float huema = xatan2f(bufcolorig->b[ir][jr], bufcolorig->a[ir][jr]);
@@ -8515,7 +8516,7 @@ void ImProcFunctions::transit_shapedetect(int senstype, const LabImage * bufexpo
     #pragma omp parallel if (multiThread)
 #endif
     {
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
         float atan2Buffer[transformed->W] ALIGNED16;
 #endif
 
@@ -8526,7 +8527,7 @@ void ImProcFunctions::transit_shapedetect(int senstype, const LabImage * bufexpo
         for (int y = ystart; y < yend; y++) {
             const int loy = cy + y;
 
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
             if (HHutili || senstype == 7) {
                 int i = xstart;
@@ -8564,7 +8565,7 @@ void ImProcFunctions::transit_shapedetect(int senstype, const LabImage * bufexpo
                 float rhue = 0;
 
                 if (HHutili || senstype == 7) {
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
                     rhue = atan2Buffer[x];
 #else
                     rhue = xatan2f(origblur->b[y - ystart][x - xstart], origblur->a[y - ystart][x - xstart]);
@@ -9792,7 +9793,7 @@ void ImProcFunctions::transit_shapedetect2(int sp, float meantm, float stdtm, in
     #pragma omp parallel if (multiThread)
 #endif
     {
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 //        float atan2Buffer[transformed->W] ALIGNED16;//keep in case of
 #endif
 
@@ -9803,7 +9804,7 @@ void ImProcFunctions::transit_shapedetect2(int sp, float meantm, float stdtm, in
         for (int y = 0; y < bfh; y++) {
 
             const int loy = y + ystart + cy;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
             /* //keep in case of
                         int i = 0;
 
@@ -9839,7 +9840,7 @@ void ImProcFunctions::transit_shapedetect2(int sp, float meantm, float stdtm, in
                 }
 
 //                float hueh = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 //                hueh = atan2Buffer[x];
 #else
 //                hueh = xatan2f(maskptr->b[y][x], maskptr->a[y][x]);
@@ -10600,7 +10601,7 @@ void ImProcFunctions::Compresslevels(float **Source, int W_L, int H_L, float com
     #pragma omp parallel if (multiThread)
 #endif
     {
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
         const vfloat apv = F2V(ap);
         const vfloat bpv = F2V(bp);
         const vfloat a0v = F2V(a0);
@@ -10619,7 +10620,7 @@ void ImProcFunctions::Compresslevels(float **Source, int W_L, int H_L, float com
 
         for (int y = 0; y < H_L; y++) {
             int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
             for (; x < W_L - 3; x += 4) {
                 vfloat exponev = onev;
@@ -10824,7 +10825,7 @@ void ImProcFunctions::wavcont(const struct local_params& lp, float ** tmp, wavel
                 #pragma omp parallel if (multiThread)
 #endif
                 {
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
                     const vfloat lutFactorv = F2V(lutFactor);
 #endif
 #ifdef _OPENMP
@@ -10834,7 +10835,7 @@ void ImProcFunctions::wavcont(const struct local_params& lp, float ** tmp, wavel
                     for (int y = 0; y < H_L; y++) {
                         int x = 0;
                         int j = y * W_L;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                         for (; x < W_L - 3; x += 4, j += 4) {
                             const vfloat valv = LVFU(WavL[j]);
@@ -10881,7 +10882,7 @@ void ImProcFunctions::wavcont(const struct local_params& lp, float ** tmp, wavel
                 #pragma omp parallel if (multiThread)
 #endif
                 {
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
                     const vfloat c327d68v = F2V(327.68f);
                     const vfloat factorv = F2V(factor);
                     const vfloat sixv = F2V(6.f);
@@ -10896,7 +10897,7 @@ void ImProcFunctions::wavcont(const struct local_params& lp, float ** tmp, wavel
 
                     for (int i = 0; i < H_L; ++i) {
                         int j = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                         for (; j < W_L - 3; j += 4) {
                             const vfloat LL100v = LC2VFU(tmp[i * 2][j * 2]) / c327d68v;
@@ -10967,7 +10968,7 @@ void ImProcFunctions::wavcont(const struct local_params& lp, float ** tmp, wavel
                 #pragma omp parallel if (multiThread)
 #endif
                 {
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
                     const vfloat lutFactorv = F2V(lutFactor);
 #endif
 #ifdef _OPENMP
@@ -10977,7 +10978,7 @@ void ImProcFunctions::wavcont(const struct local_params& lp, float ** tmp, wavel
                     for (int y = 0; y < H_L; y++) {
                         int x = 0;
                         int j = y * W_L;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                         for (; x < W_L - 3; x += 4, j += 4) {
                             const vfloat valv = LVFU(wav_L[j]);
@@ -12210,7 +12211,7 @@ void ImProcFunctions::DeNoise(int sp, int call, int aut,  bool noiscfactiv, cons
 
                 for (int y = 0; y < GH; ++y) {
                     int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                     for (; x < GW - 3; x += 4) {
                         STVFU(tmp1.L[y][x], F2V(32768.f) * igammalog(LVFU(tmp1.L[y][x]) / F2V(32768.f), F2V(gamma), F2V(ts), F2V(g_a[2]), F2V(g_a[4])));
@@ -12709,7 +12710,7 @@ void ImProcFunctions::DeNoise(int sp, int call, int aut,  bool noiscfactiv, cons
 
                 for (int y = 0; y < GH; ++y) {//apply inverse gamma 3.f and put result in range 32768.f
                     int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                     for (; x < GW - 3; x += 4) {
                         STVFU(tmp1.L[y][x], F2V(32768.f) * gammalog(LVFU(tmp1.L[y][x]) / F2V(32768.f), F2V(gamma), F2V(ts), F2V(g_a[3]), F2V(g_a[4])));
@@ -13135,7 +13136,7 @@ void ImProcFunctions::DeNoise(int sp, int call, int aut,  bool noiscfactiv, cons
                     for (int y = 0; y < bfh; ++y) {
                         int x = 0;
 
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                         for (; x <  bfw - 3; x += 4) {
                             STVFU(bufwv.L[y][x], F2V(32768.f) * igammalog(LVFU(bufwv.L[y][x]) / F2V(32768.f), F2V(gamma), F2V(ts), F2V(g_a[2]), F2V(g_a[4])));
@@ -13638,7 +13639,7 @@ void ImProcFunctions::DeNoise(int sp, int call, int aut,  bool noiscfactiv, cons
                     for (int y = 0; y < bfh ; ++y) {//apply inverse gamma 3.f and put result in range 32768.f
                         int x = 0;
 
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                         for (; x < bfw  - 3; x += 4) {
 
@@ -14160,7 +14161,7 @@ void ImProcFunctions::avoidcolshi(const struct local_params& lp, int sp, LabImag
         #pragma omp parallel if (multiThread)
 #endif
         {
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
             float atan2Buffer[transformed->W] ALIGNED16;
             float sqrtBuffer[transformed->W] ALIGNED16;
             float sincosyBuffer[transformed->W] ALIGNED16;
@@ -14181,7 +14182,7 @@ void ImProcFunctions::avoidcolshi(const struct local_params& lp, int sp, LabImag
                     continue;
                 }
 
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
                 int i = 0;
 
                 for (; i < transformed->W - 3; i += 4) {
@@ -14242,7 +14243,7 @@ void ImProcFunctions::avoidcolshi(const struct local_params& lp, int sp, LabImag
 
                     float Lprov1 = transformed->L[y][x] / 327.68f;
                     float2 sincosval;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
                     float HH = atan2Buffer[x]; // reading HH from line buffer even if line buffer is not filled is faster than branching
                     float Chprov1 = sqrtBuffer[x];
                     sincosval.y = sincosyBuffer[x];
@@ -14619,7 +14620,7 @@ void ImProcFunctions::NLMeans(float **img, int strength, int detail_thresh, int 
 
     for (int y = 0; y < H; ++y) {
         int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
         for (; x < W - 3; x += 4) {
             STVFU(img[y][x], F2V(65536.f) * igammalog(LVFU(img[y][x]) / F2V(32768.f), F2V(gamma), F2V(ts), F2V(g_a[2]), F2V(g_a[4])));
@@ -14733,7 +14734,7 @@ void ImProcFunctions::NLMeans(float **img, int strength, int detail_thresh, int 
     const int ntiles_y = int(std::ceil(float(HH) / (tile_size - 2 * border)));
     const int ntiles = ntiles_x * ntiles_y;
 
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
     const vfloat zerov = F2V(0.0);
     const vfloat v1e_5f = F2V(1e-5f);
     const vfloat v65536f = F2V(65536.f);
@@ -14744,7 +14745,7 @@ void ImProcFunctions::NLMeans(float **img, int strength, int detail_thresh, int 
 #endif
     {
 
-#ifdef __SSE2__
+#if defined(__SSE2__) || (defined(RT_SIMDE) && SIMDE_VERSION_CHECK(0, 8, 0))
         // flush denormals to zero to avoid performance penalty
         const auto oldMode = _MM_GET_FLUSH_ZERO_MODE();
         _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
@@ -14802,7 +14803,7 @@ void ImProcFunctions::NLMeans(float **img, int strength, int detail_thresh, int 
                     for (int yy = start_y + border; yy < end_y - border; ++yy) {
                         int y = yy - border;
                         int xx = start_x + border;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                         for (; xx < end_x - border - 3; xx += 4) {
                             int x = xx - border;
@@ -14851,7 +14852,7 @@ void ImProcFunctions::NLMeans(float **img, int strength, int detail_thresh, int 
             for (int yy = start_y + border; yy < end_y - border; ++yy) {
                 int y = yy - border;
                 int xx = start_x + border;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                 for (; xx < end_x - border - 3; xx += 4) {
                     int x = xx - border;
@@ -14875,7 +14876,7 @@ void ImProcFunctions::NLMeans(float **img, int strength, int detail_thresh, int 
             }
         }
 
-#ifdef __SSE2__
+#if defined(__SSE2__) || (defined(RT_SIMDE) && SIMDE_VERSION_CHECK(0, 8, 0))
         _MM_SET_FLUSH_ZERO_MODE(oldMode);
 #endif
 
@@ -14887,7 +14888,7 @@ void ImProcFunctions::NLMeans(float **img, int strength, int detail_thresh, int 
 
     for (int y = 0; y < H; ++y) {//apply inverse gamma 3.f and put result in range 32768.f
         int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
         for (; x < W - 3; x += 4) {
             STVFU(img[y][x], F2V(32768.f) * gammalog(LVFU(dst[y][x]) / F2V(65536.f), F2V(gamma), F2V(ts), F2V(g_a[3]), F2V(g_a[4])));
@@ -18002,7 +18003,7 @@ void ImProcFunctions::Lab_Local(
 
                         for (int y = 0; y < bfh; ++y) {
                             int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                             for (; x < bfw - 3; x += 4) {
                                 STVFU(bufexpfin->L[y][x], F2V(32768.f) * igammalog(LVFU(bufexpfin->L[y][x]) / F2V(32768.f), F2V(gamma1), F2V(ts1), F2V(g_a[2]), F2V(g_a[4])));
@@ -18032,7 +18033,7 @@ void ImProcFunctions::Lab_Local(
 
                         for (int y = 0; y < bfh; ++y) {//apply inverse gamma 3.f and put result in range 32768.f
                             int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                             for (; x < bfw - 3; x += 4) {
                                 STVFU(bufexpfin->L[y][x], F2V(32768.f) * gammalog(LVFU(bufexpfin->L[y][x]) / F2V(32768.f), F2V(gamma1), F2V(ts1), F2V(g_a[3]), F2V(g_a[4])));
@@ -19837,7 +19838,7 @@ void ImProcFunctions::Lab_Local(
 
                         for (int y = 0; y < tmp1->H; ++y) {
                             int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                             for (; x < tmp1->W - 3; x += 4) {
                                 STVFU(tmp1->L[y][x], F2V(32768.f) * igammalog(LVFU(tmp1->L[y][x]) / F2V(32768.f), F2V(gamma), F2V(ts), F2V(g_a[2]), F2V(g_a[4])));
@@ -19875,7 +19876,7 @@ void ImProcFunctions::Lab_Local(
 
                         for (int y = 0; y < tmp1->H; ++y) {//apply inverse gamma 3.f and put result in range 32768.f
                             int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                             for (; x < tmp1->W - 3; x += 4) {
                                 STVFU(tmp1->L[y][x], F2V(32768.f) * gammalog(LVFU(tmp1->L[y][x]) / F2V(32768.f), F2V(gamma), F2V(ts), F2V(g_a[3]), F2V(g_a[4])));
@@ -20185,7 +20186,7 @@ void ImProcFunctions::Lab_Local(
 
                 for (int y = 0; y < bfh; ++y) {
                     int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                     for (; x < bfw - 3; x += 4) {
                         STVFU(bufsh[y][x], F2V(32768.f) * igammalog(LVFU(bufsh[y][x]) / F2V(32768.f), F2V(gamma1), F2V(ts1), F2V(g_a[2]), F2V(g_a[4])));
@@ -20215,7 +20216,7 @@ void ImProcFunctions::Lab_Local(
 
                 for (int y = 0; y < bfh; ++y) {//apply inverse gamma 3.f and put result in range 32768.f
                     int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                     for (; x < bfw - 3; x += 4) {
                         STVFU(bufsh[y][x], F2V(32768.f) * gammalog(LVFU(bufsh[y][x]) / F2V(32768.f), F2V(gamma1), F2V(ts1), F2V(g_a[3]), F2V(g_a[4])));
@@ -20249,7 +20250,7 @@ void ImProcFunctions::Lab_Local(
 
                 for (int y = 0; y < bfh; ++y) {
                     int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                     for (; x < bfw - 3; x += 4) {
                         STVFU(original->L[y][x], F2V(32768.f) * igammalog(LVFU(original->L[y][x]) / F2V(32768.f), F2V(gamma1), F2V(ts1), F2V(g_a[2]), F2V(g_a[4])));
@@ -20280,7 +20281,7 @@ void ImProcFunctions::Lab_Local(
 
                 for (int y = 0; y < bfh; ++y) {//apply inverse gamma 3.f and put result in range 32768.f
                     int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                     for (; x < bfw - 3; x += 4) {
                         STVFU(original->L[y][x], F2V(32768.f) * gammalog(LVFU(original->L[y][x]) / F2V(32768.f), F2V(gamma1), F2V(ts1), F2V(g_a[3]), F2V(g_a[4])));
@@ -20325,7 +20326,7 @@ void ImProcFunctions::Lab_Local(
 
             for (int y = 0; y < GH; ++y) {
                 int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                 for (; x < GW - 3; x += 4) {
                     STVFU(original->L[y][x], F2V(32768.f) * igammalog(LVFU(original->L[y][x]) / F2V(32768.f), F2V(gamma1), F2V(ts1), F2V(g_a[2]), F2V(g_a[4])));
@@ -20355,7 +20356,7 @@ void ImProcFunctions::Lab_Local(
 
             for (int y = 0; y < GH; ++y) {//apply inverse gamma 3.f and put result in range 32768.f
                 int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                 for (; x < GW - 3; x += 4) {
                     STVFU(original->L[y][x], F2V(32768.f) * gammalog(LVFU(original->L[y][x]) / F2V(32768.f), F2V(gamma1), F2V(ts1), F2V(g_a[3]), F2V(g_a[4])));
@@ -20560,7 +20561,7 @@ void ImProcFunctions::Lab_Local(
 
                     for (int y = 0; y < bfh; ++y) {
                         int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                         for (; x < bfw - 3; x += 4) {
                             STVFU(bufexporig->L[y][x], F2V(32768.f) * igammalog(LVFU(bufexporig->L[y][x]) / F2V(32768.f), F2V(gamma1), F2V(ts1), F2V(g_a[2]), F2V(g_a[4])));
@@ -20902,7 +20903,7 @@ void ImProcFunctions::Lab_Local(
 
                         for (int y = 0; y < bfh; ++y) {//apply inverse gamma 3.f and put result in range 32768.f
                             int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                             for (; x < bfw - 3; x += 4) {
                                 STVFU(bufexpfin->L[y][x], F2V(32768.f) * gammalog(LVFU(bufexpfin->L[y][x]) / F2V(32768.f), F2V(gamma1), F2V(ts1), F2V(g_a[3]), F2V(g_a[4])));
@@ -21148,7 +21149,7 @@ void ImProcFunctions::Lab_Local(
 
                     for (int y = 0; y < bufcolorig->H; ++y) {
                         int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                         for (; x < bufcolorig->W - 3; x += 4) {
                             STVFU(bufcolorig->L[y][x], F2V(32768.f) * igammalog(LVFU(bufcolorig->L[y][x]) / F2V(32768.f), F2V(gamma1), F2V(ts1), F2V(g_a[2]), F2V(g_a[4])));
@@ -22230,7 +22231,7 @@ void ImProcFunctions::Lab_Local(
 
                             for (int y = 0; y < bfh; ++y) {//apply inverse gamma 3.f and put result in range 32768.f
                                 int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                                 for (; x < bfw - 3; x += 4) {
                                     STVFU(bufcolfin->L[y][x], F2V(32768.f) * gammalog(LVFU(bufcolfin->L[y][x]) / F2V(32768.f), F2V(gamma1), F2V(ts1), F2V(g_a[3]), F2V(g_a[4])));
@@ -23046,7 +23047,7 @@ void ImProcFunctions::Lab_Local(
 
                         for (int y = 0; y < bfh; ++y) {
                                 int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                             for (; x < bfw - 3; x += 4) {
                                 STVFU(tmpImage->r(y, x), F2V(65536.f) * gammalog(LVFU(srcp->r(y, x)), F2V(gamr), F2V(slr), F2V(g_ar[3]), F2V(g_ar[4])));
