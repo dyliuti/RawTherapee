@@ -52,7 +52,7 @@ class LUT;
 using LUTu = LUT<uint32_t>;
 
 class EditDataProvider;
-class GainMap;
+struct GainMap;
 
 namespace rtengine
 {
@@ -527,8 +527,12 @@ public:
         bool linkrgblc;
     };
 
+    struct locallabshMICHbw {//update information Michaelis black and white point
+        double mich_slider[2];
+        bool mich_auto;
+    };
 
-    struct locallabshGHSbw2 {//update sliders black and white point 
+    struct locallabshGHSbw2 {//update sliders black and white point
         double ghsbw_slider[2];
         bool ghs_auto;
     };
@@ -582,6 +586,7 @@ public:
     virtual void maiChanged(const std::vector<locallabsetLC> &csetlc, int selspot) = 0;
     virtual void sigChanged(const std::vector<locallabcieSIG> &ciesig, int selspot) = 0;
     virtual void ciebefChanged(const std::vector<locallabcieBEF> &ciebef, int selspot) = 0;
+    virtual void michbwChanged(const std::vector<locallabshMICHbw> &shmichbw, int selspot) = 0;
 
     virtual void sharbefChanged(const std::vector<locallabsharBEF> &sharbef, int selspot) = 0;
     virtual void sharaftChanged(const std::vector<locallabsharAFT> &sharaft, int selspot) = 0;
@@ -609,6 +614,9 @@ public:
     virtual void primChanged(float rx, float ry, float bx, float by, float gx, float gy) = 0;
     virtual void iprimChanged(float r_x, float r_y, float b_x, float b_y, float g_x, float g_y, float w_x, float w_y, float m_x, float m_y) = 0;
     virtual void wavlocChanged(double nlevel, double nmax, bool curveloc) = 0;
+    virtual void maxdatawtrc(float m_data) = 0;
+    virtual void maxdataend(float m_rgb, float m_sat, bool gamgain) = 0;
+
 };
 
 

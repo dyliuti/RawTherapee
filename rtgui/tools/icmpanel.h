@@ -75,6 +75,9 @@ protected:
     Adjuster* offstrc;
     Adjuster* pyrwavtrc;
     Adjuster* residtrc;
+    Gtk::Label* trcmaxdata;
+    Gtk::Label* rgbmaxdata;
+    Gtk::Label* satmaxdata;
 
     std::unique_ptr<CurveEditorGroup> opacityCurveEditorWLI;
     FlatCurveEditor* opacityShapeWLI;
@@ -91,7 +94,7 @@ protected:
     Adjuster* gresat;
     Adjuster* blurot;
     Adjuster* blusat;
-    
+
     Adjuster* preser;
     Adjuster* refi;
     Adjuster* shiftx;
@@ -172,6 +175,9 @@ private:
     rtengine::ProcEvent EvICMpyrwavtrc;
     rtengine::ProcEvent EvICMresidtrc;
     rtengine::ProcEvent EvICMwavExp;
+    rtengine::ProcEvent EvICMwgamut;
+    rtengine::ProcEvent EvICMwgampower;
+    rtengine::ProcEvent EvICMwgamgain;
 
     LabGrid *labgridcie;
     IdleRegister idle_register;
@@ -187,6 +193,11 @@ private:
     Gtk::Box* preBox;
     Gtk::Box* iVBox;
     Gtk::Box* wTRCBox;
+    Gtk::Frame* gamutcomp;
+
+    Gtk::Box* wgamutBox;
+    Gtk::Label* wgamutlab;
+
     Gtk::CheckButton* fbw;
     Gtk::CheckButton* gamut;
 
@@ -212,6 +223,11 @@ private:
     sigc::connection wprofnamesconn;
     MyComboBoxText* wTRC;
     sigc::connection wtrcconn;
+    MyComboBoxText* wgamut;
+    sigc::connection wgamutconn;
+    Adjuster* wgampower;
+    Adjuster* wgamgain;
+
     MyComboBoxText* will;
     sigc::connection willconn;
     MyComboBoxText* wprim;
@@ -267,12 +283,16 @@ public:
     void adjusterChanged(Adjuster* a, double newval) override;
     void primChanged (float rx, float ry, float bx, float by, float gx, float gy) override;
     void iprimChanged (float r_x, float r_y, float b_x, float b_y, float g_x, float g_y, float w_x, float w_y, float m_x, float m_y) override;
+    void maxdatawtrc(float m_data) override;
+    void maxdataend(float m_rgb, float m_sat, bool gamgain) override;
+
     void neutral_pressed();
     void curveChanged(CurveEditor* ce) override;
     void wavlocChanged(double nlevel, double nmax, bool curveloc) override;
 
     void wpChanged();
     void wtrcinChanged();
+    void wgamutChanged();
     void willChanged();
     void wprimChanged();
     void wcatChanged();

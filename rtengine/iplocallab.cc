@@ -43,6 +43,7 @@
 #endif
 #include "rtgui/widgets/basic/thresholdselector.h"
 #include "imagesource.h"
+#include "simde_helper.h"
 
 #include "cplx_wavelet_dec.h"
 #include "ciecam02.h"
@@ -59,6 +60,8 @@
 #pragma GCC diagnostic warning "-Wextra"
 #pragma GCC diagnostic warning "-Wdouble-promotion"
 
+
+
 namespace
 {
 
@@ -74,6 +77,21 @@ constexpr int TS = 64; // Tile size
 constexpr float epsilonw = 0.001f / (TS * TS); //tolerance
 constexpr int offset = 25; // shift between tiles
 constexpr double czlim = rtengine::RT_SQRT1_2;// 0.70710678118654752440;
+
+float clamp(float x, float lo, float hi)
+{
+    return fmax(fmin(x, hi), lo);
+}
+
+// Michaelis-Menten equation
+// Curiously we use the Michaelis-Menten equation, which is borrowed from biochemistry to describe enzyme kinetics
+float mm_curve(double x, double S, double K_eff)
+{
+    // Ensure K_eff is not zero to prevent division by zero if x is also zero.
+    // A very small K makes the curve rise very steeply.
+    return (S * x) / (fmax( K_eff, 1e-6) +  x);
+}
+
 
 constexpr float clipLoc(float x)
 {
@@ -127,9 +145,6 @@ float softlig(float a, float b, float minc, float maxc)
         return 2.f * a * (maxc - b) + std::sqrt(rtengine::LIM(a, 0.f, 2.f)) * (2.f * b - maxc);
     }
 }
-
-
-
 
 float softlig3(float a, float b)
 {
@@ -443,7 +458,7 @@ float igammalog(float x, float p, float s, float g2, float g4)
     return x <= g2 ? x / s : pow_F((x + g4) / (1.f + g4), p);//continuous
 }
 
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 vfloat igammalog(vfloat x, vfloat p, vfloat s, vfloat g2, vfloat g4)
 {
     //  return x <= g2 ? x / s : pow_F((x + g4) / (1.f + g4), p);//continuous
@@ -456,7 +471,7 @@ float gammalog(float x, float p, float s, float g3, float g4)
     return x <= g3 ? x * s : (1.f + g4) * xexpf(xlogf(x) / p) - g4;//used by Nlmeans
 }
 
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 vfloat gammalog(vfloat x, vfloat p, vfloat s, vfloat g3, vfloat g4)
 {
     //  return x <= g3 ? x * s : (1.f + g4) * xexpf(xlogf(x) / p) - g4;//continuous
@@ -723,6 +738,8 @@ struct local_params {
     bool islogcie; 
     bool issmoothcie; 
     bool issmoothghs;
+    float issmoothmich;
+
     float maxdataghs;
     float ghshp;
     int noiselequal;
@@ -1034,6 +1051,8 @@ static void calcLocalParams(int sp, int oW, int oH,  const LocallabParams& local
     lp.islogcie = locallab.spots.at(sp).logcie && locallab.spots.at(sp).expprecam;
     lp.issmoothcie = locallab.spots.at(sp).smoothcie;
     lp.issmoothghs = locallab.spots.at(sp).ghs_smooth;
+    lp.issmoothmich = locallab.spots.at(sp).mich_high;
+
     lp.maxdataghs = 0.f;
     lp.ghshp =  locallab.spots.at(sp).ghs_HP;
     lp.enaColorMask = locallab.spots.at(sp).enaColorMask && llsoftMask == 0 && llColorMaskinv == 0 && llSHMaskinv == 0 && llColorMask == 0 && llExpMaskinv == 0 && lllcMask == 0 && llsharMask == 0 && llExpMask == 0 && llSHMask == 0 && llcbMask == 0 && llretiMask == 0 && lltmMask == 0 && llblMask == 0 && llvibMask == 0 && lllogMask == 0 && ll_Mask == 0 && llcieMask == 0;// Exposure mask is deactivated if Color & Light mask is visible
@@ -1059,7 +1078,6 @@ static void calcLocalParams(int sp, int oW, int oH,  const LocallabParams& local
     lp.usemask = locallab.spots.at(sp).usemask;
     lp.lnoiselow = locallab.spots.at(sp).lnoiselow;
 
-    //  printf("llColorMask=%i lllcMask=%i llExpMask=%i  llSHMask=%i llcbMask=%i llretiMask=%i lltmMask=%i llblMask=%i llvibMask=%i\n", llColorMask, lllcMask, llExpMask, llSHMask, llcbMask, llretiMask, lltmMask, llblMask, llvibMask);
     if (locallab.spots.at(sp).softMethod == "soft") {
         lp.softmet = 0;
     } else if (locallab.spots.at(sp).softMethod == "reti") {
@@ -1102,6 +1120,8 @@ static void calcLocalParams(int sp, int oW, int oH,  const LocallabParams& local
         lp.shmeth = 1;
     } else if (locallab.spots.at(sp).shMethod == "ghs") {
         lp.shmeth = 2;
+    } else if (locallab.spots.at(sp).shMethod == "micha") {
+        lp.shmeth = 3;
     }
 
 
@@ -1614,7 +1634,6 @@ static void calcLocalParams(int sp, int oW, int oH,  const LocallabParams& local
     lp.yc = h * local_center_y;
     lp.xcent = local_center_x;
     lp.ycent = local_center_y;
-   // printf("lp.xc=%f lp.yc=%f \n", (double) lp.xc, (double) lp.yc);
     lp.lx = w * local_x;
     lp.ly = h * local_y;
     lp.lxL = w * local_xL;
@@ -2368,14 +2387,14 @@ inline float norm_3(float r, float g, float b, TMatrix ws, float raplim)//lowers
 {
     constexpr float hi = std::numeric_limits<float>::max() / 100.f;
     float pwn = 0.5f;//standard repartition between XYZ luminance and Out of gamut values 
-    if (raplim < 2.f) {//raplim : ratio between the normal value 'reasonable_limit_white_point' and reality
-        pwn = 0.7f;//Tested on images with WP linear close to 1.5
-    } else if (raplim < 4.f) {//Near Sunset
-        pwn = 0.75f;//Tested on images with WP linear close to 5
+    if (raplim < 1.2f) {//raplim : ratio between the normal value 'reasonable_limit_white_point' and reality
+        pwn = 0.55f;//Tested on images with WP linear close to 4 - Near Sunset
+    } else if (raplim < 1.5f) {//Very high White point
+        pwn = 0.75f;//Tested on images with WP linear close to 5 or 6
     } else {
         pwn = 0.85f;//Tested on images with WP linear close to 6 and above //LEDs
     }    
-    return std::min(hi, pwn * power_norm(r, g, b) + (1.f - pwn) * Color::rgbLuminance(r, g, b, ws));
+    return std::min(hi, (1.f - pwn) * power_norm(r, g, b) + pwn * Color::rgbLuminance(r, g, b, ws));//I reversed the action of the two components to better account for what happens out of gamut.
 }
 
 inline float norm(float r, float g, float b, TMatrix ws)
@@ -2840,6 +2859,11 @@ void tone_eqsmooth(ImProcFunctions *ipf, Imagefloat *rgb, const struct local_par
             params.bands[4] = -10;
         }
     }
+    if(lp.issmoothmich > 0.f) {//Michaelis
+        params.bands[4] = - (lp.issmoothmich) * 10.f;
+        params.bands[5] = - (lp.issmoothmich) * 20.f;
+    }
+
     ipf->toneEqualizer(rgb, params, workingProfile, scale, multithread);
 }
 
@@ -3137,7 +3161,6 @@ void gamutjz(double &Jz, double &az, double &bz, double pl, const double wip[3][
             double hz = xatan2f(bz, az);
             float2 sincosval = xsincosf(hz);
             double Cz = sqrt(az * az + bz * bz);
-            // printf("cz=%f jz=%f" , (double) Cz, (double) Jz);
             Cz *= (double) higherCoef;
 
             if (Cz < 0.01 && Jz > 0.05) { //empirical values
@@ -3744,7 +3767,7 @@ void ImProcFunctions::ciecamloc_02float(struct local_params& lp, int sp, LabImag
     const float pow1 = pow_F(1.64f - pow_F(0.29f, n), 0.73f);
     float nj, nbbj, ncbj, czj, awj, flj;
     Ciecam02::initcam2float(yb2, pilotout, f2,  la2,  xw2,  yw2,  zw2, nj, dj, nbbj, ncbj, czj, awj, flj, c16, plum);
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
     const float reccmcz = 1.f / (c2 * czj);
 #endif
     const float epsil = 0.0001f;
@@ -3848,9 +3871,6 @@ void ImProcFunctions::ciecamloc_02float(struct local_params& lp, int sp, LabImag
         double to_screen = (aj * interm + bj) / maxi;
         //to screen - remapping of Jz in function real scene absolute luminance
 
-//        if (settings->verbose) {
-//            printf("ajz=%f bjz=%f adapjz=%f jz100=%f interm=%f to-scrp=%f to_screen=%f\n", ajz, bjz, adapjz, jz100, interm ,to_screenp, to_screen);
-//        }
         double to_one = 1.;//only for calculation in range 0..1 or 0..32768
         to_one = 1 / (maxi * to_screen);
 
@@ -4613,7 +4633,7 @@ void ImProcFunctions::ciecamloc_02float(struct local_params& lp, int sp, LabImag
 
             if (settings->verbose) {
                 printf("Gray=%1.3f newgray=%1.3f MaxicamQ=%3.2f Base log encode corrected Q=%5.1f Base log encode origig Q=%5.1f\n", (double) gray, (double) newgray, (double) maxicam, (double) linbase, (double) linbaseor);
-            } 
+            }
 
         }
 
@@ -4659,14 +4679,14 @@ void ImProcFunctions::ciecamloc_02float(struct local_params& lp, int sp, LabImag
             }
         }
 
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
         int bufferLength = ((width + 3) / 4) * 4; // bufferLength has to be a multiple of 4
 #endif
 #ifdef _OPENMP
         #pragma omp parallel if (multiThread)
 #endif
         {
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
             // one line buffer per channel and thread
             float Jbuffer[bufferLength] ALIGNED16;
             float Cbuffer[bufferLength] ALIGNED16;
@@ -4680,7 +4700,7 @@ void ImProcFunctions::ciecamloc_02float(struct local_params& lp, int sp, LabImag
 #endif
 
             for (int i = 0; i < height; i++) {
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
                 // vectorized conversion from Lab to jchqms
                 int k;
                 vfloat c655d35 = F2V(655.35f);
@@ -4734,7 +4754,7 @@ void ImProcFunctions::ciecamloc_02float(struct local_params& lp, int sp, LabImag
                 for (int j = 0; j < width; j++) {
                     float J, C, h, Q, M, s;
 
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
                     // use precomputed values from above
                     J = Jbuffer[j];
                     C = Cbuffer[j];
@@ -4933,7 +4953,7 @@ void ImProcFunctions::ciecamloc_02float(struct local_params& lp, int sp, LabImag
                     h = hpro;
                     s = spro;
 
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
                     // write to line buffers
                     Jbuffer[j] = J;
                     Cbuffer[j] = C;
@@ -4958,7 +4978,7 @@ void ImProcFunctions::ciecamloc_02float(struct local_params& lp, int sp, LabImag
 #endif
                 }
 
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
                 // process line buffers
                 float *xbuffer = Qbuffer;
                 float *ybuffer = Mbuffer;
@@ -6851,7 +6871,7 @@ void ImProcFunctions::retinex_pde(const float * datain, float * dataout, int bfw
         #pragma omp parallel if (multiThread)
 #endif
         {
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
             const vfloat exponentv = F2V(exponent);
 #endif
 #ifdef _OPENMP
@@ -6860,7 +6880,7 @@ void ImProcFunctions::retinex_pde(const float * datain, float * dataout, int bfw
 
             for (int y = 0; y < bfh ; y++) {//mix two fftw Laplacian : plein if dE near ref
                 int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                 for (; x < bfw - 3; x += 4) {
                     STVFU(data_fft[y * bfw + x], intp(pow_F(LVFU(dE[y * bfw + x]), exponentv), LVFU(data_fft[y * bfw + x]), LVFU(data_fft04[y * bfw + x])));
@@ -6971,7 +6991,6 @@ void ImProcFunctions::maskcalccol(int call, bool invmask, bool pde, int bfw, int
     mean_fab(xstart, ystart, bfw, bfh, bufcolorig, 0, original, fab, meanfab, maxfab, chrom, multiThread);
     corfab = 0.7f * (65535.f) / (fab + epsi);//empirical values 0.7 link to chromult
 
-    // printf("Fab=%f corfab=%f maxfab=%f\n", (double) fab, (double) corfab, (double) maxfab);
     float chromult = 1.f;
 
     if (chrom > 0.f) {
@@ -7216,7 +7235,6 @@ void ImProcFunctions::maskcalccol(int call, bool invmask, bool pde, int bfw, int
 
 
             mean_fab(xstart, ystart, bfw, bfh, buforig.get(), 1, buforig.get(), fab1, meanfab1, maxfab1, chrom, multiThread);
-            //  printf("Fab den=%f \n", (double) fab1);
             fab = fab1;//fab denoise
 
         }
@@ -7230,7 +7248,7 @@ void ImProcFunctions::maskcalccol(int call, bool invmask, bool pde, int bfw, int
         #pragma omp parallel if (multiThread)
 #endif
         {
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
             float atan2Buffer[bfw] ALIGNED64;
 //            float atan2BufferH[bfw] ALIGNED64;
 #endif
@@ -7239,7 +7257,7 @@ void ImProcFunctions::maskcalccol(int call, bool invmask, bool pde, int bfw, int
 #endif
 
             for (int ir = 0; ir < bfh; ir++) {
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                 if (lochhmasCurve && lhmasutili) {
                     int i = 0;
@@ -7280,7 +7298,6 @@ void ImProcFunctions::maskcalccol(int call, bool invmask, bool pde, int bfw, int
                     }
 
                     if (locllmasCurve && llmasutili) {
-                        // printf("s");
                         kmaskL = 32768.f * LIM01(kinv - kneg * locllmasCurve[(500.f / 32768.f) * bufcolorig->L[ir][jr]]);
 
                     }
@@ -7291,7 +7308,7 @@ void ImProcFunctions::maskcalccol(int call, bool invmask, bool pde, int bfw, int
                     }
 
                     if (lochhmasCurve && lhmasutili) {
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
                         const float huema = atan2Buffer[jr];
 #else
                         // const float huema = xatan2f(bufcolorig->b[ir][jr], bufcolorig->a[ir][jr]);
@@ -8380,8 +8397,6 @@ void ImProcFunctions::transit_shapedetect(int senstype, const LabImage * bufexpo
     const int xend = rtengine::min(static_cast<int>(lp.xc + lp.lx) - cx, original->W);
     const int bfw = xend - xstart;
     const int bfh = yend - ystart;
-//    printf("h=%f l=%f c=%f s=%f\n", hueref, lumaref, chromaref, sobelref);
-//    printf("bfh=%i bfw=%i\n", bfh, bfw);
     float ach = lp.trans / 100.f;
     if(lp.fullim == 3 ) {//disable transit
         ach = 1.f;
@@ -8501,7 +8516,7 @@ void ImProcFunctions::transit_shapedetect(int senstype, const LabImage * bufexpo
     #pragma omp parallel if (multiThread)
 #endif
     {
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
         float atan2Buffer[transformed->W] ALIGNED16;
 #endif
 
@@ -8512,7 +8527,7 @@ void ImProcFunctions::transit_shapedetect(int senstype, const LabImage * bufexpo
         for (int y = ystart; y < yend; y++) {
             const int loy = cy + y;
 
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
             if (HHutili || senstype == 7) {
                 int i = xstart;
@@ -8550,7 +8565,7 @@ void ImProcFunctions::transit_shapedetect(int senstype, const LabImage * bufexpo
                 float rhue = 0;
 
                 if (HHutili || senstype == 7) {
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
                     rhue = atan2Buffer[x];
 #else
                     rhue = xatan2f(origblur->b[y - ystart][x - xstart], origblur->a[y - ystart][x - xstart]);
@@ -8695,12 +8710,12 @@ void ImProcFunctions::InverseColorLight_Local(bool tonequ, bool tonecurv, int sp
                 cmsHTRANSFORM dummy = nullptr;
                 int locprim = 0;
                 float rdx, rdy, grx, gry, blx, bly = 0.f;
-                float meanx, meany, meanxe, meanye = 0.f;
+                float meanx, meany, meanxe, meanye, maxdat = 0.f;
                 double p[6] = {0., 0., 0., 0., 0., 0.};
 
-                workingtrc(0, tmpImage.get(), tmpImage.get(), GW, GH, -5, prof, 2.4, 12.92310, 0, ill, 0,  0, rdx, rdy, grx, gry, blx, bly , meanx, meany, meanxe, meanye, p, dummy, true, false, false, false);
+                workingtrc(0, tmpImage.get(), tmpImage.get(), GW, GH, -5, prof, 2.4, 12.92310, 0, ill, 0,  0, rdx, rdy, grx, gry, blx, bly , meanx, meany, meanxe, meanye, maxdat, p, dummy, true, false, false, false);
                 //  workingtrc(tmpImage.get(), tmpImage.get(), GW, GH, 5, prof, gamtone, slotone, illum, 0, dummy, false, true, true);//to keep if we want improve with illuminant and primaries
-                workingtrc(0, tmpImage.get(), tmpImage.get(), GW, GH, 1, prof, gamtone, slotone, 0, ill, 0, locprim, rdx, rdy, grx, gry, blx, bly , meanx, meany, meanxe, meanye, p, dummy, false, true, true, false);//be careful no gamut control
+                workingtrc(0, tmpImage.get(), tmpImage.get(), GW, GH, 1, prof, gamtone, slotone, 0, ill, 0, locprim, rdx, rdy, grx, gry, blx, bly , meanx, meany, meanxe, meanye, maxdat, p, dummy, false, true, true, false);//be careful no gamut control
 
             }
 
@@ -9174,7 +9189,6 @@ void ImProcFunctions::calc_ref(int sp, LabImage * original, LabImage * transform
         chromaref = aveChro;
         lumaref = avL;
 
-        //  printf("Calcref => sp=%i befend=%i huere=%2.1f chromare=%2.1f lumare=%2.1f sobelref=%2.1f\n", sp, befend, hueref, chromaref, lumaref, sobelref / 100.f);
 
         if (isdenoise) {
             delete origblur;
@@ -9691,7 +9705,6 @@ void ImProcFunctions::transit_shapedetect2(int sp, float meantm, float stdtm, in
             float sa = stdtm;
             float ma2 = (float) params->locallab.spots.at(sp).noiselumc;
             float sa2 = (float) params->locallab.spots.at(sp).softradiustm;
-            //printf("ma=%f sa=%f ma2=%f sa2=%f\n", (double) ma, (double) sa, (double) ma2, (double) sa2);
             //use normalize with mean and stdv
             normalize_mean_dt(data, datain, bfw * bfh, 1.f, 1.f, ma, sa, ma2, sa2, 1.);
         }
@@ -9780,7 +9793,7 @@ void ImProcFunctions::transit_shapedetect2(int sp, float meantm, float stdtm, in
     #pragma omp parallel if (multiThread)
 #endif
     {
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 //        float atan2Buffer[transformed->W] ALIGNED16;//keep in case of
 #endif
 
@@ -9791,7 +9804,7 @@ void ImProcFunctions::transit_shapedetect2(int sp, float meantm, float stdtm, in
         for (int y = 0; y < bfh; y++) {
 
             const int loy = y + ystart + cy;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
             /* //keep in case of
                         int i = 0;
 
@@ -9827,7 +9840,7 @@ void ImProcFunctions::transit_shapedetect2(int sp, float meantm, float stdtm, in
                 }
 
 //                float hueh = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 //                hueh = atan2Buffer[x];
 #else
 //                hueh = xatan2f(maskptr->b[y][x], maskptr->a[y][x]);
@@ -9908,7 +9921,6 @@ void ImProcFunctions::transit_shapedetect2(int sp, float meantm, float stdtm, in
                 const float realstrbdE = reducdE * clb;
 
                 float factorx = localFactor;
-             //   printf("OK 4\n");
                 if (zone > 0) {
                     //simplified transformed with deltaE and transition
                     transformed->L[y + ystart][x + xstart] = clipLoc(original->L[y + ystart][x + xstart]  + factorx * realstrdE );//clipLoc now do nothing...just keep in ace off
@@ -10589,7 +10601,7 @@ void ImProcFunctions::Compresslevels(float **Source, int W_L, int H_L, float com
     #pragma omp parallel if (multiThread)
 #endif
     {
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
         const vfloat apv = F2V(ap);
         const vfloat bpv = F2V(bp);
         const vfloat a0v = F2V(a0);
@@ -10608,7 +10620,7 @@ void ImProcFunctions::Compresslevels(float **Source, int W_L, int H_L, float com
 
         for (int y = 0; y < H_L; y++) {
             int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
             for (; x < W_L - 3; x += 4) {
                 vfloat exponev = onev;
@@ -10813,7 +10825,7 @@ void ImProcFunctions::wavcont(const struct local_params& lp, float ** tmp, wavel
                 #pragma omp parallel if (multiThread)
 #endif
                 {
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
                     const vfloat lutFactorv = F2V(lutFactor);
 #endif
 #ifdef _OPENMP
@@ -10823,7 +10835,7 @@ void ImProcFunctions::wavcont(const struct local_params& lp, float ** tmp, wavel
                     for (int y = 0; y < H_L; y++) {
                         int x = 0;
                         int j = y * W_L;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                         for (; x < W_L - 3; x += 4, j += 4) {
                             const vfloat valv = LVFU(WavL[j]);
@@ -10870,7 +10882,7 @@ void ImProcFunctions::wavcont(const struct local_params& lp, float ** tmp, wavel
                 #pragma omp parallel if (multiThread)
 #endif
                 {
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
                     const vfloat c327d68v = F2V(327.68f);
                     const vfloat factorv = F2V(factor);
                     const vfloat sixv = F2V(6.f);
@@ -10885,7 +10897,7 @@ void ImProcFunctions::wavcont(const struct local_params& lp, float ** tmp, wavel
 
                     for (int i = 0; i < H_L; ++i) {
                         int j = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                         for (; j < W_L - 3; j += 4) {
                             const vfloat LL100v = LC2VFU(tmp[i * 2][j * 2]) / c327d68v;
@@ -10956,7 +10968,7 @@ void ImProcFunctions::wavcont(const struct local_params& lp, float ** tmp, wavel
                 #pragma omp parallel if (multiThread)
 #endif
                 {
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
                     const vfloat lutFactorv = F2V(lutFactor);
 #endif
 #ifdef _OPENMP
@@ -10966,7 +10978,7 @@ void ImProcFunctions::wavcont(const struct local_params& lp, float ** tmp, wavel
                     for (int y = 0; y < H_L; y++) {
                         int x = 0;
                         int j = y * W_L;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                         for (; x < W_L - 3; x += 4, j += 4) {
                             const vfloat valv = LVFU(wav_L[j]);
@@ -11687,10 +11699,10 @@ void ImProcFunctions::wavcontrast4(int call, struct local_params& lp, float ** t
         int ill = 0;
         int locprim = 0;
         float rdx, rdy, grx, gry, blx, bly = 0.f;
-        float meanx, meany, meanxe, meanye = 0.f;
+        float meanx, meany, meanxe, meanye, maxdat = 0.f;
         double p[6] = {0., 0., 0., 0., 0., 0.};
-        workingtrc(0, tmpImage, tmpImage, W_Level, H_Level, -5, prof, 2.4, 12.92310, 0, ill, 0, 0, rdx, rdy, grx, gry, blx, bly ,meanx, meany, meanxe, meanye, p, dummy, true, false, false, false);
-        workingtrc(0, tmpImage, tmpImage, W_Level, H_Level, 1, prof, lp.residgam, lp.residslop, 0, ill, 0, locprim, rdx, rdy, grx, gry, blx, bly , meanx, meany, meanxe, meanye, p, dummy, false, true, true, false);//be careful no gamut control
+        workingtrc(0, tmpImage, tmpImage, W_Level, H_Level, -5, prof, 2.4, 12.92310, 0, ill, 0, 0, rdx, rdy, grx, gry, blx, bly ,meanx, meany, meanxe, meanye, maxdat, p, dummy, true, false, false, false);
+        workingtrc(0, tmpImage, tmpImage, W_Level, H_Level, 1, prof, lp.residgam, lp.residslop, 0, ill, 0, locprim, rdx, rdy, grx, gry, blx, bly , meanx, meany, meanxe, meanye, maxdat, p, dummy, false, true, true, false);//be careful no gamut control
         rgb2lab(*tmpImage, *labresid, params->icm.workingProfile);
         delete tmpImage;
 
@@ -12013,7 +12025,6 @@ void ImProcFunctions::recovm(float highrec, float lowrec, float thrrec, bool inv
 
     float alow = th / lowc;
     float blow = 1.f - th;
-    //printf("alow=%f blow=%f ahigh=%f bhigh=%f \n", (double) alow, (double) blow, (double) ahigh, (double) bhigh);
 
 #ifdef _OPENMP
         #pragma omp parallel for if (multiThread)
@@ -12200,7 +12211,7 @@ void ImProcFunctions::DeNoise(int sp, int call, int aut,  bool noiscfactiv, cons
 
                 for (int y = 0; y < GH; ++y) {
                     int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                     for (; x < GW - 3; x += 4) {
                         STVFU(tmp1.L[y][x], F2V(32768.f) * igammalog(LVFU(tmp1.L[y][x]) / F2V(32768.f), F2V(gamma), F2V(ts), F2V(g_a[2]), F2V(g_a[4])));
@@ -12253,7 +12264,7 @@ void ImProcFunctions::DeNoise(int sp, int call, int aut,  bool noiscfactiv, cons
                             for (int dir = 1; dir < 4; dir++) {
                                  printf("Preview level=%i dir=%i madL=%6.0f\n", lvl, dir-1, (double) madL[lvl][dir-1]);                               
                             }
-                        }                        
+                        }
                     }
                 
                 float vari[levred];
@@ -12699,7 +12710,7 @@ void ImProcFunctions::DeNoise(int sp, int call, int aut,  bool noiscfactiv, cons
 
                 for (int y = 0; y < GH; ++y) {//apply inverse gamma 3.f and put result in range 32768.f
                     int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                     for (; x < GW - 3; x += 4) {
                         STVFU(tmp1.L[y][x], F2V(32768.f) * gammalog(LVFU(tmp1.L[y][x]) / F2V(32768.f), F2V(gamma), F2V(ts), F2V(g_a[3]), F2V(g_a[4])));
@@ -13125,7 +13136,7 @@ void ImProcFunctions::DeNoise(int sp, int call, int aut,  bool noiscfactiv, cons
                     for (int y = 0; y < bfh; ++y) {
                         int x = 0;
 
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                         for (; x <  bfw - 3; x += 4) {
                             STVFU(bufwv.L[y][x], F2V(32768.f) * igammalog(LVFU(bufwv.L[y][x]) / F2V(32768.f), F2V(gamma), F2V(ts), F2V(g_a[2]), F2V(g_a[4])));
@@ -13176,10 +13187,9 @@ void ImProcFunctions::DeNoise(int sp, int call, int aut,  bool noiscfactiv, cons
                             for (int dir = 1; dir < 4; dir++) {
                                  printf("Output level=%i dir=%i madL=%6.0f\n", lvl, dir-1, (double) madL[lvl][dir-1]);                               
                             }
-                        }                        
+                        }
                     }
-                        
-                                 
+
                     float vari[levred];
                     float mxsl = 0.f;
 
@@ -13629,7 +13639,7 @@ void ImProcFunctions::DeNoise(int sp, int call, int aut,  bool noiscfactiv, cons
                     for (int y = 0; y < bfh ; ++y) {//apply inverse gamma 3.f and put result in range 32768.f
                         int x = 0;
 
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                         for (; x < bfw  - 3; x += 4) {
 
@@ -14151,7 +14161,7 @@ void ImProcFunctions::avoidcolshi(const struct local_params& lp, int sp, LabImag
         #pragma omp parallel if (multiThread)
 #endif
         {
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
             float atan2Buffer[transformed->W] ALIGNED16;
             float sqrtBuffer[transformed->W] ALIGNED16;
             float sincosyBuffer[transformed->W] ALIGNED16;
@@ -14172,7 +14182,7 @@ void ImProcFunctions::avoidcolshi(const struct local_params& lp, int sp, LabImag
                     continue;
                 }
 
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
                 int i = 0;
 
                 for (; i < transformed->W - 3; i += 4) {
@@ -14233,7 +14243,7 @@ void ImProcFunctions::avoidcolshi(const struct local_params& lp, int sp, LabImag
 
                     float Lprov1 = transformed->L[y][x] / 327.68f;
                     float2 sincosval;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
                     float HH = atan2Buffer[x]; // reading HH from line buffer even if line buffer is not filled is faster than branching
                     float Chprov1 = sqrtBuffer[x];
                     sincosval.y = sincosyBuffer[x];
@@ -14590,14 +14600,12 @@ void ImProcFunctions::NLMeans(float **img, int strength, int detail_thresh, int 
         return;
     }
 
-    // printf("Scale=%f\n", scale);
     if (scale > 5.f) { //avoid to small values - leads to crash - but enough to evaluate noise
         return;
     }
    // BENCHFUN
     const int W = bfw;
     const int H = bfh;
-//    printf("W=%i H=%i\n", W, H);
     float gamma = gam;
     rtengine::GammaValues g_a; //gamma parameters
     double pwr = 1.0 / static_cast<double>(gam);//default 3.0 - gamma Lab
@@ -14612,7 +14620,7 @@ void ImProcFunctions::NLMeans(float **img, int strength, int detail_thresh, int 
 
     for (int y = 0; y < H; ++y) {
         int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
         for (; x < W - 3; x += 4) {
             STVFU(img[y][x], F2V(65536.f) * igammalog(LVFU(img[y][x]) / F2V(32768.f), F2V(gamma), F2V(ts), F2V(g_a[2]), F2V(g_a[4])));
@@ -14640,7 +14648,6 @@ void ImProcFunctions::NLMeans(float **img, int strength, int detail_thresh, int 
     // (called h^2 in the papers)
     float eps = 1e-6f;//to avoid too low values and divide near by zero...when  scale > 1
     const float h2 = eps + SQR(std::pow(float(strength) / 100.f, 0.9f) / 30.f / scale);
-//    printf("h2=%f\n", h2);
     // this is the main difference between our version and more conventional
     // nl-means implementations: instead of varying the patch size, we control
     // the detail preservation by using a varying weight scaling for the
@@ -14727,7 +14734,7 @@ void ImProcFunctions::NLMeans(float **img, int strength, int detail_thresh, int 
     const int ntiles_y = int(std::ceil(float(HH) / (tile_size - 2 * border)));
     const int ntiles = ntiles_x * ntiles_y;
 
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
     const vfloat zerov = F2V(0.0);
     const vfloat v1e_5f = F2V(1e-5f);
     const vfloat v65536f = F2V(65536.f);
@@ -14738,7 +14745,7 @@ void ImProcFunctions::NLMeans(float **img, int strength, int detail_thresh, int 
 #endif
     {
 
-#ifdef __SSE2__
+#if defined(__SSE2__) || (defined(RT_SIMDE) && SIMDE_VERSION_CHECK(0, 8, 0))
         // flush denormals to zero to avoid performance penalty
         const auto oldMode = _MM_GET_FLUSH_ZERO_MODE();
         _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
@@ -14796,7 +14803,7 @@ void ImProcFunctions::NLMeans(float **img, int strength, int detail_thresh, int 
                     for (int yy = start_y + border; yy < end_y - border; ++yy) {
                         int y = yy - border;
                         int xx = start_x + border;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                         for (; xx < end_x - border - 3; xx += 4) {
                             int x = xx - border;
@@ -14840,13 +14847,12 @@ void ImProcFunctions::NLMeans(float **img, int strength, int detail_thresh, int 
                 }
             }
 
-//    printf("E\n");
 
             // Compute final estimate at pixel x = (x1, x2)
             for (int yy = start_y + border; yy < end_y - border; ++yy) {
                 int y = yy - border;
                 int xx = start_x + border;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                 for (; xx < end_x - border - 3; xx += 4) {
                     int x = xx - border;
@@ -14870,7 +14876,7 @@ void ImProcFunctions::NLMeans(float **img, int strength, int detail_thresh, int 
             }
         }
 
-#ifdef __SSE2__
+#if defined(__SSE2__) || (defined(RT_SIMDE) && SIMDE_VERSION_CHECK(0, 8, 0))
         _MM_SET_FLUSH_ZERO_MODE(oldMode);
 #endif
 
@@ -14882,7 +14888,7 @@ void ImProcFunctions::NLMeans(float **img, int strength, int detail_thresh, int 
 
     for (int y = 0; y < H; ++y) {//apply inverse gamma 3.f and put result in range 32768.f
         int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
         for (; x < W - 3; x += 4) {
             STVFU(img[y][x], F2V(32768.f) * gammalog(LVFU(dst[y][x]) / F2V(65536.f), F2V(gamma), F2V(ts), F2V(g_a[3]), F2V(g_a[4])));
@@ -15071,11 +15077,6 @@ Linear factor will change the shape of the S, reducing or increasing the "length
 All 3 allow you to modify the contrast of the image by filling the valleys and reducing the peaks
 
 */
-
-float clamp(float x, float lo, float hi)
-{
-    return fmax(fmin(x, hi), lo);
-}
 
 // end GHT Siril 
 
@@ -15440,9 +15441,9 @@ void ImProcFunctions::Lab_Local(
     double& huerefblur, double& chromarefblur, double& lumarefblur, double& hueref, double& chromaref, double& lumaref, double& sobelref, int &lastsav,
     bool prevDeltaE, int llColorMask, int llColorMaskinv, int llExpMask, int llExpMaskinv, int llSHMask, int llSHMaskinv, int llvibMask, int lllcMask, int llsharMask, int llcbMask, int llretiMask, int llsoftMask, int lltmMask, int llblMask, int lllogMask, int ll_Mask, int llcieMask,
     float& minCD, float& maxCD, float& mini, float& maxi, float& Tmean, float& Tsigma, float& Tmin, float& Tmax,
-    float& meantm, float& stdtm, float& meanreti, float& stdreti, float &fab,float &maxicam, float &rdx, float &rdy, float &grx, float &gry, float &blx, float &bly, float &meanx, float &meany, float &meanxe, float &meanye, int &prim, int &ill, float &contsig, float &lightsig, float &slopeg, bool &linkrgb,
-    float *resi, float &sharc, float &denocont, int *ghsbpwp, float *ghsbpwpvalue, float *savmadl, float *ghsbwslider, float &ghssym, bool &ghsautsp,  float *ghscolor, float &ghsmid, float &ghsmaxrgb, float &ghs3sig)
-
+    float& meantm, float& stdtm, float& meanreti, float& stdreti, float &fab,float &maxicam, float &rdx, float &rdy, float &grx, float &gry, float &blx, float &bly, float &meanx, float &meany, float &meanxe, float &meanye, float &maxdat,  int &prim, int &ill, float &contsig, float &lightsig, float &slopeg, bool &linkrgb,
+    float *resi, float &sharc, float &denocont, int *ghsbpwp, float *ghsbpwpvalue, float *savmadl, float *ghsbwslider, float &ghssym, bool &ghsautsp,  float *ghscolor, float &ghsmid, float &ghsmaxrgb, float &ghs3sig, float *michbwslider)
+    //michbwslider: added to facilitate a possible modification requested by users, but is not currently in use
 {
     //general call of others functions : important return hueref, chromaref, lumaref
     if (!params->locallab.enabled) {
@@ -15451,7 +15452,6 @@ void ImProcFunctions::Lab_Local(
 
     MyTime t1, t2;
     
-    // printf("OHWTHW ow=%i oh=%i tw=%i th=%i sk=%i\n", oW, oH, tW, tH, sk);
     constexpr int del = 3; // to avoid crash with [loy - begy] and [lox - begx] and bfh bfw  // with gtk2 [loy - begy-1] [lox - begx -1 ] and del = 1
     struct local_params lp;
     calcLocalParams(sp, oW, oH, params->locallab, lp, prevDeltaE, llColorMask, llColorMaskinv, llExpMask, llExpMaskinv, llSHMask, llSHMaskinv, llvibMask, lllcMask, llsharMask, llcbMask, llretiMask, llsoftMask, lltmMask, llblMask, lllogMask, ll_Mask, llcieMask, locwavCurveden, locwavdenutili);
@@ -15466,7 +15466,6 @@ void ImProcFunctions::Lab_Local(
         // kx, ky acts on center GF.
     
     
-    //avoidcolshi(lp, sp, transformed, reserved,  cy, cx, sk);
     //BENCHFUN
 
 
@@ -16499,7 +16498,6 @@ void ImProcFunctions::Lab_Local(
             const int bfw = xend - xstart;
 
             if (bfw >= mDEN && bfh >= mDEN) {
-                // printf("OK TM\n");
                 array2D<float> buflight(bfw, bfh);
                 JaggedArray<float> bufchro(bfw, bfh);
                 std::unique_ptr<LabImage> bufgb(new LabImage(bfw, bfh));
@@ -17004,7 +17002,6 @@ void ImProcFunctions::Lab_Local(
                         float sa = stdreti;
                         float ma2 = (float) params->locallab.spots.at(sp).sensihs;
                         float sa2 = (float) params->locallab.spots.at(sp).sensiv;
-                        //printf("ma=%f sa=%f ma2=%f sa2=%f\n", (double) ma, (double) sa, (double) ma2, (double) sa2);
                         //use normalize with mean and stdv
                         normalize_mean_dt(data, datain, Hd * Wd, 1.f, 1.f, ma, sa, ma2, sa2, 1.);
 
@@ -18006,7 +18003,7 @@ void ImProcFunctions::Lab_Local(
 
                         for (int y = 0; y < bfh; ++y) {
                             int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                             for (; x < bfw - 3; x += 4) {
                                 STVFU(bufexpfin->L[y][x], F2V(32768.f) * igammalog(LVFU(bufexpfin->L[y][x]) / F2V(32768.f), F2V(gamma1), F2V(ts1), F2V(g_a[2]), F2V(g_a[4])));
@@ -18036,7 +18033,7 @@ void ImProcFunctions::Lab_Local(
 
                         for (int y = 0; y < bfh; ++y) {//apply inverse gamma 3.f and put result in range 32768.f
                             int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                             for (; x < bfw - 3; x += 4) {
                                 STVFU(bufexpfin->L[y][x], F2V(32768.f) * gammalog(LVFU(bufexpfin->L[y][x]) / F2V(32768.f), F2V(gamma1), F2V(ts1), F2V(g_a[3]), F2V(g_a[4])));
@@ -18124,10 +18121,8 @@ void ImProcFunctions::Lab_Local(
         const int xend = rtengine::min(static_cast<int>(lp.xc + lp.lx) - cx, original->W);
         const int bfh = yend - ystart;
         const int bfw = xend - xstart;
-    //    printf("LP.XC=%f LP.YC=%f\n", (double) lp.xc, (double) lp.yc);
 
         if (bfw >= mSP && bfh >= mSP) {
-            //printf("CALL=%i \n", call);
             const std::unique_ptr<LabImage> bufexporig(new LabImage(bfw, bfh));
             const std::unique_ptr<LabImage> bufexpfin(new LabImage(bfw, bfh));
             std::unique_ptr<LabImage> bufmaskorigSH;
@@ -18270,11 +18265,11 @@ void ImProcFunctions::Lab_Local(
                         int ill = 0;
                         int locprim = 0;
                         float rdx, rdy, grx, gry, blx, bly = 0.f;
-                        float meanx, meany, meanxe, meanye = 0.f;
+                        float meanx, meany, meanxe, meanye, maxdat = 0.f;
                         double p[6] = {0., 0., 0., 0., 0., 0.};
 
-                        workingtrc(0, tmpImage, tmpImage, bfw, bfh, -5, prof, 2.4, 12.92310, 0, ill, 0, 0, rdx, rdy, grx, gry, blx, bly , meanx, meany, meanxe, meanye, p, dummy, true, false, false, false);
-                        workingtrc(0, tmpImage, tmpImage, bfw, bfh, 1, prof, gamtone, slotone, 0, ill, 0, locprim, rdx, rdy, grx, gry, blx, bly , meanx, meany, meanxe, meanye, p, dummy, false, true, true, false);//be careful no gamut control
+                        workingtrc(0, tmpImage, tmpImage, bfw, bfh, -5, prof, 2.4, 12.92310, 0, ill, 0, 0, rdx, rdy, grx, gry, blx, bly , meanx, meany, meanxe, meanye, maxdat, p, dummy, true, false, false, false);
+                        workingtrc(0, tmpImage, tmpImage, bfw, bfh, 1, prof, gamtone, slotone, 0, ill, 0, locprim, rdx, rdy, grx, gry, blx, bly , meanx, meany, meanxe, meanye, maxdat, p, dummy, false, true, true, false);//be careful no gamut control
                     }
 
                     if (tonequ) {
@@ -18286,7 +18281,7 @@ void ImProcFunctions::Lab_Local(
                     delete tmpImage;
                 }
                 
-                if (lp.shmeth == 2) {
+                if (lp.shmeth == 2) {//GHS 2024 - 2026
                     if(ghsactiv) {
                         // GHT filter ported from Siril - help with ART CTL thanks to Alberto Griggio
                         TMatrix wprof = ICCStore::getInstance()->workingSpaceMatrix(params->icm.workingProfile);
@@ -18520,7 +18515,6 @@ void ImProcFunctions::Lab_Local(
                                  }
                                 const float noise = pow_F(2.f, -16.f);
                                 minb = rtengine::max(minb, noise);//set a very minimal value in all cases to avoid 0
-
                                 ghsbwslider[1]= maxw + WP_LINEAR_FREE;//Slightly increase the White Point to allow for some flexibility
                                 ghsbwslider[0]= minb; 
                                 ghscolor[0] = maxwred; 
@@ -18536,7 +18530,7 @@ void ImProcFunctions::Lab_Local(
                         float shiftwhitepoint = params->locallab.spots.at(sp).ghs_HLP;//White point
                         constexpr float low_limit_white_point = 0.9f; //reasonable limit where we can consider that the highlights are low (at least white point < 1).
                         //This occurs when the limits of the highlights are not reached, then white point low.
-                        constexpr float reasonable_limit_white_point = 1.3f; //reasonable limit where we can consider that the highlights are very high
+                        constexpr float reasonable_limit_white_point = 4.2f; //reasonable limit where we can consider that the highlights are very high
                         //This occurs either when 'Highlight reconstruction' is not activated or when the value recovered with reconstruction is quite low. 
                         //This is the majority of cases. In this case, I apply 'norm2', which combines the estimated XYZ Luminance values ​​with out-of-gamut values ​​at 50%.
                         //In other cases, sunsets, images with LEDs,etc. the WP linear values ​​can be very high, up to 11... I vary the ratio from 50% up to 85% for out-of-gamut lights.
@@ -18658,9 +18652,6 @@ void ImProcFunctions::Lab_Local(
                                     printf("calculate Black Point and White Point: %d nsec\n",  t2.etime(t1));
                                 }
 
-                               // if (settings->verbose) {
-                               //     printf("Black Point-nb=%i White Point-nb=%i  min-BlackPoint val=%f max-WhitePointPval=%f \n", ghsbpwp[0], ghsbpwp[1], (double)ghsbpwpvalue[0] , (double) ghsbpwpvalue[1]);
-                               // }
 
                         }
                         
@@ -18686,7 +18677,7 @@ void ImProcFunctions::Lab_Local(
                                     // - 0.6f: scaling factor for the powered value.
                                     // - 0.4f: base offset added to ensure a minimum effect.
                                     // Adjust these values to fine-tune the strength and shape of the local saturation effect.
-                                    float s = intp(max(sf(rl, r), sf(gl, g), sf(bl, b)), pow_F(f, 0.2f) * 0.6f + 0.4f, 1.f);                                    
+                                    float s = intp(max(sf(rl, r), sf(gl, g), sf(bl, b)), pow_F(f, 0.2f) * 0.6f + 0.4f, 1.f);
                                     r = ll + s * rl;
                                     g = ll + s * gl;
                                     b = ll + s * bl;
@@ -18771,8 +18762,23 @@ void ImProcFunctions::Lab_Local(
                                         Ro = GHT(r, B, D, LP, SP, HP, c, strtype);//ghs R RGB standard
                                         Go = GHT(g, B, D, LP, SP, HP, c, strtype);//ghs G RGB standard
                                         Bo = GHT(b, B, D, LP, SP, HP, c, strtype);//ghs B RGB standard
-          
-                                        float fgh = 0.333f * ((Ro / r) + (Go / g) + (Bo /b));//linear average of the 3 channels
+
+                                        float sumRatio = 0.f;
+                                        int count = 0;
+                                        if (r != 0.f) {
+                                            sumRatio += Ro / r;
+                                            ++count;
+                                        }
+                                        if (g != 0.f) {
+                                            sumRatio += Go / g;
+                                            ++count;
+                                        }
+                                        if (b != 0.f) {
+                                            sumRatio += Bo / b;
+                                            ++count;
+                                        }
+                                        float fgh = count > 0 ? (sumRatio / static_cast<float>(count)) : 1.f;//linear average of the available channels
+
                                         apply_sat(Ro, Go, Bo, fgh, gh);//always apply saturation
                                     }
                                    // rebuild tmpImage with limit 0.00001f to avoid crash after SE 
@@ -19022,6 +19028,262 @@ void ImProcFunctions::Lab_Local(
                         }
                     }
                 }
+                if (lp.shmeth == 3) {//Michaelis-Menten - 2026
+                    const float michexp = params->locallab.spots.at(sp).mich_exp;//Exposure
+                    const float michspar = params->locallab.spots.at(sp).mich_spar;//Output scale
+                    const float michkpar = params->locallab.spots.at(sp).mich_kpar;//Knee strength
+                    const float michsat = params->locallab.spots.at(sp).mich_sat;//Saturation
+                    const float michout = params->locallab.spots.at(sp).mich_out;//Output max clamp
+                    const bool michblack = params->locallab.spots.at(sp).mich_black;//Linear Black point
+                    const bool michwhite = params->locallab.spots.at(sp).mich_white;//Linear White point
+                    const float michhigh = params->locallab.spots.at(sp).mich_high;//Highlight reduction
+                    const bool midjdx = params->locallab.spots.at(sp).mich_jdx;//Matrix LMS using XYZ transform
+
+                    constexpr float range = 65535.f;
+                    std::unique_ptr<Imagefloat> tmpImage(new Imagefloat(bfw, bfh));
+                    lab2rgb(*bufexpfin, *tmpImage, params->icm.workingProfile);//Conversion Lab -> RGB
+                    float minbmich = 100.f;
+                    float maxwmich = -100.f;
+                    bool calculatbw = false;
+                    calculatbw = michblack || michwhite;
+
+                    //preparing Matrix conversion
+                    using Triple = std::array<double, 3>;
+                    using Matrix = std::array<Triple, 3>;
+                    Matrix inv_lms_T = {};//initialize inv_lms_T
+                    TMatrix wiprof = ICCStore::getInstance()->workingSpaceInverseMatrix(params->icm.workingProfile);
+                    TMatrix wprof = ICCStore::getInstance()->workingSpaceMatrix(params->icm.workingProfile);
+                    //inverse matrix user select
+                    const float wip[3][3] = {
+                        {static_cast<float>(wiprof[0][0]), static_cast<float>(wiprof[0][1]), static_cast<float>(wiprof[0][2])},
+                        {static_cast<float>(wiprof[1][0]), static_cast<float>(wiprof[1][1]), static_cast<float>(wiprof[1][2])},
+                        {static_cast<float>(wiprof[2][0]), static_cast<float>(wiprof[2][1]), static_cast<float>(wiprof[2][2])}
+                    };
+                    TMatrix wprofi = ICCStore::getInstance()->workingSpaceMatrix(params->icm.workingProfile);
+                    const float wpi[3][3] = {
+                        {static_cast<float>(wprofi[0][0]), static_cast<float>(wprofi[0][1]), static_cast<float>(wprofi[0][2])},
+                        {static_cast<float>(wprofi[1][0]), static_cast<float>(wprofi[1][1]), static_cast<float>(wprofi[1][2])},
+                        {static_cast<float>(wprofi[2][0]), static_cast<float>(wprofi[2][1]), static_cast<float>(wprofi[2][2])}
+                        };
+                    const Matrix lms_mat = {{//JDx - Jacques Desmis Matrix XYZ -> LMS - Simple matrix that amplifies the current channel.
+                        { 0.83, 0.1, 0.07 },//Red (L) predominant in LMS with a little more green
+                        { 0.12, 0.78, 0.1 },//Green (M) almost neutral, with a little more red
+                        { 0.11, 0.09, 0.80 }//Blue (S) almost neutral, with a little more red
+                    }};
+
+                    Matrix lms_T = {};
+                    Color::transpose(lms_mat, lms_T);//transpose Matrix
+                    //invert matrix
+                    if (midjdx) {
+                        if (!rtengine::invertMatrix(lms_T, inv_lms_T)) {
+                            if (settings->verbose) {
+                                std::cout << "Matrix is not invertible, skipping and use this one" << std::endl;
+                            }
+                            //If the calculations fail, we use this matrix calculated with a spreadsheet. Note that if 'lms_mat' changes, you must redo the calculations.
+                            inv_lms_T[0][0] = 1.238171935;
+                            inv_lms_T[0][1] = -0.148379303;
+                            inv_lms_T[0][2] = -0.089792631;
+                            inv_lms_T[1][0] = -0.171129454;
+                            inv_lms_T[1][1] = 1.321320717;
+                            inv_lms_T[1][2] = -0.150191262;
+                            inv_lms_T[2][0] = -0.150996577;
+                            inv_lms_T[2][1] = -0.128246426;
+                            inv_lms_T[2][2] = 1.279243004;
+                        }
+
+#ifdef _OPENMP
+        #   pragma omp parallel for schedule(dynamic,16) if (multiThread)
+#endif
+
+                        for (int i = 0; i < bfh; ++i)
+                            for (int j = 0; j < bfw; ++j) {
+                                const float r = tmpImage->r(i, j);
+                                const float g = tmpImage->g(i, j);
+                                const float b = tmpImage->b(i, j);
+                                float X, Y, Z;
+                                Color::rgbxyz(r, g, b, X, Y, Z, wpi);//convert to XYZ using the working profile
+                                std::array<float, 3> xyz_in{X, Y, Z};
+                                float Xout = 0.f;
+                                float Yout = 0.f;
+                                float Zout = 0.f;
+                                Color::agx_trans(xyz_in, lms_T, Xout, Yout, Zout);//multiplies the XYZ data with the conversion matrice Cat16 or JZ
+                                float rout = 0.f;
+                                float gout = 0.f;
+                                float bout = 0.f;
+                                Color::xyz2rgb(Xout, Yout, Zout, rout, gout, bout, wip);//convert to RGB using inverse working profile.
+                                tmpImage->r(i, j) = rtengine::max(0.00001f, rout);//avoid negative values. Normally this should never happen because the coefficients of the selected matrix are all positive... unless the matrix changes
+                                tmpImage->g(i, j) = rtengine::max(0.00001f, gout);//these potentially negative values, related to calculations and not to the gamut, are not accepted by the rgblab or labrgb, workingtrc functions, etc,
+                                tmpImage->b(i, j) = rtengine::max(0.00001f, bout);//but after numerous checks, this has no impact on the results...except to prevent a crash.
+                            }
+                    }
+
+                    if (calculatbw) {//Calculate linear minimum black and maximum white
+ #ifdef _OPENMP
+        #   pragma omp parallel for reduction(min:minbmich) reduction(max:maxwmich) if (multiThread)
+#endif
+                        for (int i = 0; i < bfh; ++i)
+                            for (int j = 0; j < bfw; ++j) {
+                                float r = tmpImage->r(i, j) / range;
+                                float g = tmpImage->g(i, j) / range;
+                                float b = tmpImage->b(i, j) / range;
+                                float minrgb = rtengine::min(r, g, b);
+                                if(minrgb < minbmich){
+                                    minbmich = minrgb;
+                                }
+                                float maxrgb = rtengine::max(r, g, b);
+                                if(maxrgb > maxwmich){
+                                    maxwmich = maxrgb;
+                                }
+                            }
+                    } else { //default values
+                        minbmich = 0.f;
+                        maxwmich = 1.f;
+                    }
+                    const float noise = pow_F(2.f, -16.f);//very low value
+
+                    minbmich = rtengine::max(minbmich, noise);//set a very minimal value in all cases to avoid 0
+                    const auto sf =
+                        [=](float s, float c) -> float
+                        {
+                            if (c > noise) {
+                                return 1.f - min(std::abs(s) / c, 1.f);
+                            } else {
+                                return 0.f;
+                            }
+                        };
+                    //saturation
+                    const auto apply_sat =
+                        [&](float &r, float &g, float &b, float f, float ll) -> void
+                        {
+                            float rl = r - ll;
+                            float gl = g - ll;
+                            float bl = b - ll;
+                            // The parameters 0.2f, 0.6f, and 0.4f control the nonlinearity and scaling of the saturation adjustment:
+                            // - 0.2f: exponent for the power function, affecting the response curve of the adjustment factor.
+                            // - 0.6f: scaling factor for the powered value.
+                            // - 0.4f: base offset added to ensure a minimum effect.
+                            // Adjust these values to fine-tune the strength and shape of the local saturation effect.
+                            float s = intp(max(sf(rl, r), sf(gl, g), sf(bl, b)), pow_F(f, 0.35f) * 0.6f + 0.4f, 1.f);//0.35f - MM is desaturating a lot.
+                            r = ll + s * rl;
+                            g = ll + s * gl;
+                            b = ll + s * bl;
+                        };
+
+                    float deltawp = rtengine::max(0.05f, maxwmich - minbmich);//Linear Dynamic Range - 0.05 minimum acceptable
+                    if (!michwhite) {//no use of linear Dynamic Range
+                        deltawp = 1.f;
+                    }
+                    //I put these 2 variables in place, just in case... So as not to rewrite the code... If users request a finer setting than "subtraction" or "Dynamic range", and an action on the White point.
+                    michbwslider[0]= minbmich;
+                    michbwslider[1]= maxwmich;
+                    if (settings->verbose) {
+                        printf("Min black=%f max White=%f\n", (double) michbwslider[0], (double) michbwslider[1]);
+                    }
+
+                    const float gain = pow_F(2.f, michexp);//in Ev
+
+#ifdef _OPENMP
+        #   pragma omp parallel for schedule(dynamic,16) if (multiThread)
+#endif
+                    //Taken from ART's CTLs, thanks to Alberto Griggio
+                    //Modified by Jacques Desmis
+                    for (int i = 0; i < bfh; ++i)
+                        for (int j = 0; j < bfw; ++j) {
+                            float r = ((tmpImage->r(i, j) / range) - minbmich) / deltawp;// Subtract linear black and use Linear Dynamic Range
+                            float g = ((tmpImage->g(i, j) / range) - minbmich) / deltawp;//data are in range [0 1]
+                            float b = ((tmpImage->b(i, j) / range) - minbmich) / deltawp;
+
+                            // --- Apply exposure ---
+                            float r_exposed = r * gain;
+                            float g_exposed = g * gain;
+                            float b_exposed = b * gain;
+                            float mmh = norm(r, g, b, wprof);
+
+                            // --- Ensure non-negative inputs for the curve ---
+                            float r_linear = fmax(0.f, r_exposed);
+                            float g_linear = fmax(0.f, g_exposed);
+                            float b_linear = fmax(0.f, b_exposed);
+
+                            // --- Apply Michaelis-Menten curve per channel ---
+                            float r_tonemapped = mm_curve(r_linear, michspar, michkpar);
+                            float g_tonemapped = mm_curve(g_linear, michspar, michkpar);
+                            float b_tonemapped = mm_curve(b_linear, michspar, michkpar);
+                            //Excellent suggestion from Copilot
+                            float sumRatio = 0.f;
+                            int count = 0;
+                            if (r != 0.f) {
+                                sumRatio += r_tonemapped / r;
+                                ++count;
+                            }
+                            if (g != 0.f) {
+                                sumRatio += g_tonemapped / g;
+                                ++count;
+                            }
+                            if (b != 0.f) {
+                                sumRatio += b_tonemapped / b;
+                                ++count;
+                            }
+                            float fmmm = count > 0 ? (sumRatio / static_cast<float>(count)) : 1.f;//linear average of the available channel
+                            apply_sat(r_tonemapped, g_tonemapped, b_tonemapped, fmmm, mmh );//always apply saturation
+
+                            // --- Saturation adjustment ---
+                            float h, s, l;
+                            Color::rgb2hsl(r_tonemapped * range, g_tonemapped * range, b_tonemapped * range, h, s, l);
+                            s *= michsat;
+                            s = fmax(0.f, s);
+                            s = clamp(s, 0.f, 1.f);
+                            float R, G, B;
+                            Color::hsl2rgb(h, s, l, R, G, B);
+                            float r_final = R / range;
+                            float g_final = G / range;
+                            float b_final = B / range;
+
+                            // --- Final clamping and output ---
+                            float rout = clamp(r_final, 0.f, michout);
+                            float gout = clamp(g_final, 0.f, michout);
+                            float bout = clamp(b_final, 0.f, michout);
+                            tmpImage->r(i, j) = rtengine::max(0.00001f, rout * range);//0.00001f to avoid crash
+                            tmpImage->g(i, j) = rtengine::max(0.00001f, gout * range);
+                            tmpImage->b(i, j) = rtengine::max(0.00001f, bout * range);
+
+                        }
+                    
+                    if (michhigh > 0.f ) {
+                        //Highlight attenuation
+                        tone_eqsmooth(this, tmpImage.get(), lp, params->icm.workingProfile, sk, multiThread);//reduce Ev > 0 < 12
+                    }
+ 
+                    if (midjdx) {//Second XYZ transformation from LMS (and RGB)
+#ifdef _OPENMP
+        #   pragma omp parallel for schedule(dynamic,16) if (multiThread)
+#endif                                            
+
+                        for (int i = 0; i < bfh; ++i)
+                            for (int j = 0; j < bfw; ++j) {
+                                const float r = tmpImage->r(i, j);
+                                const float g = tmpImage->g(i, j);
+                                const float b = tmpImage->b(i, j);
+                                float X, Y, Z;
+                                Color::rgbxyz(r, g, b, X, Y, Z, wpi);//convert to XYZ using the working profile
+                                std::array<float, 3> xyz_in{X, Y, Z};
+                                float Xout = 0.f;
+                                float Yout = 0.f;
+                                float Zout = 0.f;
+                                Color::agx_trans(xyz_in, inv_lms_T, Xout, Yout, Zout);//multiplies the XYZ data with the conversion inverse matrice Cat16 or JZ
+                                float rout = 0.f;
+                                float gout = 0.f;
+                                float bout = 0.f;
+                                Color::xyz2rgb(Xout, Yout, Zout, rout, gout, bout, wip);//convert to RGB using inverse working profile.
+                                tmpImage->r(i, j) = rtengine::max(0.00001f, rout);//avoid negative values. Normally this should never happen because the coefficients of the selected matrix are all positive... unless the matrix changes
+                                tmpImage->g(i, j) = rtengine::max(0.00001f, gout);//these potentially negative values, related to calculations and not to the gamut, are not accepted by the rgblab or labrgb, workingtrc functions, etc,
+                                tmpImage->b(i, j) = rtengine::max(0.00001f, bout);//but after numerous checks, this has no impact on the results...except to prevent a crash.
+                            }
+                    }
+
+                    rgb2lab(*tmpImage, *bufexpfin, params->icm.workingProfile);//conversion RGB -> Lab
+                }
+                
+                
                 //gradient
                 int GH = transformed->H;
                 int GW = transformed->W;
@@ -19531,10 +19793,8 @@ void ImProcFunctions::Lab_Local(
                         --maxlevelspot ;
                     }
 
-                    // printf("minwin=%i maxlevelavant=%i  maxlespot=%i\n", minwin, wavelet_level, maxlevelspot);
 
                     wavelet_level = rtengine::min(wavelet_level, maxlevelspot);
-                    //    printf("maxlevel=%i\n", wavelet_level);
                     bool exec = false;
                     bool origlc = params->locallab.spots.at(sp).origlc;
 
@@ -19578,7 +19838,7 @@ void ImProcFunctions::Lab_Local(
 
                         for (int y = 0; y < tmp1->H; ++y) {
                             int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                             for (; x < tmp1->W - 3; x += 4) {
                                 STVFU(tmp1->L[y][x], F2V(32768.f) * igammalog(LVFU(tmp1->L[y][x]) / F2V(32768.f), F2V(gamma), F2V(ts), F2V(g_a[2]), F2V(g_a[4])));
@@ -19616,7 +19876,7 @@ void ImProcFunctions::Lab_Local(
 
                         for (int y = 0; y < tmp1->H; ++y) {//apply inverse gamma 3.f and put result in range 32768.f
                             int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                             for (; x < tmp1->W - 3; x += 4) {
                                 STVFU(tmp1->L[y][x], F2V(32768.f) * gammalog(LVFU(tmp1->L[y][x]) / F2V(32768.f), F2V(gamma), F2V(ts), F2V(g_a[3]), F2V(g_a[4])));
@@ -19875,14 +20135,13 @@ void ImProcFunctions::Lab_Local(
                     return;
                 }
             }    
-                
 
             int begy = lp.yc - lp.lyT;
             int begx = lp.xc - lp.lxL;
             int yEn = lp.yc + lp.ly;
             int xEn = lp.xc + lp.lx;
 
-			if(lp.fullim >= 2) {//full-iamge and global - limit sharpening to image dimension...no more...to avoid a long treatment
+            if(lp.fullim >= 2) {//full-iamge and global - limit sharpening to image dimension...no more...to avoid a long treatment
                 begy = 0;
                 begx = 0;
                 yEn = original->H;
@@ -19895,7 +20154,6 @@ void ImProcFunctions::Lab_Local(
                 bfw = xEn;
             }
 
-            //printf("begy=%i begx=%i yen=%i xen=%i\n", begy, begx, yEn, xEn);
             JaggedArray<float> bufsh(bfw, bfh, true);
             JaggedArray<float> hbuffer(bfw, bfh);
             JaggedArray<float> loctemp2(bfw, bfh);
@@ -19928,7 +20186,7 @@ void ImProcFunctions::Lab_Local(
 
                 for (int y = 0; y < bfh; ++y) {
                     int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                     for (; x < bfw - 3; x += 4) {
                         STVFU(bufsh[y][x], F2V(32768.f) * igammalog(LVFU(bufsh[y][x]) / F2V(32768.f), F2V(gamma1), F2V(ts1), F2V(g_a[2]), F2V(g_a[4])));
@@ -19958,7 +20216,7 @@ void ImProcFunctions::Lab_Local(
 
                 for (int y = 0; y < bfh; ++y) {//apply inverse gamma 3.f and put result in range 32768.f
                     int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                     for (; x < bfw - 3; x += 4) {
                         STVFU(bufsh[y][x], F2V(32768.f) * gammalog(LVFU(bufsh[y][x]) / F2V(32768.f), F2V(gamma1), F2V(ts1), F2V(g_a[3]), F2V(g_a[4])));
@@ -19992,7 +20250,7 @@ void ImProcFunctions::Lab_Local(
 
                 for (int y = 0; y < bfh; ++y) {
                     int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                     for (; x < bfw - 3; x += 4) {
                         STVFU(original->L[y][x], F2V(32768.f) * igammalog(LVFU(original->L[y][x]) / F2V(32768.f), F2V(gamma1), F2V(ts1), F2V(g_a[2]), F2V(g_a[4])));
@@ -20023,7 +20281,7 @@ void ImProcFunctions::Lab_Local(
 
                 for (int y = 0; y < bfh; ++y) {//apply inverse gamma 3.f and put result in range 32768.f
                     int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                     for (; x < bfw - 3; x += 4) {
                         STVFU(original->L[y][x], F2V(32768.f) * gammalog(LVFU(original->L[y][x]) / F2V(32768.f), F2V(gamma1), F2V(ts1), F2V(g_a[3]), F2V(g_a[4])));
@@ -20068,7 +20326,7 @@ void ImProcFunctions::Lab_Local(
 
             for (int y = 0; y < GH; ++y) {
                 int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                 for (; x < GW - 3; x += 4) {
                     STVFU(original->L[y][x], F2V(32768.f) * igammalog(LVFU(original->L[y][x]) / F2V(32768.f), F2V(gamma1), F2V(ts1), F2V(g_a[2]), F2V(g_a[4])));
@@ -20098,7 +20356,7 @@ void ImProcFunctions::Lab_Local(
 
             for (int y = 0; y < GH; ++y) {//apply inverse gamma 3.f and put result in range 32768.f
                 int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                 for (; x < GW - 3; x += 4) {
                     STVFU(original->L[y][x], F2V(32768.f) * gammalog(LVFU(original->L[y][x]) / F2V(32768.f), F2V(gamma1), F2V(ts1), F2V(g_a[3]), F2V(g_a[4])));
@@ -20303,7 +20561,7 @@ void ImProcFunctions::Lab_Local(
 
                     for (int y = 0; y < bfh; ++y) {
                         int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                         for (; x < bfw - 3; x += 4) {
                             STVFU(bufexporig->L[y][x], F2V(32768.f) * igammalog(LVFU(bufexporig->L[y][x]) / F2V(32768.f), F2V(gamma1), F2V(ts1), F2V(g_a[2]), F2V(g_a[4])));
@@ -20529,7 +20787,6 @@ void ImProcFunctions::Lab_Local(
                         }
 
                         if (lp.laplacexp > 0.1f) {//don't use if an other spot use Dehaze.
-                            //printf("EXEC ATTENUATOR\n");
                             MyMutex::MyLock lock(*fftwMutex);
                             std::unique_ptr<float[]> datain(new float[bfwr * bfhr]);
                             std::unique_ptr<float[]> dataout(new float[bfwr * bfhr]);
@@ -20646,7 +20903,7 @@ void ImProcFunctions::Lab_Local(
 
                         for (int y = 0; y < bfh; ++y) {//apply inverse gamma 3.f and put result in range 32768.f
                             int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                             for (; x < bfw - 3; x += 4) {
                                 STVFU(bufexpfin->L[y][x], F2V(32768.f) * gammalog(LVFU(bufexpfin->L[y][x]) / F2V(32768.f), F2V(gamma1), F2V(ts1), F2V(g_a[3]), F2V(g_a[4])));
@@ -20892,7 +21149,7 @@ void ImProcFunctions::Lab_Local(
 
                     for (int y = 0; y < bufcolorig->H; ++y) {
                         int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                         for (; x < bufcolorig->W - 3; x += 4) {
                             STVFU(bufcolorig->L[y][x], F2V(32768.f) * igammalog(LVFU(bufcolorig->L[y][x]) / F2V(32768.f), F2V(gamma1), F2V(ts1), F2V(g_a[2]), F2V(g_a[4])));
@@ -21267,17 +21524,13 @@ void ImProcFunctions::Lab_Local(
 
                             if (loclhCurve && LHcurve && lp.qualcurvemet != 0) {//L=f(H) curve
                                 const float rhue = xatan2f(bufcolcalcb, bufcolcalca);
-                                //printf("rhu=%f", (double) rhue);
                                 const float chromat = (std::sqrt(SQR(bufcolcalca) + SQR(bufcolcalcb))) / 32768.f;
                                 float l_r = LIM01(bufcolcalcL / 32768.f); //Luminance Lab in 0..1
                                 float valparam = loclhCurve[500.f * static_cast<float>(Color::huelab_to_huehsv2(rhue))] - 0.5f; //get l_r=f(H)
-                                // printf("rh=%f V=%f", (double) rhue, (double) valparam);
-                                // float kc = 0.05f + 0.02f * params->locallab.spots.at(sp).lightjzcie;
                                 float kc = amountchrom;
                                 float valparamneg;
                                 valparamneg = valparam;
                                 float kcc = SQR(chromat / kc); //take Chroma into account...40 "middle low" of chromaticity (arbitrary and simple), one can imagine other algorithme
-                                //   printf("KC=%f", (double) kcc);
                                 //reduce action for low chroma and increase action for high chroma
                                 valparam *= 2.f * kcc;
                                 valparamneg *= kcc; //slightly different for negative
@@ -21978,7 +22231,7 @@ void ImProcFunctions::Lab_Local(
 
                             for (int y = 0; y < bfh; ++y) {//apply inverse gamma 3.f and put result in range 32768.f
                                 int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                                 for (; x < bfw - 3; x += 4) {
                                     STVFU(bufcolfin->L[y][x], F2V(32768.f) * gammalog(LVFU(bufcolfin->L[y][x]) / F2V(32768.f), F2V(gamma1), F2V(ts1), F2V(g_a[3]), F2V(g_a[4])));
@@ -22649,15 +22902,15 @@ void ImProcFunctions::Lab_Local(
                     int locprim = 1;
                     bool gamcie = params->locallab.spots.at(sp).gamutcie;
                     float rx, ry, gx, gy, bx, by = 0.f;
-                    float mx, my, mxe, mye = 0.f;
+                    float mx, my, mxe, mye, mdat = 0.f;
                     
                     if(lp.midtcie != 0 && lp.midtmet == 0) {
                         ImProcFunctions::tone_eqcam(this, tmpImage, lp.midtcie, params->icm.workingProfile, sk, multiThread);
                     }
                     double p[6] = {0., 0., 0., 0., 0., 0.};
 
-                    workingtrc(sp, tmpImage, tmpImage, bfw, bfh, -5, prof, 2.4, 12.92310, 0, ill, 0, 0, rx, ry, gx, gy, bx, by, mx, my, mxe, mye, p, dummy, true, false, false, false);
-                    workingtrc(sp, tmpImage, tmpImage, bfw, bfh, typ, prof, gamtone, slotone, catx, ill, prim, locprim, rdx, rdy, grx, gry, blx, bly, meanx, meany, meanxe, meanye, p, dummy, false, true, true, gamcie);//with gamut control
+                    workingtrc(sp, tmpImage, tmpImage, bfw, bfh, -5, prof, 2.4, 12.92310, 0, ill, 0, 0, rx, ry, gx, gy, bx, by, mx, my, mxe, mye, mdat, p, dummy, true, false, false, false);
+                    workingtrc(sp, tmpImage, tmpImage, bfw, bfh, typ, prof, gamtone, slotone, catx, ill, prim, locprim, rdx, rdy, grx, gry, blx, bly, meanx, meany, meanxe, meanye, maxdat, p, dummy, false, true, true, gamcie);//with gamut control
                     float satu = params->locallab.spots.at(sp).satjcie;
                     if (satu > 0.f) {//saturation
                         ImProcFunctions::apsatur(sp, tmpImage, tmpImage2, bfw, bfh, satu) ;
@@ -22670,7 +22923,6 @@ void ImProcFunctions::Lab_Local(
                     tmpImage->copyData(tmpImagelog);
 
                     if(params->locallab.spots.at(sp).logcie & !params->locallab.spots.at(sp).logcieq ) {
-                       // printf("Call log encode\n");
                        log_encode(tmpImagelog, lp, multiThread, bfw, bfh);
                         float strlog = 0.01f * (float) params->locallab.spots.at(sp).strcielog;
 
@@ -22795,7 +23047,7 @@ void ImProcFunctions::Lab_Local(
 
                         for (int y = 0; y < bfh; ++y) {
                                 int x = 0;
-#ifdef __SSE2__
+#if defined(__SSE2__) || defined(RT_SIMDE)
 
                             for (; x < bfw - 3; x += 4) {
                                 STVFU(tmpImage->r(y, x), F2V(65536.f) * gammalog(LVFU(srcp->r(y, x)), F2V(gamr), F2V(slr), F2V(g_ar[3]), F2V(g_ar[4])));
@@ -22895,7 +23147,6 @@ void ImProcFunctions::Lab_Local(
                         float slopegrayr = 1.f;
                         float slopegrayg = 1.f;
                         float slopegrayb = 1.f;
-                        //printf("wp=%f bp=%f \n", (double) white_point, (double) black_point);
                         int mode = 1;
                         float slopsmoot = 1.f - ((float) params->locallab.spots.at(sp).slopesmo - 1.f);//modify response so when increase slope the grays are becoming lighter
                         float slopsmootr = 1.f - ((float) params->locallab.spots.at(sp).slopesmor - 1.f);
@@ -22943,7 +23194,6 @@ void ImProcFunctions::Lab_Local(
                         LUTf lutr(65536, LUT_CLIP_OFF);
                         LUTf lutg(65536, LUT_CLIP_OFF);
                         LUTf lutb(65536, LUT_CLIP_OFF);
-                        //printf("slopsmoot=%f\n", (double) slopsmoot);
                         
                         bool scale = lp.issmoothcie;//scale Yb mid_gray - WhiteEv and BlavkEv
                         bool limslope = lumhigh;

@@ -284,7 +284,7 @@ jobs:
           echo "Running apt update."
           sudo apt update
           echo "Installing dependencies with apt."
-          DEBIAN_FRONTEND=noninteractive sudo apt install -y build-essential cmake libgtk-3-dev libgtkmm-3.0-dev liblensfun-dev librsvg2-dev liblcms2-dev libfftw3-dev libiptcdata0-dev libtiff5-dev libcanberra-gtk3-dev liblensfun-bin libexpat1-dev libbrotli-dev zlib1g-dev libinih-dev adwaita-icon-theme-full gettext libarchive-tools zstd libgif-dev libwebp-dev libwebpdemux2
+          DEBIAN_FRONTEND=noninteractive sudo apt install -y build-essential cmake libgtk-3-dev libgtkmm-3.0-dev liblensfun-dev librsvg2-dev liblcms2-dev libfftw3-dev libiptcdata0-dev libtiff5-dev libcanberra-gtk3-dev liblensfun-bin libexpat1-dev libbrotli-dev zlib1g-dev libinih-dev adwaita-icon-theme-full gettext libarchive-tools zstd libgif-dev libwebp-dev libwebpdemux2 libsimde-dev
 
       - name: Install Exiv2
         run: |
@@ -304,13 +304,34 @@ jobs:
         working-directory: .
         run: |
           echo "Building and installing libjxl v0.11.1..."
-          git clone https://github.com/libjxl/libjxl.git
+          git clone --depth 1 --branch 'v0.11.1' 'https://github.com/libjxl/libjxl.git'
           cd libjxl
-          git checkout v0.11.1
           ./deps.sh
+          mkdir build
+          cd build
           cmake .. -DBUILD_TESTING=OFF
           sudo make -j$(nproc) install
 
+      - name: Register SIMDe with pkg-config
+        run: |
+          echo "Getting SIMDe version."
+          SIMDE_VERSION=$(dpkg-query -W -f='${Version}' libsimde-dev | sed 's/-.*//')
+          echo "SIMDe version is '$SIMDE_VERSION'."
+
+          echo "Writing .pc file for SIMDe."
+          SIMDE_PC_FILE_PATH="/usr/share/pkgconfig/simde.pc"
+          cat <<EOF > "${SIMDE_PC_FILE_PATH}"
+          prefix=/usr
+          includedir=\${prefix}/include
+
+          Name: SIMDe
+          Description: Portable SIMD wrapper library
+          Version: ${SIMDE_VERSION}
+          Cflags: -I\${includedir}
+          EOF
+
+          echo "Contents of ${SIMDE_PC_FILE_PATH}:"
+          cat "${SIMDE_PC_FILE_PATH}"
 
       - name: Configure build
         run: |
@@ -342,6 +363,7 @@ jobs:
             -DWITH_PROF="OFF" \
             -DWITH_SAN="OFF" \
             -DWITH_SYSTEM_KLT="OFF" \
+            -DWITH_SIMDE="ON" \
             -DCMAKE_INSTALL_PREFIX=/usr \
             -DLENSFUNDBDIR="../share/lensfun/version_1" \
             ..

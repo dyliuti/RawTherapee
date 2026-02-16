@@ -294,9 +294,7 @@ void Compressgamut::read (const ProcParams* pp, const ParamsEdited* pedited)
     lastAutodm = pp->cg.autodm;
     lastAutody = pp->cg.autody;  
     rolloff_change();
-    colorspaceChanged();
     enabledChanged ();
-
     enableListener ();
 }
 

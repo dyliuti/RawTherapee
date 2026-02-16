@@ -277,6 +277,9 @@ struct ImpulseDenoiseParamsEdited {
 
 struct ColorAppearanceParamsEdited {
     bool curve;
+    bool curvered;
+    bool curvegreen;
+    bool curveblue;
     bool curve2;
     bool curve3;
     bool curveMode;
@@ -630,6 +633,15 @@ public:
         bool ghs_agx;
         bool ghs_smooth;
         bool ghs_inv;
+        bool mich_exp;
+        bool mich_spar;
+        bool mich_kpar;
+        bool mich_sat;
+        bool mich_out;
+        bool mich_black;
+        bool mich_white;
+        bool mich_high;
+        bool mich_jdx;
         bool multsh[7];
         bool highlights;
         bool h_tonalwidth;
@@ -1439,12 +1451,15 @@ struct ColorManagementParamsEdited {
 
     bool workingProfile;
     bool workingTRC;
+    bool wgamut;
     bool wGamma;
     bool wSlope;
     bool wmidtcie;
     bool sigmatrc;
     bool offstrc;
     bool residtrc;
+    bool wgampower;
+    bool wgamgain;
     bool pyrwavtrc;
     bool opacityCurveWLI;
 

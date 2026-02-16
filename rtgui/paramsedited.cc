@@ -381,6 +381,9 @@ void ParamsEdited::set(bool v)
     colorappearance.tonecie = v;
 //  colorappearance.sharpcie = v;
     colorappearance.curve      = v;
+    colorappearance.curvered   = v;
+    colorappearance.curvegreen   = v;
+    colorappearance.curveblue   = v;
     colorappearance.curve2     = v;
     colorappearance.curve3     = v;
     colorappearance.curveMode  = v;
@@ -623,6 +626,8 @@ void ParamsEdited::set(bool v)
     icm.sigmatrc = v;
     icm.offstrc = v;
     icm.residtrc = v;
+    icm.wgampower = v;
+    icm.wgamgain = v;
     icm.pyrwavtrc = v;
     icm.opacityCurveWLI = v;
     icm.wapsat = v;
@@ -662,6 +667,7 @@ void ParamsEdited::set(bool v)
     icm.labgridcieMy = v;
     icm.aRendIntent = v;
     icm.workingTRC = v;
+    icm.wgamut = v;
     icm.will = v;
     icm.wprim = v;
     icm.wcat = v;
@@ -1154,6 +1160,9 @@ void ParamsEdited::initFrom(const std::vector<rtengine::procparams::ProcParams>&
         colorappearance.tonecie = colorappearance.tonecie && p.colorappearance.tonecie == other.colorappearance.tonecie;
         //     colorappearance.sharpcie = colorappearance.sharpcie && p.colorappearance.sharpcie == other.colorappearance.sharpcie;
         colorappearance.curve = colorappearance.curve && p.colorappearance.curve == other.colorappearance.curve;
+        colorappearance.curvered = colorappearance.curvered && p.colorappearance.curvered == other.colorappearance.curvered;
+        colorappearance.curvegreen = colorappearance.curvegreen && p.colorappearance.curvegreen == other.colorappearance.curvegreen;
+        colorappearance.curveblue = colorappearance.curveblue && p.colorappearance.curveblue == other.colorappearance.curveblue;
         colorappearance.curve3 = colorappearance.curve3 && p.colorappearance.curve3 == other.colorappearance.curve3;
         colorappearance.curve2 = colorappearance.curve2 && p.colorappearance.curve2 == other.colorappearance.curve2;
         colorappearance.curveMode = colorappearance.curveMode && p.colorappearance.curveMode == other.colorappearance.curveMode;
@@ -1516,6 +1525,16 @@ void ParamsEdited::initFrom(const std::vector<rtengine::procparams::ProcParams>&
                 locallab.spots.at(j).ghs_agx = locallab.spots.at(j).ghs_agx && pSpot.ghs_agx == otherSpot.ghs_agx;
                 locallab.spots.at(j).ghs_smooth = locallab.spots.at(j).ghs_smooth && pSpot.ghs_smooth == otherSpot.ghs_smooth;
                 locallab.spots.at(j).ghs_inv = locallab.spots.at(j).ghs_inv && pSpot.ghs_inv == otherSpot.ghs_inv;
+
+                locallab.spots.at(j).mich_exp = locallab.spots.at(j).mich_exp && pSpot.mich_exp == otherSpot.mich_exp;
+                locallab.spots.at(j).mich_spar = locallab.spots.at(j).mich_spar && pSpot.mich_spar == otherSpot.mich_spar;
+                locallab.spots.at(j).mich_kpar = locallab.spots.at(j).mich_kpar && pSpot.mich_kpar == otherSpot.mich_kpar;
+                locallab.spots.at(j).mich_sat = locallab.spots.at(j).mich_sat && pSpot.mich_sat == otherSpot.mich_sat;
+                locallab.spots.at(j).mich_out = locallab.spots.at(j).mich_out && pSpot.mich_out == otherSpot.mich_out;
+                locallab.spots.at(j).mich_black = locallab.spots.at(j).mich_black && pSpot.mich_black == otherSpot.mich_black;
+                locallab.spots.at(j).mich_white = locallab.spots.at(j).mich_white && pSpot.mich_white == otherSpot.mich_white;
+                locallab.spots.at(j).mich_high = locallab.spots.at(j).mich_high && pSpot.mich_high == otherSpot.mich_high;
+                locallab.spots.at(j).mich_jdx = locallab.spots.at(j).mich_jdx && pSpot.mich_jdx == otherSpot.mich_jdx;
 
                 for (int k = 0; k < 6; k++) {
                     locallab.spots.at(j).multsh[k] = locallab.spots.at(j).multsh[k] && pSpot.multsh[k] == otherSpot.multsh[k];
@@ -2263,6 +2282,8 @@ void ParamsEdited::initFrom(const std::vector<rtengine::procparams::ProcParams>&
         icm.sigmatrc = icm.sigmatrc && p.icm.sigmatrc == other.icm.sigmatrc;
         icm.offstrc = icm.offstrc && p.icm.offstrc == other.icm.offstrc;
         icm.residtrc = icm.residtrc && p.icm.residtrc == other.icm.residtrc;
+        icm.wgampower = icm.wgampower && p.icm.wgampower == other.icm.wgampower;
+        icm.wgamgain = icm.wgamgain && p.icm.wgamgain == other.icm.wgamgain;
         icm.pyrwavtrc = icm.pyrwavtrc && p.icm.pyrwavtrc == other.icm.pyrwavtrc;
         icm.opacityCurveWLI = icm.opacityCurveWLI && p.icm.opacityCurveWLI == other.icm.opacityCurveWLI;
         icm.wsmoothcie = icm.wsmoothcie && p.icm.wsmoothcie == other.icm.wsmoothcie;
@@ -2302,6 +2323,7 @@ void ParamsEdited::initFrom(const std::vector<rtengine::procparams::ProcParams>&
         icm.gamut = icm.gamut && p.icm.gamut == other.icm.gamut;
         icm.aRendIntent = icm.aRendIntent && p.icm.aRendIntent == other.icm.aRendIntent;
         icm.workingTRC = icm.workingTRC && p.icm.workingTRC == other.icm.workingTRC;
+        icm.wgamut = icm.wgamut && p.icm.wgamut == other.icm.wgamut;
         icm.will = icm.will && p.icm.will == other.icm.will;
         icm.wprim = icm.wprim && p.icm.wprim == other.icm.wprim;
         icm.wcat = icm.wcat && p.icm.wcat == other.icm.wcat;
@@ -3343,6 +3365,18 @@ void ParamsEdited::combine(rtengine::procparams::ProcParams& toEdit, const rteng
 
     if (colorappearance.curve) {
         toEdit.colorappearance.curve = mods.colorappearance.curve;
+    }
+
+    if (colorappearance.curvered) {
+        toEdit.colorappearance.curvered = mods.colorappearance.curvered;
+    }
+
+    if (colorappearance.curvegreen) {
+        toEdit.colorappearance.curvegreen = mods.colorappearance.curvegreen;
+    }
+
+    if (colorappearance.curveblue) {
+        toEdit.colorappearance.curveblue = mods.colorappearance.curveblue;
     }
 
     if (colorappearance.curve2) {
@@ -4752,6 +4786,41 @@ void ParamsEdited::combine(rtengine::procparams::ProcParams& toEdit, const rteng
             toEdit.locallab.spots.at(i).ghs_inv = mods.locallab.spots.at(i).ghs_inv;
         }
 
+        if (locallab.spots.at(i).mich_exp) {
+            toEdit.locallab.spots.at(i).mich_exp = mods.locallab.spots.at(i).mich_exp;
+        }
+
+        if (locallab.spots.at(i).mich_spar) {
+            toEdit.locallab.spots.at(i).mich_spar = mods.locallab.spots.at(i).mich_spar;
+        }
+
+        if (locallab.spots.at(i).mich_kpar) {
+            toEdit.locallab.spots.at(i).mich_kpar = mods.locallab.spots.at(i).mich_kpar;
+        }
+
+        if (locallab.spots.at(i).mich_sat) {
+            toEdit.locallab.spots.at(i).mich_sat = mods.locallab.spots.at(i).mich_sat;
+        }
+
+        if (locallab.spots.at(i).mich_out) {
+            toEdit.locallab.spots.at(i).mich_out = mods.locallab.spots.at(i).mich_out;
+        }
+
+        if (locallab.spots.at(i).mich_high) {
+            toEdit.locallab.spots.at(i).mich_high = mods.locallab.spots.at(i).mich_high;
+        }
+
+        if (locallab.spots.at(i).mich_black) {
+            toEdit.locallab.spots.at(i).mich_black = mods.locallab.spots.at(i).mich_black;
+        }
+
+        if (locallab.spots.at(i).mich_white) {
+            toEdit.locallab.spots.at(i).mich_white = mods.locallab.spots.at(i).mich_white;
+        }
+
+        if (locallab.spots.at(i).mich_jdx) {
+            toEdit.locallab.spots.at(i).mich_jdx = mods.locallab.spots.at(i).mich_jdx;
+        }
 
         for (int j = 0; j < 6; j++) {
             if (locallab.spots.at(i).multsh[j]) {
@@ -7543,6 +7612,14 @@ void ParamsEdited::combine(rtengine::procparams::ProcParams& toEdit, const rteng
         toEdit.icm.offstrc = mods.icm.offstrc;
     }
 
+    if (icm.wgampower) {
+        toEdit.icm.wgampower = mods.icm.wgampower;
+    }
+
+    if (icm.wgamgain) {
+        toEdit.icm.wgamgain = mods.icm.wgamgain;
+    }
+
     if (icm.residtrc) {
         toEdit.icm.residtrc = mods.icm.residtrc;
     }
@@ -7694,6 +7771,10 @@ void ParamsEdited::combine(rtengine::procparams::ProcParams& toEdit, const rteng
 
     if (icm.workingTRC) {
         toEdit.icm.workingTRC = mods.icm.workingTRC;
+    }
+
+    if (icm.wgamut) {
+        toEdit.icm.wgamut = mods.icm.wgamut;
     }
 
     if (icm.will) {
@@ -8878,6 +8959,16 @@ LocallabParamsEdited::LocallabSpotEdited::LocallabSpotEdited(bool v) :
     ghs_agx(v),
     ghs_smooth(v),
     ghs_inv(v),
+    mich_exp(v),
+    mich_spar(v),
+    mich_kpar(v),
+    mich_sat(v),
+    mich_out(v),
+    mich_black(v),
+    mich_white(v),
+    mich_high(v),
+    mich_jdx(v),
+
     multsh{v, v, v, v, v, v, v},
     highlights(v),
     h_tonalwidth(v),
@@ -9710,6 +9801,15 @@ void LocallabParamsEdited::LocallabSpotEdited::set(bool v)
     ghs_agx = v;
     ghs_smooth = v;
     ghs_inv = v;
+    mich_exp = v;
+    mich_spar = v;
+    mich_kpar = v;
+    mich_sat = v;
+    mich_out = v;
+    mich_black = v;
+    mich_white = v;
+    mich_high = v;
+    mich_jdx = v;
 
     for (int i = 0; i < 6; i++) {
         multsh[i] = v;
