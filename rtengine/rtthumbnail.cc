@@ -238,7 +238,11 @@ void scale_colors (rtengine::RawImage *ri, float scale_mul[4], float cblack[4], 
             }
         }
     } else {
-        const int size = ri->get_iheight() * ri->get_iwidth();
+        // Foveon has full raw image.
+        const int size =
+            ri->getSensorType() == rtengine::eSensorType::ST_FOVEON
+                ? (ri->get_topmargin() + ri->get_iheight()) * ri->get_rawwidth()
+                : ri->get_iheight() * ri->get_iwidth();
 
 #ifdef _OPENMP
         #pragma omp parallel for if(multiThread)
@@ -777,10 +781,16 @@ Thumbnail* Thumbnail::loadFromRaw (const Glib::ustring& fname, eSensorType &sens
                 hmax = (height - 2 - top_margin) / vskip;
             }
 
+            // Foveon has full raw image.
+            const int image_width =
+                sensorType == eSensorType::ST_FOVEON
+                    ? ri->get_rawwidth()
+                    : iwidth;
+
             int y = 0;
 
             for (int row = 1 + top_margin; row < iheight + top_margin  - 1 && y < hmax; row += vskip, y++) {
-                rofs = row * iwidth;
+                rofs = row * image_width;
 
                 int x = 0;
 
