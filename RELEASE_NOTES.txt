@@ -34,6 +34,7 @@ NEWS RELEVANT TO PACKAGE MAINTAINERS
 
 New since 5.12:
 - Add LunaSVG as alternate SVG rendering backend
+- TODO
 
 In general:
 - To get the source code, either clone from git or use the tarball from https://rawtherapee.com/shared/source/. Do not use the auto-generated GitHub release tarballs.

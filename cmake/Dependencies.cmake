@@ -58,6 +58,8 @@ macro(rt_setup_dependencies)
         if(WITH_SYSTEM_LUNASVG)
             pkg_check_modules(LUNASVG REQUIRED IMPORTED_TARGET lunasvg>=3.3.0)
         endif()
+    else()
+        message(FATAL_ERROR "Unknown value for SVG_BACKEND")
     endif()
 
     pkg_check_modules(LCMS REQUIRED IMPORTED_TARGET lcms2>=2.6)
