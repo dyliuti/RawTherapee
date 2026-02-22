@@ -408,7 +408,7 @@ ColorAppearance::ColorAppearance () : FoldableToolPanel (this, TOOL_NAME, M ("TP
     shapeblue = static_cast<DiagonalCurveEditor*>(curveEditorGblue->addCurve(CT_Diagonal, "", nullptr));
     curveEditorGblue->curveListComplete();
 
-    Gtk::Frame *pRGBFrame;
+    
     // Vertical box container for the content of the Process 3 frame
     Gtk::Box* pRGBVBox;
 
@@ -1319,6 +1319,7 @@ void ColorAppearance::updateGUIToMode(int mode)
 
 }
 
+
 void ColorAppearance::convertParamToNormal()
 {
     const ColorAppearanceParams def_params;
@@ -2133,6 +2134,8 @@ void ColorAppearance::algoChanged ()
         curveEditorG->show();
         curveEditorG2->show();
         curveEditorG3->show();
+        pRGBFrame->set_sensitive(true);
+
     } else if ( algo->get_active_row_number() == 1 ) {
         rstprotection->show();
         contrast->show();
@@ -2147,6 +2150,7 @@ void ColorAppearance::algoChanged ()
         curveEditorG->show();
         curveEditorG2->show();
         curveEditorG3->show();
+        pRGBFrame->set_sensitive(true);
     } else if ( algo->get_active_row_number() == 2 ) {
         contrast->hide();
         rstprotection->show();
@@ -2161,6 +2165,8 @@ void ColorAppearance::algoChanged ()
         curveEditorG->show();
         curveEditorG2->show();
         curveEditorG3->show();
+        pRGBFrame->set_sensitive(false);
+
     } else if ( algo->get_active_row_number() >= 3 ) { // ">=3" because everything has to be visible with the "(unchanged)" option too
         contrast->show();
         rstprotection->show();
@@ -2175,6 +2181,7 @@ void ColorAppearance::algoChanged ()
         curveEditorG->show();
         curveEditorG2->show();
         curveEditorG3->show();
+        pRGBFrame->set_sensitive(false);
     }
 
     if (listener && (multiImage || getEnabled()) ) {
