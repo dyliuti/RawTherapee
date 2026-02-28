@@ -30,10 +30,10 @@
 
 using namespace rtengine::procparams;
 
-BatchToolPanelCoordinator::BatchToolPanelCoordinator (FilePanel* parent) : active(false), ToolPanelCoordinator(true), somethingChanged(false), parent(parent)
+BatchToolPanelCoordinator::BatchToolPanelCoordinator (FilePanel* parent) : ToolPanelCoordinator(true), active(false), somethingChanged(false), parent(parent)
 {
-
     blockedUpdate = false;
+
     if (toolBar) {
         toolBar->setBatchMode ();
     }
