@@ -1209,7 +1209,7 @@ void ImProcFunctions::ciecam_02float(CieImage* ncie, float adap, int pW, int pwb
                         hpro = hpro + attenuation_hue * huered;//rotation Red
                         spro = spro * (1.f + (schrred / 100.f));//change Red saturation 
                         float Cp = (spro * spro * Qpro) / (1000000.f);//recalculate Chroma
-                        Mpro = SQR(spro) * Qpro /10000.f;//recalculate Mpro Colorfulness
+                        Mpro = SQR(spro) * Qpro / 10000.f;//recalculate Mpro Colorfulness
                         Cpro = Cp * 100.f;
 
 
@@ -1236,7 +1236,7 @@ void ImProcFunctions::ciecam_02float(CieImage* ncie, float adap, int pW, int pwb
                         hpro = hpro + attenuation_hue * huegreen;//Rotation Green
                         spro = spro * (1.f + (schrgreen / 100.f));//change Green saturation 
                         float Cp = (spro * spro * Qpro) / (1000000.f);//Evaluate Chroma with Brightness Q and saturation
-                        Mpro = SQR(spro) * Qpro /10000.f;//recalculate Mpro Colorfulness
+                        Mpro = SQR(spro) * Qpro / 10000.f;//recalculate Mpro Colorfulness
                         Cpro = Cp * 100.f;
 
                         if (hpro < 0.0f) {
@@ -1258,11 +1258,11 @@ void ImProcFunctions::ciecam_02float(CieImage* ncie, float adap, int pW, int pwb
                         if (jpblue) {
                             Jpro = SQR((10.f * Qpro) / wh);
                         }
-                    
+
                         hpro = hpro + attenuation_hue * hueblue;//Rotation Blue
                         spro = spro * (1.f + (schrblue / 100.f));//change Blue saturation 
                         float Cp = (spro * spro * Qpro) / (1000000.f);
-                        Mpro = SQR(spro) * Qpro /10000.f;//recalculate Mpro Colorfulness
+                        Mpro = SQR(spro) * Qpro / 10000.f;//recalculate Mpro Colorfulness
                         Cpro = Cp * 100.f;
 
                         if (hpro < 0.0f) {
