@@ -668,8 +668,6 @@ void BatchToolPanelCoordinator::procParamsChanged (Thumbnail* thm, int whoChange
 
 void BatchToolPanelCoordinator::beginBatchPParamsChange (int numberOfEntries)
 {
-    if (!active) return;
-
     blockedUpdate = true;
 
     if (numberOfEntries > 50) { // Arbitrary amount
@@ -680,11 +678,11 @@ void BatchToolPanelCoordinator::beginBatchPParamsChange (int numberOfEntries)
 // The end of a batch pparams change triggers a close/initsession
 void BatchToolPanelCoordinator::endBatchPParamsChange()
 {
-    if (!active) return;
-
-    //printf("BatchToolPanelCoordinator::endBatchPParamsChange  /  Nouvelle session!\n");
-    closeSession (false);
-    initSession ();
+    if (active) {
+        //printf("BatchToolPanelCoordinator::endBatchPParamsChange  /  Nouvelle session!\n");
+        closeSession (false);
+        initSession ();
+    }
     blockedUpdate = false;
     parent->set_sensitive (true);
 }
