@@ -641,7 +641,6 @@ void GuideDrawer::drawAspectRatios()
             }
             return result;
         }();
-        const double inverse_aspect_ratio = 1.0 / aspect_ratio;
 
         // If the current ratio doesn't match the desired aspect ratio, use a
         // fitted and centered guide that does match the aspect ratio.

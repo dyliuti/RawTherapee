@@ -176,6 +176,11 @@ void CropGuide::setupEvents()
 
 void CropGuide::setupPresets()
 {
+    // N by 5 grid with columns:
+    //
+    // | Toggle | Label | [Rotate] | [Mirror] | [Undo] |
+    //
+    // where Label may span multiple columns to fill space
     auto grid = Gtk::manage(new Gtk::Grid());
     grid->set_row_homogeneous(false);
     grid->set_column_homogeneous(false);
@@ -201,43 +206,35 @@ void CropGuide::setupPresets()
         label->set_hexpand(true);
         label->set_halign(Gtk::ALIGN_START);
         label->set_line_wrap(true);
-        grid->attach(*label, 1, curr_row);
+        // Label is attached depending on preset type later
 
-        auto add_button = [&](const char* icon, Gtk::Box* button_box) {
+        auto add_button = [&](const char* icon, int column) {
             auto button = Gtk::manage(new Gtk::Button());
             button->set_image(*Gtk::manage(
                     new RTImage(icon, Gtk::ICON_SIZE_BUTTON)));
             button->set_relief(Gtk::RELIEF_NONE);
             button->set_hexpand(false);
-            button_box->pack_start(*button);
+            grid->attach(*button, column, curr_row);
 
             return button;
         };
 
         if (type_index == CropGuideParams::PresetIndex::GOLDEN_TRIANGLE) {
-            curr_row++;
+            grid->attach(*label, 1, curr_row, 2);
 
-            auto button_box = Gtk::manage(new Gtk::Box());
-            button_box->set_halign(Gtk::ALIGN_START);
-            grid->attach(*button_box, 1, curr_row);
-
-            auto mirror_button = add_button("flip-horizontal", button_box);
-            auto undo_button = add_button("undo-small", button_box);
+            auto mirror_button = add_button("flip-horizontal", 3);
+            auto undo_button = add_button("undo-small", 4);
 
             mirror_button->signal_clicked().connect(
                 sigc::mem_fun(this, &CropGuide::onGoldenTriangleMirror));
             undo_button->signal_clicked().connect(
                 sigc::mem_fun(this, &CropGuide::onGoldenTriangleReset));
         } else if (type_index == CropGuideParams::PresetIndex::GOLDEN_RATIO) {
-            curr_row++;
+            grid->attach(*label, 1, curr_row, 1);
 
-            auto button_box = Gtk::manage(new Gtk::Box());
-            button_box->set_halign(Gtk::ALIGN_START);
-            grid->attach(*button_box, 1, curr_row);
-
-            auto rotate_button = add_button("rotate-right-small", button_box);
-            auto mirror_button = add_button("flip-horizontal", button_box);
-            auto undo_button = add_button("undo-small", button_box);
+            auto rotate_button = add_button("rotate-right-small", 2);
+            auto mirror_button = add_button("flip-horizontal", 3);
+            auto undo_button = add_button("undo-small", 4);
 
             rotate_button->signal_clicked().connect(
                 sigc::mem_fun(this, &CropGuide::onGoldenRatioRotate));
@@ -245,6 +242,8 @@ void CropGuide::setupPresets()
                 sigc::mem_fun(this, &CropGuide::onGoldenRatioMirror));
             undo_button->signal_clicked().connect(
                 sigc::mem_fun(this, &CropGuide::onGoldenRatioReset));
+        } else {
+            grid->attach(*label, 1, curr_row, 4);
         }
     }
 }
@@ -293,7 +292,16 @@ void CropGuide::setupAspectRatioGuides()
 Gtk::Widget* CropGuide::createAspectRatioModelControls(
     const Glib::RefPtr<AspectRatioModel>& item)
 {
+    // N by 6 grid with columns:
+    //
+    // | Toggle | Label | Color | Color Select | Rotate | Remove |
+    //
+    // where Label may span multiple columns to fill space
     auto grid = Gtk::manage(new Gtk::Grid());
+    grid->set_row_homogeneous(false);
+    grid->set_column_homogeneous(false);
+    grid->set_hexpand(true);
+    grid->set_halign(Gtk::ALIGN_FILL);
 
     auto visible_button = Gtk::manage(new Gtk::ToggleButton());
     visible_button->set_active(item->visible);
@@ -306,27 +314,35 @@ Gtk::Widget* CropGuide::createAspectRatioModelControls(
         visible_button, item->index));
 
     auto label = Gtk::manage(new Gtk::Label(item->aspect_ratio.label));
+    label->set_hexpand(true);
     label->set_halign(Gtk::ALIGN_START);
     label->set_line_wrap(true);
     grid->attach(*label, 1, 0);
 
+    auto color_event_box = Gtk::manage(new Gtk::EventBox());
     auto color_preview = Gtk::manage(new ColorPreview());
     color_preview->set_hexpand(false);
     color_preview->set_halign(Gtk::ALIGN_CENTER);
     color_preview->set_vexpand(false);
     color_preview->set_valign(Gtk::ALIGN_CENTER);
+    color_preview->set_margin_end(4);
     color_preview->setRgb(item->color.get_red(), item->color.get_green(),
                           item->color.get_blue());
-    grid->attach(*color_preview, 0, 1);
-
-    auto box = Gtk::manage(new Gtk::Box());
+    color_event_box->add(*color_preview);
+    grid->attach(*color_event_box, 2, 0);
 
     auto color_button = Gtk::manage(new Gtk::Button());
     color_button->set_image(*Gtk::manage(
         new RTImage("color-picker-small", Gtk::ICON_SIZE_BUTTON)));
     color_button->set_relief(Gtk::RELIEF_NONE);
-    box->pack_start(*color_button, false, false);
+    grid->attach(*color_button, 3, 0);
 
+    const size_t preset_index = item->index;
+    color_event_box->signal_button_release_event().connect(
+        [this, preset_index, color_preview](GdkEventButton* ev) -> bool {
+            this->onAspectRatioPresetPickColor(preset_index, color_preview);
+            return true;
+        });
     color_button->signal_clicked().connect(sigc::bind(
         sigc::mem_fun(this, &CropGuide::onAspectRatioPresetPickColor),
         item->index,
@@ -336,7 +352,7 @@ Gtk::Widget* CropGuide::createAspectRatioModelControls(
     rotate_button->set_image(*Gtk::manage(
         new RTImage("rotate-right-small", Gtk::ICON_SIZE_BUTTON)));
     rotate_button->set_relief(Gtk::RELIEF_NONE);
-    box->pack_start(*rotate_button, false, false);
+    grid->attach(*rotate_button, 4, 0);
 
     rotate_button->signal_clicked().connect(sigc::bind(
         sigc::mem_fun(this, &CropGuide::onAspectRatioPresetRotate),
@@ -346,13 +362,12 @@ Gtk::Widget* CropGuide::createAspectRatioModelControls(
     remove_button->set_image(*Gtk::manage(
         new RTImage("cancel-small", Gtk::ICON_SIZE_BUTTON)));
     remove_button->set_relief(Gtk::RELIEF_NONE);
-    box->pack_start(*remove_button, false, false);
+    grid->attach(*remove_button, 6, 0);
 
     remove_button->signal_clicked().connect(sigc::bind(
         sigc::mem_fun(this, &CropGuide::onAspectRatioPresetRemoved),
         item->index));
 
-    grid->attach(*box, 1, 1);
     grid->show_all();
     return grid;
 }
@@ -524,12 +539,14 @@ void CropGuide::enabledChanged()
 
 bool CropGuide::onPresetToggled(GdkEventButton* event, size_t index)
 {
-    if (event->state & GDK_CONTROL_MASK) {
-        Preset& preset = m_presets.at(index);
-        preset.visibility_button->toggled();
-        bool is_visible = preset.visibility_button->get_active();
-        updateImage(preset.visibility_button, is_visible);
-        preset.is_dirty = true;
+    Preset& toggled_preset = m_presets.at(index);
+    const bool will_hide_preset = !toggled_preset.visibility_button->get_active();
+
+    if (will_hide_preset || (event->state & GDK_CONTROL_MASK)) {
+        toggled_preset.visibility_button->toggled();
+        bool is_visible = toggled_preset.visibility_button->get_active();
+        updateImage(toggled_preset.visibility_button, is_visible);
+        toggled_preset.is_dirty = true;
     } else {
         for (size_t i = 0; i < m_presets.size(); i++) {
             Preset& preset = m_presets[i];
