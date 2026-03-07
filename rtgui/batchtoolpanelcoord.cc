@@ -30,10 +30,10 @@
 
 using namespace rtengine::procparams;
 
-BatchToolPanelCoordinator::BatchToolPanelCoordinator (FilePanel* parent) : ToolPanelCoordinator(true), somethingChanged(false), parent(parent)
+BatchToolPanelCoordinator::BatchToolPanelCoordinator (FilePanel* parent) : ToolPanelCoordinator(true), active(false), somethingChanged(false), parent(parent)
 {
-
     blockedUpdate = false;
+
     if (toolBar) {
         toolBar->setBatchMode ();
     }
@@ -643,13 +643,22 @@ void BatchToolPanelCoordinator::getCamWB (double& temp, double& green, rtengine:
 
 void BatchToolPanelCoordinator::optionsChanged ()
 {
+    if (!active) return;
 
     closeSession ();
     initSession ();
 }
 
+void BatchToolPanelCoordinator::enableAutoUpdate ()
+{
+    active = true;
+    closeSession (false);
+    initSession ();
+}
+
 void BatchToolPanelCoordinator::procParamsChanged (Thumbnail* thm, int whoChangedIt, bool upgradeHint)
 {
+    if (!active) return;
 
     if (whoChangedIt != BATCHEDITOR && !blockedUpdate) {
         closeSession (false);
@@ -659,7 +668,6 @@ void BatchToolPanelCoordinator::procParamsChanged (Thumbnail* thm, int whoChange
 
 void BatchToolPanelCoordinator::beginBatchPParamsChange (int numberOfEntries)
 {
-
     blockedUpdate = true;
 
     if (numberOfEntries > 50) { // Arbitrary amount
@@ -670,9 +678,11 @@ void BatchToolPanelCoordinator::beginBatchPParamsChange (int numberOfEntries)
 // The end of a batch pparams change triggers a close/initsession
 void BatchToolPanelCoordinator::endBatchPParamsChange()
 {
-    //printf("BatchToolPanelCoordinator::endBatchPParamsChange  /  Nouvelle session!\n");
-    closeSession (false);
-    initSession ();
+    if (active) {
+        //printf("BatchToolPanelCoordinator::endBatchPParamsChange  /  Nouvelle session!\n");
+        closeSession (false);
+        initSession ();
+    }
     blockedUpdate = false;
     parent->set_sensitive (true);
 }
@@ -690,6 +700,8 @@ void BatchToolPanelCoordinator::profileChange(
     bool fromLastSave
 )
 {
+    if (!active) return;
+
     if (event == rtengine::EvProfileChanged) {
         // a profile has been selected in a hypothetical Profile panel
         // -> ACTUALLY NOT SUPPORTED
