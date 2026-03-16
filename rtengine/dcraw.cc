@@ -2754,7 +2754,7 @@ void CLASS quicktake_100_load_raw()
   int rb, row, col, sharp, val=0;
 
   if (width > 640 || height > 480) {
-    fprintf(stderr, _("Invalid image dimension for QuickTake 100: %dx%d\n"), width, height);
+    fprintf(stderr, _("Invalid image dimension for QuickTake 100: %ux%u\n"), width, height);
     return;
   }
 
@@ -3856,7 +3856,7 @@ void CLASS foveon_load_camf()
 
   // Adapted from LibRaw.
   if (wide > 32767 || high > 32767 || wide * high > 20000000) {
-    fprintf(stderr, _("%s has too large CAMF dimensions (width=%d height=%d).\n"), ifname, wide, high);
+    fprintf(stderr, _("%s has too large CAMF dimensions (width=%u height=%u).\n"), ifname, wide, high);
     return;
   }
 
