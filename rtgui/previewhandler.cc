@@ -233,6 +233,3 @@ void PreviewHandler::previewImageChanged ()
         (*i)->previewImageChanged ();
     }
 }
-
-CropParams& PreviewHandler::getCropParams() { return *cropParams; }
-CropGuideParams& PreviewHandler::getCropGuideParams() { return *cropGuideParams; }

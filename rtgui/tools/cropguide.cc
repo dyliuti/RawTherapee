@@ -188,8 +188,7 @@ void CropGuide::setupPresets()
     grid->set_halign(Gtk::ALIGN_FILL);
     pack_start(*grid, true, true);
 
-    size_t curr_row = 0;
-    for (size_t i = 0; i < m_presets.size(); i++, curr_row++) {
+    for (size_t i = 0; i < m_presets.size(); i++) {
         const auto type_index = static_cast<CropGuideParams::PresetIndex>(i);
         auto& preset = m_presets[i];
 
@@ -200,7 +199,7 @@ void CropGuide::setupPresets()
         preset.visibility_conn = visible_button->signal_button_release_event().connect(
             sigc::bind(sigc::mem_fun(*this, &CropGuide::onPresetToggled), i));
 
-        grid->attach(*visible_button, 0, curr_row);
+        grid->attach(*visible_button, 0, i);
 
         auto label = Gtk::manage(new Gtk::Label(M(GUIDE_TYPE_OPTIONS.at(i))));
         label->set_hexpand(true);
@@ -214,13 +213,13 @@ void CropGuide::setupPresets()
                     new RTImage(icon, Gtk::ICON_SIZE_BUTTON)));
             button->set_relief(Gtk::RELIEF_NONE);
             button->set_hexpand(false);
-            grid->attach(*button, column, curr_row);
+            grid->attach(*button, column, i);
 
             return button;
         };
 
         if (type_index == CropGuideParams::PresetIndex::GOLDEN_TRIANGLE) {
-            grid->attach(*label, 1, curr_row, 2);
+            grid->attach(*label, 1, i, 2);
 
             auto mirror_button = add_button("flip-horizontal", 3);
             auto undo_button = add_button("undo-small", 4);
@@ -230,7 +229,7 @@ void CropGuide::setupPresets()
             undo_button->signal_clicked().connect(
                 sigc::mem_fun(this, &CropGuide::onGoldenTriangleReset));
         } else if (type_index == CropGuideParams::PresetIndex::GOLDEN_RATIO) {
-            grid->attach(*label, 1, curr_row, 1);
+            grid->attach(*label, 1, i, 1);
 
             auto rotate_button = add_button("rotate-right-small", 2);
             auto mirror_button = add_button("flip-horizontal", 3);
@@ -243,7 +242,7 @@ void CropGuide::setupPresets()
             undo_button->signal_clicked().connect(
                 sigc::mem_fun(this, &CropGuide::onGoldenRatioReset));
         } else {
-            grid->attach(*label, 1, curr_row, 4);
+            grid->attach(*label, 1, i, 4);
         }
     }
 }
@@ -369,6 +368,7 @@ Gtk::Widget* CropGuide::createAspectRatioModelControls(
         item->index));
 
     grid->show_all();
+
     return grid;
 }
 
@@ -391,18 +391,26 @@ void CropGuide::read(const rtengine::procparams::ProcParams* pp,
         m_dirty_rotate_golden_ratio = pedited->cropGuide.rotate_golden_ratio;
         m_dirty_mirror_golden_ratio = pedited->cropGuide.mirror_golden_ratio;
         m_bleed->setEditedState(pedited->cropGuide.bleed ? Edited : UnEdited);
-    };
+    } else {
+        m_dirty_mirror_golden_triangle = false;
+        m_dirty_rotate_golden_ratio = false;
+        m_dirty_mirror_golden_ratio = false;
+    }
 
     for (size_t i = 0; i < m_presets.size(); i++) {
         auto& preset = m_presets[i];
         bool is_enabled = pp->cropGuide.presets[i];
 
-        ConnectionBlocker block(preset.visibility_conn);
-        preset.visibility_button->set_active(is_enabled);
-        updateImage(preset.visibility_button, is_enabled);
+        if (preset.visibility_button->get_active() != is_enabled) {
+            ConnectionBlocker block(preset.visibility_conn);
+            preset.visibility_button->set_active(is_enabled);
+            updateImage(preset.visibility_button, is_enabled);
+        }
 
         if (pedited) {
             preset.is_dirty = pedited->cropGuide.presets[i];
+        } else {
+            preset.is_dirty = false;
         }
     }
 
@@ -435,6 +443,8 @@ void CropGuide::read(const rtengine::procparams::ProcParams* pp,
 
     if (pedited) {
         m_dirty_aspect_ratios = pedited->cropGuide.aspect_ratios;
+    } else {
+        m_dirty_aspect_ratios = false;
     }
 
     m_basis->set_active(mapBasis(pp->cropGuide.basis));
@@ -540,26 +550,28 @@ void CropGuide::enabledChanged()
 bool CropGuide::onPresetToggled(GdkEventButton* event, size_t index)
 {
     Preset& toggled_preset = m_presets.at(index);
-    const bool will_hide_preset = !toggled_preset.visibility_button->get_active();
+    const bool is_enabled = toggled_preset.visibility_button->get_active();
 
-    if (will_hide_preset || (event->state & GDK_CONTROL_MASK)) {
-        toggled_preset.visibility_button->toggled();
-        bool is_visible = toggled_preset.visibility_button->get_active();
-        updateImage(toggled_preset.visibility_button, is_visible);
+    // Disable presets one at a time.
+    // Enable presets one at a time if CTRL is held down.
+    if (!is_enabled || (event->state & GDK_CONTROL_MASK)) {
+        updateImage(toggled_preset.visibility_button, is_enabled);
         toggled_preset.is_dirty = true;
     } else {
         for (size_t i = 0; i < m_presets.size(); i++) {
             Preset& preset = m_presets[i];
 
             if (i == index) {
-                preset.visibility_button->toggled();
                 bool is_visible = preset.visibility_button->get_active();
                 updateImage(preset.visibility_button, is_visible);
                 preset.is_dirty = true;
             } else {
-                preset.visibility_button->set_active(false);
-                updateImage(preset.visibility_button, false);
-                preset.is_dirty = true;
+                if (preset.visibility_button->get_active()) {
+                    ConnectionBlocker block(preset.visibility_conn);
+                    preset.visibility_button->set_active(false);
+                    updateImage(preset.visibility_button, false);
+                    preset.is_dirty = true;
+                }
             }
         }
     }
@@ -661,10 +673,12 @@ void CropGuide::onAspectRatioComboChanged()
 
 void CropGuide::onAspectRatioPresetToggled(Gtk::ToggleButton* button, size_t index)
 {
-    bool is_visible = button->get_active();
-    updateImage(button, is_visible);
-
     auto& preset = m_aspect_ratio_presets.at(index);
+
+    bool is_visible = button->get_active();
+    if (preset->visible == is_visible) return;
+
+    updateImage(button, is_visible);
     preset->visible = is_visible;
     m_dirty_aspect_ratios = true;
 

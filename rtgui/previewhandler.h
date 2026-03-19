@@ -89,6 +89,9 @@ public:
     Glib::RefPtr<Gdk::Pixbuf> getRoughImage(ImageCoord pos, hidpi::ScaledDeviceSize desiredSize, double zoom);
     hidpi::DevicePixbuf getRoughImage(hidpi::LogicalSize desiredSize, int deviceScale, double& outLogicalZoom);
 
-    rtengine::procparams::CropParams& getCropParams();
-    rtengine::procparams::CropGuideParams& getCropGuideParams();
+    const rtengine::procparams::CropParams& getCropParams() const { return *cropParams; }
+    const rtengine::procparams::CropGuideParams& getCropGuideParams() const
+    {
+        return *cropGuideParams;
+    }
 };
