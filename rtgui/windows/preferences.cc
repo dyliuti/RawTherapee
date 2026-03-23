@@ -1448,6 +1448,21 @@ Gtk::Widget* Preferences::getGeneralPanel()
 
 
     vbGeneral->attach_next_to (*fdg, *fclip, Gtk::POS_BOTTOM, 2, 1);
+
+    {
+        auto resetBox = Gtk::manage(new Gtk::Box());
+        auto resetPrefsButton = Gtk::manage(new Gtk::Button(M("PREFERENCES_RESET_TO_DEFAULT")));
+        auto restartLabel = Gtk::manage(new Gtk::Label(
+            Glib::ustring("(") + M("PREFERENCES_APPLNEXTSTARTUP") + ")",
+            Gtk::ALIGN_START));
+        resetBox->pack_start(*resetPrefsButton, false, false);
+        resetBox->pack_start(*restartLabel, false, false);
+        vbGeneral->attach_next_to(*resetBox, *fdg, Gtk::POS_BOTTOM, 1, 1);
+
+        resetPrefsButton->signal_clicked().connect(
+            sigc::mem_fun(*this, &Preferences::onResetToDefaultClicked));
+    }
+
     langAutoDetectConn = ckbLangAutoDetect->signal_toggled().connect(sigc::mem_fun(*this, &Preferences::langAutoDetectToggled));
     tconn = themeCBT->signal_changed().connect ( sigc::mem_fun (*this, &Preferences::themeChanged) );
     fconn = mainFontFB->signal_font_set().connect ( sigc::mem_fun (*this, &Preferences::fontChanged) );
@@ -2904,4 +2919,12 @@ void Preferences::behAddAllPressed()
 void Preferences::behSetAllPressed()
 {
     behAddSetAllPressed(false);
+}
+
+void Preferences::onResetToDefaultClicked()
+{
+    Options defaults;
+    moptions.copyFrom(&defaults);
+    fillPreferences();
+    storePreferences();
 }
