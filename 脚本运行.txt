@@ -1,0 +1,3 @@
+set "RT_DIR=D:\project\RawTherapee\output"
+set "PATH=%RT_DIR%\3rdparty;%PATH%"
+"%RT_DIR%\rawtherapee-cli.exe" -o "D:\file\input\JAK06545.jpg" -j95 -Y -c "D:\file\input\JAK06545.ARW"
