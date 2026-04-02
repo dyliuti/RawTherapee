@@ -142,6 +142,7 @@ namespace CropGuide {
     DEFINE_KEY(RED, "Red");
     DEFINE_KEY(GREEN, "Green");
     DEFINE_KEY(BLUE, "Blue");
+    DEFINE_KEY(ALPHA, "Alpha");
 }  // namespace CropGuide
 
 namespace Framing
@@ -360,6 +361,7 @@ void loadCropGuideParams(
         parse_color(json, RED, preset.red);
         parse_color(json, GREEN, preset.green);
         parse_color(json, BLUE, preset.blue);
+        parse_color(json, ALPHA, preset.alpha);
 
         cJSON_Delete(json);
     };
@@ -442,6 +444,7 @@ void loadCropGuideParams(
                     parse_color(obj, RED, entry.red);
                     parse_color(obj, GREEN, entry.green);
                     parse_color(obj, BLUE, entry.blue);
+                    parse_color(obj, ALPHA, entry.alpha);
                     params.aspect_ratios.push_back(std::move(entry));
                 }
             }
@@ -488,6 +491,7 @@ void saveCropGuideParams(
         cJSON_AddNumberToObject(json, RED, preset.red);
         cJSON_AddNumberToObject(json, GREEN, preset.green);
         cJSON_AddNumberToObject(json, BLUE, preset.blue);
+        cJSON_AddNumberToObject(json, ALPHA, preset.alpha);
 
         char* serialized_json = cJSON_PrintUnformatted(json);
         if (serialized_json) {
@@ -552,6 +556,7 @@ void saveCropGuideParams(
             cJSON_AddNumberToObject(obj, RED, entry.red);
             cJSON_AddNumberToObject(obj, GREEN, entry.green);
             cJSON_AddNumberToObject(obj, BLUE, entry.blue);
+            cJSON_AddNumberToObject(obj, ALPHA, entry.alpha);
 
             cJSON_AddItemToArray(serialized_aspect_ratios, obj);
         }
@@ -2171,7 +2176,7 @@ void CropParams::mapToResized(int resizedWidth, int resizedHeight, int scale, in
 }
 
 CropGuideParams::PresetParams::PresetParams()
-    : enabled(false), red(1.0), green(1.0), blue(1.0)
+    : enabled(false), red(1.0), green(1.0), blue(1.0), alpha(0.618)
 {
 }
 
@@ -2180,7 +2185,8 @@ bool CropGuideParams::PresetParams::operator==(const PresetParams& other) const
     return enabled == other.enabled
         && red == other.red
         && green == other.green
-        && blue == other.blue;
+        && blue == other.blue
+        && alpha == other.alpha;
 }
 
 CropGuideParams::AspectRatioParams::AspectRatioParams(size_t preset_index)
@@ -2189,7 +2195,8 @@ CropGuideParams::AspectRatioParams::AspectRatioParams(size_t preset_index)
       preset_index(preset_index),
       red(1.0),
       green(1.0),
-      blue(1.0)
+      blue(1.0),
+      alpha(0.618)
 {
 }
 
@@ -2200,7 +2207,8 @@ bool CropGuideParams::AspectRatioParams::operator==(const AspectRatioParams& oth
         && preset_index == other.preset_index
         && red == other.red
         && green == other.green
-        && blue == other.blue;
+        && blue == other.blue
+        && alpha == other.alpha;
 }
 
 CropGuideParams::CropGuideParams()

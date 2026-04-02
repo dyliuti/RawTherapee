@@ -763,6 +763,7 @@ struct CropGuideParams {
         double red;
         double green;
         double blue;
+        double alpha;
 
         PresetParams();
 
@@ -779,6 +780,7 @@ struct CropGuideParams {
         double red;
         double green;
         double blue;
+        double alpha;
 
         AspectRatioParams(size_t preset_index);
 

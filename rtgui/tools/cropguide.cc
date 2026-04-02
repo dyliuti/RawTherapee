@@ -433,9 +433,7 @@ void CropGuide::read(const rtengine::procparams::ProcParams* pp,
         }
 
         Gdk::RGBA color;
-        color.set_rgba(static_cast<float>(pp_preset.red),
-                       static_cast<float>(pp_preset.green),
-                       static_cast<float>(pp_preset.blue));
+        color.set_rgba(pp_preset.red, pp_preset.green, pp_preset.blue, pp_preset.alpha);
         preset.color = color;
         preset.preview->setRgb(color.get_red(), color.get_green(), color.get_blue());
 
@@ -463,8 +461,7 @@ void CropGuide::read(const rtengine::procparams::ProcParams* pp,
         preset->visible = param.enabled;
 
         Gdk::RGBA color;
-        color.set_rgba(static_cast<float>(param.red), static_cast<float>(param.green),
-                       static_cast<float>(param.blue));
+        color.set_rgba(param.red, param.green, param.blue, param.alpha);
         preset->color = color;
 
         m_aspect_ratio_store->insert_sorted(
@@ -502,12 +499,14 @@ void CropGuide::write(rtengine::procparams::ProcParams* pp, ParamsEdited* pedite
     }
 
     for (size_t i = 0; i < m_presets.size(); i++) {
-        auto& preset = m_presets[i];
+        const auto& preset = m_presets[i];
+        auto& pp_preset = pp->cropGuide.presets[i];
 
-        pp->cropGuide.presets[i].enabled = preset.visibility_button->get_active();
-        pp->cropGuide.presets[i].red = preset.color.get_red();
-        pp->cropGuide.presets[i].green = preset.color.get_green();
-        pp->cropGuide.presets[i].blue = preset.color.get_blue();
+        pp_preset.enabled = preset.visibility_button->get_active();
+        pp_preset.red = preset.color.get_red();
+        pp_preset.green = preset.color.get_green();
+        pp_preset.blue = preset.color.get_blue();
+        pp_preset.alpha = preset.color.get_alpha();
 
         if (pedited) {
             pedited->cropGuide.presets[i] = preset.is_dirty;
@@ -528,6 +527,7 @@ void CropGuide::write(rtengine::procparams::ProcParams* pp, ParamsEdited* pedite
         params.red = model->color.get_red();
         params.green = model->color.get_green();
         params.blue = model->color.get_blue();
+        params.alpha = model->color.get_alpha();
 
         pp->cropGuide.aspect_ratios.push_back(std::move(params));
     }
@@ -680,7 +680,7 @@ void CropGuide::onPresetPickColor(size_t index)
     auto& preset = m_presets.at(index);
 
     Gtk::ColorChooserDialog dialog;
-    dialog.set_use_alpha(false);
+    dialog.set_use_alpha(true);
     dialog.set_rgba(preset.color);
 
     int result = dialog.run();
@@ -751,7 +751,7 @@ void CropGuide::onAspectRatioPresetPickColor(size_t index, ColorPreview* preview
     auto& preset = m_aspect_ratio_presets.at(index);
 
     Gtk::ColorChooserDialog dialog;
-    dialog.set_use_alpha(false);
+    dialog.set_use_alpha(true);
     dialog.set_rgba(preset->color);
 
     int result = dialog.run();

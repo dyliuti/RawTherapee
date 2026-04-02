@@ -230,10 +230,17 @@ CropRect calculateBleedRect(const CropRect& crop_rect, const CropGuideParams& pa
     }
 }
 
-Gdk::RGBA buildColor(double red, double green, double blue)
+Gdk::RGBA buildColor(const CropGuideParams::PresetParams& preset)
 {
     Gdk::RGBA color;
-    color.set_rgba(red, green, blue, GUIDE_ALPHA);
+    color.set_rgba(preset.red, preset.green, preset.blue, preset.alpha);
+    return color;
+}
+
+Gdk::RGBA buildColor(const CropGuideParams::AspectRatioParams& params)
+{
+    Gdk::RGBA color;
+    color.set_rgba(params.red, params.green, params.blue, params.alpha);
     return color;
 }
 
@@ -244,7 +251,7 @@ void GuideDrawer::drawRuleOfThirds()
     const auto& preset = params.presets[PresetIndex::RULE_OF_THIRDS];
     if (!preset.enabled) return;
 
-    Gdk::RGBA color = buildColor(preset.red, preset.green, preset.blue);
+    Gdk::RGBA color = buildColor(preset);
 
     drawHorizontal(1.0 / 3.0, color);
     drawHorizontal(2.0 / 3.0, color);
@@ -257,7 +264,7 @@ void GuideDrawer::drawHarmonicMeans()
     const auto& preset = params.presets[PresetIndex::HARMONIC_MEANS];
     if (!preset.enabled) return;
 
-    Gdk::RGBA color = buildColor(preset.red, preset.green, preset.blue);
+    Gdk::RGBA color = buildColor(preset);
 
     drawHorizontal(GOLDEN_RATIO_RECIPROCAL, color);
     drawHorizontal(1.0 - GOLDEN_RATIO_RECIPROCAL, color);
@@ -270,7 +277,7 @@ void GuideDrawer::drawCrosshair()
     const auto& preset = params.presets[PresetIndex::CROSSHAIR];
     if (!preset.enabled) return;
 
-    Gdk::RGBA color = buildColor(preset.red, preset.green, preset.blue);
+    Gdk::RGBA color = buildColor(preset);
 
     drawHorizontal(0.5, color);
     drawVertical(0.5, color);
@@ -281,7 +288,7 @@ void GuideDrawer::drawGrid()
     const auto& preset = params.presets[PresetIndex::GRID];
     if (!preset.enabled) return;
 
-    Gdk::RGBA color = buildColor(preset.red, preset.green, preset.blue);
+    Gdk::RGBA color = buildColor(preset);
 
     // To have even distribution, normalize it a bit
     const int longSideNumLines = 10;
@@ -329,7 +336,7 @@ void GuideDrawer::drawEpassport()
     const auto& preset = params.presets[PresetIndex::EPASSPORT];
     if (!preset.enabled) return;
 
-    Gdk::RGBA color = buildColor(preset.red, preset.green, preset.blue);
+    Gdk::RGBA color = buildColor(preset);
 
     drawHorizontal(7.0 / 45.0, color);
     drawHorizontal(26.0 / 45.0, color);
@@ -342,7 +349,7 @@ void GuideDrawer::drawCenteredSquare()
     const auto& preset = params.presets[PresetIndex::CENTERED_SQUARE];
     if (!preset.enabled) return;
 
-    Gdk::RGBA color = buildColor(preset.red, preset.green, preset.blue);
+    Gdk::RGBA color = buildColor(preset);
 
     const double w = rect.x1 - rect.x0;
     const double h = rect.y1 - rect.y0;
@@ -365,7 +372,7 @@ void GuideDrawer::drawDiagonals()
     const auto& preset = params.presets[PresetIndex::RULE_OF_DIAGONALS];
     if (!preset.enabled) return;
 
-    Gdk::RGBA color = buildColor(preset.red, preset.green, preset.blue);
+    Gdk::RGBA color = buildColor(preset);
 
     double corners_from[4][2];
     double corners_to[4][2];
@@ -402,7 +409,7 @@ void GuideDrawer::drawGoldenTriangle()
     const auto& preset = params.presets[PresetIndex::GOLDEN_TRIANGLE];
     if (!preset.enabled) return;
 
-    Gdk::RGBA color = buildColor(preset.red, preset.green, preset.blue);
+    Gdk::RGBA color = buildColor(preset);
 
     double x0 = rect.x0;
     double x1 = rect.x1;
@@ -437,7 +444,7 @@ void GuideDrawer::drawGoldenRatio(double device_scale)
     const auto& preset = params.presets[PresetIndex::GOLDEN_RATIO];
     if (!preset.enabled) return;
 
-    Gdk::RGBA color = buildColor(preset.red, preset.green, preset.blue);
+    Gdk::RGBA color = buildColor(preset);
 
     const double w = rect.x1 - rect.x0;
     const double h = rect.y1 - rect.y0;
@@ -666,7 +673,7 @@ void GuideDrawer::drawAspectRatios()
     for (const auto& entry : params.aspect_ratios) {
         if (!entry.enabled) continue;
 
-        Gdk::RGBA color = buildColor(entry.red, entry.green, entry.blue);
+        Gdk::RGBA color = buildColor(entry);
 
         const double aspect_ratio = [&]() {
             double result = getAspectRatioValue(entry.preset_index);
