@@ -330,12 +330,38 @@ void loadCropGuideParams(
 
     assignFromKeyfile(keyFile, group, TOOL_ENABLED, params.enabled, edited.enabled);
 
+    auto parse_color = [&](const cJSON* obj, const char* key, double& out) {
+        const cJSON* entry = cJSON_GetObjectItemCaseSensitive(obj, key);
+        if (cJSON_IsNumber(entry)) {
+            out = entry->valuedouble;
+        } else {
+            out = 1.0;
+        }
+    };
+
     auto load = [&](PresetIndex index, const char* key) {
-        bool is_enabled = false;
-        bool is_edited = edited.presets[index];
-        assignFromKeyfile(keyFile, group, key, is_enabled, is_edited);
-        params.presets[index] = is_enabled;
-        edited.presets[index] = is_edited;
+        if (!keyFile.has_key(group, key)) return;
+
+        Glib::ustring data = keyFile.get_string(group, key);
+        cJSON* json = cJSON_Parse(data.c_str());
+        if (!json) return;
+        if (!cJSON_IsObject(json)) {
+            cJSON_Delete(json);
+            return;
+        }
+
+        CropGuideParams::PresetParams& preset = params.presets[index];
+        edited.presets[index] = true;
+
+        const cJSON* enabled =
+            cJSON_GetObjectItemCaseSensitive(json, TOOL_ENABLED);
+        preset.enabled = cJSON_IsTrue(enabled);
+
+        parse_color(json, RED, preset.red);
+        parse_color(json, GREEN, preset.green);
+        parse_color(json, BLUE, preset.blue);
+
+        cJSON_Delete(json);
     };
 
     load(PresetIndex::RULE_OF_THIRDS, RULE_OF_THIRDS);
@@ -396,15 +422,6 @@ void loadCropGuideParams(
             return false;
         };
 
-        auto parse_color = [&](const cJSON* obj, const char* key, double& out) {
-            const cJSON* entry = cJSON_GetObjectItemCaseSensitive(obj, key);
-            if (cJSON_IsNumber(entry)) {
-                out = entry->valuedouble;
-            } else {
-                out = 1.0;
-            }
-        };
-
         const cJSON* obj = nullptr;
         cJSON_ArrayForEach(obj, json) {
             const cJSON* name = cJSON_GetObjectItemCaseSensitive(obj, NAME);
@@ -412,21 +429,15 @@ void loadCropGuideParams(
                 size_t preset_index = 0;
                 if (find_index(name->valuestring, preset_index)) {
                     CropGuideParams::AspectRatioParams entry(preset_index);
+                    edited.aspect_ratios = true;
 
                     const cJSON* enabled =
                         cJSON_GetObjectItemCaseSensitive(obj, TOOL_ENABLED);
-                    if (cJSON_IsTrue(enabled)) {
-                        entry.enabled = true;
-                    } else {
-                        entry.enabled = false;
-                    }
+                    entry.enabled = cJSON_IsTrue(enabled);
+
                     const cJSON* is_portrait =
                         cJSON_GetObjectItemCaseSensitive(obj, IS_PORTRAIT);
-                    if (cJSON_IsTrue(is_portrait)) {
-                        entry.is_portrait = true;
-                    } else {
-                        entry.is_portrait = false;
-                    }
+                    entry.is_portrait = cJSON_IsTrue(is_portrait);
 
                     parse_color(obj, RED, entry.red);
                     parse_color(obj, GREEN, entry.green);
@@ -463,8 +474,28 @@ void saveCropGuideParams(
                   params.enabled, keyFile);
 
     auto save = [&](PresetIndex index, const char* key) {
-        saveToKeyfile(!pedited || pedited->cropGuide.presets[index], group, key,
-                      static_cast<bool>(params.presets[index]), keyFile);
+        if (pedited && !pedited->cropGuide.presets[index]) return;
+
+        cJSON* json = cJSON_CreateObject();
+        if (!json) return;
+
+        const CropGuideParams::PresetParams& preset = params.presets[index];
+        if (preset.enabled) {
+            cJSON_AddTrueToObject(json, TOOL_ENABLED);
+        } else {
+            cJSON_AddFalseToObject(json, TOOL_ENABLED);
+        }
+        cJSON_AddNumberToObject(json, RED, preset.red);
+        cJSON_AddNumberToObject(json, GREEN, preset.green);
+        cJSON_AddNumberToObject(json, BLUE, preset.blue);
+
+        char* serialized_json = cJSON_PrintUnformatted(json);
+        if (serialized_json) {
+            keyFile.set_string(group, key, serialized_json);
+            free(serialized_json);
+        }
+
+        cJSON_Delete(json);
     };
 
     save(PresetIndex::RULE_OF_THIRDS, RULE_OF_THIRDS);
@@ -2137,6 +2168,19 @@ void CropParams::mapToResized(int resizedWidth, int resizedHeight, int scale, in
         x2 = min(resizedWidth, max(0, (x + w) / scale));
         y2 = min(resizedHeight, max(0, (y + h) / scale));
     }
+}
+
+CropGuideParams::PresetParams::PresetParams()
+    : enabled(false), red(1.0), green(1.0), blue(1.0)
+{
+}
+
+bool CropGuideParams::PresetParams::operator==(const PresetParams& other) const
+{
+    return enabled == other.enabled
+        && red == other.red
+        && green == other.green
+        && blue == other.blue;
 }
 
 CropGuideParams::AspectRatioParams::AspectRatioParams(size_t preset_index)

@@ -138,21 +138,19 @@ void drawCropGuides(const Cairo::RefPtr<Cairo::Context>& cr,
 
     GuideDrawer util{cr, bleed_rect, params};
 
-    if (params.presets.any()) {
-        // Horizontal/vertical lines only
-        util.drawRuleOfThirds();
-        util.drawHarmonicMeans();
-        util.drawCrosshair();
-        util.drawGrid();
-        util.drawEpassport();
-        util.drawCenteredSquare();
+    // Horizontal/vertical lines only
+    util.drawRuleOfThirds();
+    util.drawHarmonicMeans();
+    util.drawCrosshair();
+    util.drawGrid();
+    util.drawEpassport();
+    util.drawCenteredSquare();
 
-        // Diagonals
-        util.drawDiagonals();
-        util.drawGoldenTriangle();
+    // Diagonals
+    util.drawDiagonals();
+    util.drawGoldenTriangle();
 
-        util.drawGoldenRatio(device_scale);
-    }
+    util.drawGoldenRatio(device_scale);
 
     util.drawAspectRatios();
 }
@@ -235,7 +233,7 @@ CropRect calculateBleedRect(const CropRect& crop_rect, const CropGuideParams& pa
 
 void GuideDrawer::drawRuleOfThirds()
 {
-    if (!params.presets[PresetIndex::RULE_OF_THIRDS]) return;
+    if (!params.presets[PresetIndex::RULE_OF_THIRDS].enabled) return;
 
     drawHorizontal(1.0 / 3.0);
     drawHorizontal(2.0 / 3.0);
@@ -245,7 +243,7 @@ void GuideDrawer::drawRuleOfThirds()
 
 void GuideDrawer::drawHarmonicMeans()
 {
-    if (!params.presets[PresetIndex::HARMONIC_MEANS]) return;
+    if (!params.presets[PresetIndex::HARMONIC_MEANS].enabled) return;
 
     drawHorizontal(GOLDEN_RATIO_RECIPROCAL);
     drawHorizontal(1.0 - GOLDEN_RATIO_RECIPROCAL);
@@ -255,7 +253,7 @@ void GuideDrawer::drawHarmonicMeans()
 
 void GuideDrawer::drawCrosshair()
 {
-    if (!params.presets[PresetIndex::CROSSHAIR]) return;
+    if (!params.presets[PresetIndex::CROSSHAIR].enabled) return;
 
     drawHorizontal(0.5);
     drawVertical(0.5);
@@ -263,7 +261,7 @@ void GuideDrawer::drawCrosshair()
 
 void GuideDrawer::drawGrid()
 {
-    if (!params.presets[PresetIndex::GRID]) return;
+    if (!params.presets[PresetIndex::GRID].enabled) return;
 
     // To have even distribution, normalize it a bit
     const int longSideNumLines = 10;
@@ -308,7 +306,7 @@ void GuideDrawer::drawGrid()
  */
 void GuideDrawer::drawEpassport()
 {
-    if (!params.presets[PresetIndex::EPASSPORT]) return;
+    if (!params.presets[PresetIndex::EPASSPORT].enabled) return;
 
     drawHorizontal(7.0 / 45.0);
     drawHorizontal(26.0 / 45.0);
@@ -318,7 +316,7 @@ void GuideDrawer::drawEpassport()
 
 void GuideDrawer::drawCenteredSquare()
 {
-    if (!params.presets[PresetIndex::CENTERED_SQUARE]) return;
+    if (!params.presets[PresetIndex::CENTERED_SQUARE].enabled) return;
 
     const double w = rect.x1 - rect.x0;
     const double h = rect.y1 - rect.y0;
@@ -338,7 +336,7 @@ void GuideDrawer::drawCenteredSquare()
 
 void GuideDrawer::drawDiagonals()
 {
-    if (!params.presets[PresetIndex::RULE_OF_DIAGONALS]) return;
+    if (!params.presets[PresetIndex::RULE_OF_DIAGONALS].enabled) return;
 
     double corners_from[4][2];
     double corners_to[4][2];
@@ -372,7 +370,7 @@ void GuideDrawer::drawDiagonals()
 
 void GuideDrawer::drawGoldenTriangle()
 {
-    if (!params.presets[PresetIndex::GOLDEN_TRIANGLE]) return;
+    if (!params.presets[PresetIndex::GOLDEN_TRIANGLE].enabled) return;
 
     double x0 = rect.x0;
     double x1 = rect.x1;
@@ -404,7 +402,7 @@ void GuideDrawer::drawGoldenTriangle()
 
 void GuideDrawer::drawGoldenRatio(double device_scale)
 {
-    if (!params.presets[PresetIndex::GOLDEN_RATIO]) return;
+    if (!params.presets[PresetIndex::GOLDEN_RATIO].enabled) return;
 
     const double w = rect.x1 - rect.x0;
     const double h = rect.y1 - rect.y0;
