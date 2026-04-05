@@ -3172,6 +3172,15 @@ Camera constants:
         "raw_crop": [ 0, 0, -10, 0 ]
     },
 
+    { // Quality C
+        "make_model": "Sony ILCE-7M5",
+        "raw_crop": [
+            // Verified on lossless compressed raws.
+            { "frame": [ 7168, 5120 ], "crop": [ 0, 0, 7032, 4688 ] },
+            { "frame": [ 5120, 3584 ], "crop": [ 0, 0, 4632, 3088 ] }
+        ]
+    },
+
     { // Quality C,
         "make_model": "Sony ILCE-7RM3",
         "dcraw_matrix": [ 6640,-1847,-503,-5238,13010,2474,-993,1673,6526 ], // DNG v13.2
