@@ -341,6 +341,23 @@ void Imagefloat::getStdImage (const ColorTemp &ctemp, int tran, Imagefloat* imag
 #endif
 }
 
+void Imagefloat::fill(const float value, const bool multithread)
+{
+    const int W = width;
+    const int H = height;
+
+#ifdef _OPENMP
+#   pragma omp parallel for firstprivate(W, H) schedule(dynamic, 5) if (multithread)
+#endif
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            r(y, x) = value;
+            g(y, x) = value;
+            b(y, x) = value;
+        }
+    }
+}
+
 // From ART.
 void Imagefloat::multiply(float factor, bool multithread)
 {
