@@ -48,6 +48,12 @@
 #endif
 
 #include "rawimagesource.h"  // findInputProfile
+#include "imagefloat.h"
+
+// Fallback for compile-time path macros not defined by RawTherapee's CMake
+#ifndef EXTERNAL_PATH
+#define EXTERNAL_PATH ""
+#endif
 #include "dcp.h"             // DCPProfile*
 #include "rtlensfun.h"       // LFDatabase, LFCamera, LFLens
 #include <lcms2.h>
@@ -139,11 +145,7 @@ const CanonCIOrientIdx kCanonCIOrientTable[] = {
 };
 
 int64_t get_long_value_by_exiv(const Exiv2::Value& value, size_t index = 0) {
-#if defined(_WIN32) || defined(_WIN64)
-    return value.toLong(index);
-#else
     return value.toInt64(index);
-#endif
 }
 
 // ======================= 公共小工具 =======================
@@ -392,16 +394,16 @@ bool get_pair_int(const Exiv2::Value& v, int& a, int& b) {
     return false;
 }
 
-Exiv2::Image::AutoPtr read_exif_image(const Glib::ustring& fname) {
+Exiv2::Image::UniquePtr read_exif_image(const Glib::ustring& fname) {
     try {
         auto imgOut = Exiv2::ImageFactory::open(fname.raw());
         if (!imgOut.get()) {
-            return Exiv2::Image::AutoPtr();
+            return Exiv2::Image::UniquePtr();
         }
         imgOut->readMetadata();
         return imgOut;
     } catch(...) {
-         return Exiv2::Image::AutoPtr();
+         return Exiv2::Image::UniquePtr();
      }
 }
 
@@ -3377,7 +3379,7 @@ int RAWENGINE_API rawengine_decode(const char* filename, void** buffer, int* len
         isRaw = false;
     }
 
-    ii = rtengine::InitialImage::load(inputFile, isRaw, 0, &errorCode, nullptr);
+    ii = rtengine::InitialImage::load(inputFile, isRaw, &errorCode, nullptr);
     if (errorCode) return RawEngineErrorLoadFail;
     if (!ii) { errors++; std::cerr << "Error loading file: " << inputFile << std::endl; }
 
@@ -3445,7 +3447,8 @@ int RAWENGINE_API rawengine_decode(const char* filename, void** buffer, int* len
             try {
                 unsigned char* dst = rgbaVec.data();
                 for (int row = 0; row < img_h; ++row) {
-                    resultImage->getScanline(row, rowBuf.data(), 8);
+                    auto* fImg = dynamic_cast<rtengine::Imagefloat*>(resultImage);
+                    if (fImg) fImg->getScanline(row, rowBuf.data(), 8);
                     for (int j = 0; j < rowLen; j += 3) {
                         dst[0] = rowBuf[j];
                         dst[1] = rowBuf[j + 1];

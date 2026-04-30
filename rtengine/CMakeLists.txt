@@ -264,7 +264,32 @@ set(CAMCONSTSFILE "camconst.json")
 install(FILES ${CAMCONSTSFILE} DESTINATION "${DATADIR}" PERMISSIONS OWNER_WRITE OWNER_READ GROUP_READ WORLD_READ)
 
 # ===== rawengine-cli =====
-add_executable(rawengine-cli rawengine-cli/main-cli.cc)
-target_include_directories(rawengine-cli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+# These rtgui source files are compiled directly into rawengine-cli to
+# satisfy unresolved references from librtengine.a (Options, MultiLangMgr,
+# EditSubscriber, EditDataProvider) without pulling in the full GUI module.
+set(RAWENGINE_CLI_GUI_STUBS
+    ${CMAKE_SOURCE_DIR}/rtgui/options.cc
+    ${CMAKE_SOURCE_DIR}/rtgui/multilangmgr.cc
+    ${CMAKE_SOURCE_DIR}/rtgui/editcallbacks.cc
+    ${CMAKE_SOURCE_DIR}/rtgui/pathutils.cc
+    ${CMAKE_SOURCE_DIR}/rtgui/paramsedited.cc
+)
+
+add_executable(rawengine-cli
+    rawengine-cli/main-cli.cc
+    ${RAWENGINE_CLI_GUI_STUBS}
+)
+target_include_directories(rawengine-cli PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_BINARY_DIR}/rtgui   # for generated version.h
+)
+target_compile_definitions(rawengine-cli PRIVATE RAWENGINE_EXPORTS)
 target_link_libraries(rawengine-cli rtengine)
 install(TARGETS rawengine-cli DESTINATION "${BINDIR}")
+
+# raw_engine.cc is compiled as part of the static rtengine lib;
+# define RAWENGINE_EXPORTS so that RAWENGINE_API expands to dllexport
+# (instead of dllimport) on Windows.
+set_source_files_properties(raw_engine.cc PROPERTIES
+    COMPILE_DEFINITIONS "RAWENGINE_EXPORTS"
+)
