@@ -312,6 +312,9 @@ target_include_directories(rawengine PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_BINARY_DIR}/rtgui       # for generated version.h
 )
+if(NOT WITH_SYSTEM_LIBRAW)
+    target_include_directories(rawengine PRIVATE "${CMAKE_SOURCE_DIR}/rtengine/libraw")
+endif()
 # Define RAWENGINE_EXPORTS so RAWENGINE_API → __declspec(dllexport) for this target
 target_compile_definitions(rawengine PRIVATE RAWENGINE_EXPORTS)
 set_target_properties(rawengine PROPERTIES

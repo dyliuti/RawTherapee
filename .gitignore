@@ -20,6 +20,8 @@ cmake_install.cmake
 install_manifest.txt
 
 build/*
+build_arm/*
+build_intel/*
 cmake-build*
 Build/*
 buildfile*
