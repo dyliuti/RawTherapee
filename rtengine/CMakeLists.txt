@@ -106,6 +106,7 @@ set(RTENGINESOURCEFILES
     refreshmap.cc
     rt_algo.cc
     rtapp.cc
+    raw_engine.cc
     rtlensfun.cc
     rtthumbnail.cc
     shmap.cc
@@ -261,3 +262,9 @@ endif()
 
 set(CAMCONSTSFILE "camconst.json")
 install(FILES ${CAMCONSTSFILE} DESTINATION "${DATADIR}" PERMISSIONS OWNER_WRITE OWNER_READ GROUP_READ WORLD_READ)
+
+# ===== rawengine-cli =====
+add_executable(rawengine-cli rawengine-cli/main-cli.cc)
+target_include_directories(rawengine-cli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(rawengine-cli rtengine)
+install(TARGETS rawengine-cli DESTINATION "${BINDIR}")
