@@ -6,7 +6,7 @@
 #   bash build_arm_gui.sh [--jobs N] [--skip-build] [--clean] [--run]
 #
 # 前提（通过 Homebrew 安装）:
-#   brew install cmake ninja gtk+3 gtkmm3 gtkmacintegration \
+#   brew install cmake ninja gtk+3 gtkmm3 gtk-mac-integration \
 #                libraw lensfun exiv2 lcms2 fftw librsvg little-cms2
 #
 # 产物目录:
@@ -33,6 +33,8 @@ JOBS=$(sysctl -n hw.logicalcpu 2>/dev/null || echo 4)
 SKIP_BUILD=0
 DO_CLEAN=0
 DO_RUN=0
+# WITH_SYSTEM_LIBRAW: ON=使用 brew 安装的 libraw，OFF=使用源码内嵌 libraw
+WITH_SYSTEM_LIBRAW=OFF
 
 # ---------- 解析参数 ----------
 while [[ $# -gt 0 ]]; do
@@ -41,6 +43,7 @@ while [[ $# -gt 0 ]]; do
         --skip-build) SKIP_BUILD=1; shift ;;
         --clean)      DO_CLEAN=1; shift ;;
         --run)        DO_RUN=1; shift ;;
+        --with-system-libraw) WITH_SYSTEM_LIBRAW=ON; shift ;;
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
 done
@@ -54,6 +57,66 @@ fi
 if [[ ! -x "$HOMEBREW_PREFIX/bin/ninja" ]]; then
     echo "[ERROR] ninja not found at $HOMEBREW_PREFIX/bin/ninja"
     echo "        Install: brew install ninja"
+    exit 1
+fi
+
+# ---------- pkg-config 路径 ----------
+export PKG_CONFIG_PATH="$HOMEBREW_PREFIX/lib/pkgconfig:$HOMEBREW_PREFIX/share/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+
+# ---------- 修复 Homebrew libffi.pc SDK 路径问题（macOS beta 版本） ----------
+# 当运行 macOS beta 时（如 macOS 26），Homebrew 的 libffi.pc 引用 MacOSXNN.sdk，
+# 但 Command Line Tools 可能尚未提供该 SDK。创建本地 pkgconfig 覆盖以指向实际 SDK。
+_LIBFFI_FIX_DIR="/tmp/rt_pkgconfig_fix_arm_gui"
+_libffi_fix_applied=0
+if pkg-config --exists libffi 2>/dev/null; then
+    _ffi_includedir=$(pkg-config --variable=includedir libffi 2>/dev/null || true)
+    if [[ -n "$_ffi_includedir" && ! -d "$_ffi_includedir" ]]; then
+        _actual_sdk=$(xcrun --sdk macosx --show-sdk-path 2>/dev/null || true)
+        if [[ -n "$_actual_sdk" && -d "$_actual_sdk/usr/include/ffi" ]]; then
+            echo "[warn] libffi includedir '$_ffi_includedir' does not exist (macOS beta SDK mismatch)"
+            echo "       Applying workaround: using SDK at $_actual_sdk"
+            mkdir -p "$_LIBFFI_FIX_DIR"
+            cat > "$_LIBFFI_FIX_DIR/libffi.pc" << LIBFFI_PC_EOF
+prefix=${_actual_sdk}/usr
+exec_prefix=/usr
+libdir=\${exec_prefix}/lib
+toolexeclibdir=\${libdir}
+includedir=\${prefix}/include/ffi
+
+Name: libffi
+Description: Library supporting Foreign Function Interfaces
+Version: 3.4-rc1
+Libs: -L\${toolexeclibdir} -lffi
+Cflags: -I\${includedir}
+LIBFFI_PC_EOF
+            export PKG_CONFIG_PATH="$_LIBFFI_FIX_DIR:$PKG_CONFIG_PATH"
+            _libffi_fix_applied=1
+        fi
+    fi
+fi
+
+# ---------- 检查必要依赖 ----------
+MISSING_DEPS=()
+for pkg in gtk+-3.0 gtkmm-3.0 exiv2 lcms2 fftw3f lensfun librsvg-2.0; do
+    if ! pkg-config --exists "$pkg" 2>/dev/null; then
+        MISSING_DEPS+=("$pkg")
+    fi
+done
+if [[ $WITH_SYSTEM_LIBRAW == ON ]]; then
+    if ! pkg-config --exists libraw 2>/dev/null; then
+        MISSING_DEPS+=("libraw")
+    fi
+fi
+
+if [[ ${#MISSING_DEPS[@]} -gt 0 ]]; then
+    echo "[ERROR] Missing pkg-config packages: ${MISSING_DEPS[*]}"
+    echo ""
+    echo "  Install all required dependencies:"
+    echo "    brew install gtk+3 gtkmm3 exiv2 little-cms2 fftw lensfun librsvg"
+    echo "    brew install cairomm libsigc++ glibmm libiptcdata gtk-mac-integration"
+    if [[ $WITH_SYSTEM_LIBRAW == ON ]]; then
+        echo "    brew install libraw"
+    fi
     exit 1
 fi
 
@@ -80,15 +143,14 @@ if [[ $SKIP_BUILD -eq 0 ]]; then
     echo "[cmake] Configuring for $ARCH ..."
     mkdir -p "$BUILD_DIR"
 
-    export PKG_CONFIG_PATH="$HOMEBREW_PREFIX/lib/pkgconfig:$HOMEBREW_PREFIX/share/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
-
     "$CMAKE_BIN" -S "$RT_DIR" -B "$BUILD_DIR" \
         -G Ninja \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_OSX_ARCHITECTURES="$ARCH" \
         -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
         -DCMAKE_PREFIX_PATH="$HOMEBREW_PREFIX" \
-        -DWITH_SYSTEM_LIBRAW=ON \
+        -DLOCAL_PREFIX="$HOMEBREW_PREFIX" \
+        -DWITH_SYSTEM_LIBRAW="$WITH_SYSTEM_LIBRAW" \
         -DOSX_DEV_BUILD=ON \
         -DCMAKE_MAKE_PROGRAM="$HOMEBREW_PREFIX/bin/ninja"
 
@@ -183,12 +245,14 @@ if [[ -f "$BUILT_CAMCONST" ]]; then
 fi
 
 # ---------- 汇总 ----------
+RTDATA_COUNT=$(find "$OUTPUT_DIR/rtdata" -type f 2>/dev/null | wc -l | tr -d ' ')
 TOTAL_SIZE=$(du -sh "$OUTPUT_DIR" 2>/dev/null | awk '{print $1}')
 echo ""
 echo "============================================================"
 echo " Output collected successfully (arm64 GUI):"
 echo "  rawtherapee : $(ls -lh "$OUTPUT_DIR/rawtherapee" | awk '{print $5}')"
 echo "  dylibs      : $DYLIB_COUNT"
+echo "  rtdata/     : $RTDATA_COUNT file(s)"
 echo "  Total size  : $TOTAL_SIZE"
 echo "============================================================"
 echo " Output directory: $OUTPUT_DIR"
