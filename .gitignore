@@ -19,15 +19,18 @@ Makefile
 cmake_install.cmake
 install_manifest.txt
 
-build*
+build/*
 cmake-build*
-Build*
+Build/*
+buildfile*
 Debug
 RelWithDebInfo
 MinSizeRel
 Release
 exe/*
 output/*
+installer/output
+installer/output_gui
 
 rtdata/rawtherapee.desktop
 rtengine/librtengine.a

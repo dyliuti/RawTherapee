@@ -293,3 +293,33 @@ install(TARGETS rawengine-cli DESTINATION "${BINDIR}")
 set_source_files_properties(raw_engine.cc PROPERTIES
     COMPILE_DEFINITIONS "RAWENGINE_EXPORTS"
 )
+
+# ===== rawengine.dll — shared library for cross-compiler (MSVC) integration =====
+#
+# Exposes only the public C API (RAWENGINE_API functions from raw_engine.h).
+# raw_engine.cc is compiled directly into this target (with RAWENGINE_EXPORTS)
+# so the linker sees the dllexport-decorated symbols and creates export entries.
+# The rest of rtengine is pulled in by linking librtengine.a.
+#
+# MSVC upper-level projects link against the generated rawengine.lib import lib
+# (produced alongside rawengine.dll by the installer/build.sh post-build step).
+add_library(rawengine SHARED
+    raw_engine.cc               # compiled fresh with RAWENGINE_EXPORTS → dllexport
+    ${RAWENGINE_CLI_GUI_STUBS}  # resolve Options/MultiLangMgr/etc. references
+)
+add_dependencies(rawengine UpdateInfo)
+target_include_directories(rawengine PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_BINARY_DIR}/rtgui       # for generated version.h
+)
+# Define RAWENGINE_EXPORTS so RAWENGINE_API → __declspec(dllexport) for this target
+target_compile_definitions(rawengine PRIVATE RAWENGINE_EXPORTS)
+set_target_properties(rawengine PROPERTIES
+    OUTPUT_NAME "rawengine"
+    PREFIX ""
+    POSITION_INDEPENDENT_CODE ON
+)
+# Link against the static rtengine lib to resolve all engine symbols called by
+# raw_engine.cc. Only the dllexport-marked functions become DLL exports.
+target_link_libraries(rawengine PRIVATE rtengine)
+install(TARGETS rawengine DESTINATION "${BINDIR}")
