@@ -2,17 +2,44 @@
 # =============================================================================
 # build_gui.sh — 编译 RawTherapee 完整 GUI 并收集运行所需文件到 output_gui/
 #
-# 用法（在 MSYS2 ucrt64 shell 中运行）:
-#   bash build_gui.sh [--jobs N] [--skip-build] [--clean] [--run]
+# 【推荐运行方式】
+#   方式一（Windows 推荐）: 直接双击或在 CMD 中运行 build_gui.bat
+#     > build_gui.bat
+#     build_gui.bat 会自动设置 ucrt64 PATH 后调用本脚本，无需手动配置环境。
 #
-# 产物目录结构:
+#   方式二: 在 MSYS2 UCRT64 终端中运行（注意：必须是 UCRT64 终端，非默认 MSYS 终端）
+#     $ bash build_gui.sh
+#     $ bash build_gui.sh --jobs 4
+#
+#   方式三: 在任意 bash 环境中直接调用（本脚本已内置 PATH 自动修复）
+#     $ ./build_gui.sh
+#
+# 【常用参数】
+#   --jobs N        并行编译线程数（默认 2，内存不足时改为 1）
+#   --skip-build    跳过编译，仅重新收集产物到 output_gui/
+#   --clean         清除 build 目录后重新全量编译
+#   --run           构建完成后自动启动 rawtherapee.exe
+#
+# 【产物目录结构】
 #   installer/output_gui/
-#     rawtherapee.exe       — 主程序
-#     *.dll                 — 运行时依赖 DLL
-#     share/                — GTK 主题/图标/语言等数据
-#     rtdata/               — RawTherapee 自身资源（配置/ICC/相机参数等）
+#     rawtherapee.exe   — 主程序
+#     *.dll             — 运行时依赖 DLL
+#     share/            — GTK 主题/图标/语言等数据
+#     rtdata/           — RawTherapee 自身资源（配置/ICC/相机参数等）
+#
+# 【前提条件】
+#   已安装 MSYS2（默认路径 C:\msys64），且安装了以下 ucrt64 包：
+#     pacman -S mingw-w64-ucrt-x86_64-cmake
+#     pacman -S mingw-w64-ucrt-x86_64-ninja
+#     pacman -S mingw-w64-ucrt-x86_64-gtk3 mingw-w64-ucrt-x86_64-gtkmm3
+#     pacman -S mingw-w64-ucrt-x86_64-exiv2 mingw-w64-ucrt-x86_64-libraw
+#     pacman -S mingw-w64-ucrt-x86_64-lcms2 mingw-w64-ucrt-x86_64-fftw
+#     pacman -S mingw-w64-ucrt-x86_64-lensfun mingw-w64-ucrt-x86_64-librsvg
 # =============================================================================
 set -euo pipefail
+
+# ---------- 确保 ucrt64 工具链在 PATH 中（兼容直接调用和 bat 调用） ----------
+export PATH="/ucrt64/bin:/usr/bin${PATH:+:$PATH}"
 
 # ---------- 路径 ----------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -149,25 +176,26 @@ for lang in en en_US; do
 done
 
 # ---------- RawTherapee 自身资源 ----------
-# 注意: Windows BUILD_BUNDLE 时 DATADIR=".", 即数据文件须与 exe 同目录
-# 因此将 rtdata/ 内容直接复制到 OUTPUT_DIR 根目录, 而非放入子目录
-echo "[collect] RawTherapee rtdata (flat into exe dir) ..."
+echo "[collect] RawTherapee rtdata ..."
+mkdir -p "$OUTPUT_DIR/rtdata"
 if [[ -d "$RT_DIR/rtdata" ]]; then
-    cp -r "$RT_DIR/rtdata/." "$OUTPUT_DIR/"
+    cp -r "$RT_DIR/rtdata/." "$OUTPUT_DIR/rtdata/"
 fi
 # 编译生成的资源（camconst.json 等）
 BUILT_CAMCONST="$BUILD_DIR/rtengine/camconst.json"
 if [[ -f "$BUILT_CAMCONST" ]]; then
-    cp "$BUILT_CAMCONST" "$OUTPUT_DIR/"
+    cp "$BUILT_CAMCONST" "$OUTPUT_DIR/rtdata/"
 fi
 
 # ---------- 汇总 ----------
+RTDATA_COUNT=$(find "$OUTPUT_DIR/rtdata" -type f 2>/dev/null | wc -l)
 TOTAL_SIZE=$(du -sh "$OUTPUT_DIR" 2>/dev/null | awk '{print $1}')
 echo ""
 echo "============================================================"
 echo " Output collected successfully:"
 echo "  rawtherapee.exe : $(ls -lh "$OUTPUT_DIR/rawtherapee.exe" | awk '{print $5}')"
 echo "  DLLs            : $DLL_COUNT"
+echo "  rtdata/         : $RTDATA_COUNT file(s)"
 echo "  Total size      : $TOTAL_SIZE"
 echo "============================================================"
 echo " Output directory: $OUTPUT_DIR"

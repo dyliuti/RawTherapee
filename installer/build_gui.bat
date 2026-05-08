@@ -2,12 +2,37 @@
 :: =============================================================================
 :: build_gui.bat — 在 Windows 上启动 MSYS2 ucrt64 环境并编译 RawTherapee GUI
 ::
-:: 用法（直接双击或在 cmd 中运行）:
-::   build_gui.bat [--jobs N] [--skip-build] [--clean] [--run]
+:: 【推荐运行方式（Windows 首选）】
+::   直接双击本文件，或在 CMD / PowerShell 中运行：
+::     > build_gui.bat
+::     > build_gui.bat --jobs 4
+::     > build_gui.bat --skip-build
+::     > build_gui.bat --clean
+::     > build_gui.bat --run
 ::
-:: 前提条件:
-::   已安装 MSYS2，默认路径 C:\msys64
-::   ucrt64 工具链已安装相关依赖
+::   本脚本会自动：
+::     1. 定位 MSYS2 安装目录（C:\msys64）
+::     2. 设置 ucrt64 工具链 PATH（/ucrt64/bin）
+::     3. 调用 build_gui.sh 完成编译和资源收集
+::
+:: 【常用参数】
+::   --jobs N        并行编译线程数（默认 2，内存不足时改为 1）
+::   --skip-build    跳过编译，仅重新收集产物到 output_gui/
+::   --clean         清除 build 目录后重新全量编译
+::   --run           构建完成后自动启动 rawtherapee.exe
+::
+:: 【注意事项】
+::   - 若 ninja/cmake 报错找不到，说明 build_gui.sh 中 PATH 未包含 /ucrt64/bin，
+::     本脚本已通过 "export PATH=/ucrt64/bin:/usr/bin:$PATH" 解决此问题。
+::   - 不要直接在 MSYS2 默认（MSYS）终端运行 build_gui.sh，
+::     必须使用 MSYS2 UCRT64 终端或通过本 bat 文件调用。
+::
+:: 【前提条件】
+::   已安装 MSYS2，默认路径 C:\msys64（如不同请修改 MSYS2_ROOT）
+::   ucrt64 工具链已安装相关依赖（cmake / ninja / gtk3 / exiv2 等）
+::
+:: 【产物位置】
+::   installer\output_gui\rawtherapee.exe
 :: =============================================================================
 
 setlocal
