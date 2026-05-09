@@ -350,7 +350,14 @@ static void process_file(const std::string& file_path, int index) {
 
     std::string local_path;
 #ifdef _WIN32
-    local_path = file_path;
+    // g_dir_read_name 返回 UTF-8；rawengine_decode 内部通过 fname_to_utf8 → locale_to_utf8
+    // 将路径从 locale 编码转为 UTF-8，因此这里需要先将 UTF-8 转为系统 locale（如 GBK），
+    // 否则中文文件名会被 locale_to_utf8 二次转码，导致路径解析失败。
+    try {
+        local_path = Glib::locale_from_utf8(file_path);
+    } catch (...) {
+        local_path = file_path; // ASCII 路径无需转换，直接使用
+    }
 #else
     try {
         local_path = Glib::locale_from_utf8(file_path);
