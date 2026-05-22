@@ -3295,6 +3295,11 @@ int rawengine_init() {
 
     options.rtSettings.lensfunDbDirectory = LENSFUN_DB_PATH;
     options.rtSettings.lensfunDbBundleDirectory = LENSFUN_DB_PATH;
+    std::cout << "[RawEngine] Resource root: " << argv0 << std::endl;
+    std::cout << "[RawEngine] iccprofiles: " << Glib::build_filename(argv0, "iccprofiles") << std::endl;
+    std::cout << "[RawEngine] profiles: " << Glib::build_filename(argv0, "profiles") << std::endl;
+    std::cout << "[RawEngine] languages: " << Glib::build_filename(argv0, "languages") << std::endl;
+    std::cout << "[RawEngine] dcpprofiles: " << Glib::build_filename(argv0, "dcpprofiles") << std::endl;
     // Sync paths into App
     App::get().setArgv0(argv0);
     App::get().setCreditsPath(creditsPath);
@@ -3305,6 +3310,11 @@ int rawengine_init() {
     licensePath = LICENCE_SEARCH_PATH;
     options.rtSettings.lensfunDbDirectory = LENSFUN_DB_PATH;
     options.rtSettings.lensfunDbBundleDirectory = LENSFUN_DB_PATH;
+    std::cout << "[RawEngine] Resource root: " << argv0 << std::endl;
+    std::cout << "[RawEngine] iccprofiles: " << Glib::build_filename(argv0, "iccprofiles") << std::endl;
+    std::cout << "[RawEngine] profiles: " << Glib::build_filename(argv0, "profiles") << std::endl;
+    std::cout << "[RawEngine] languages: " << Glib::build_filename(argv0, "languages") << std::endl;
+    std::cout << "[RawEngine] dcpprofiles: " << Glib::build_filename(argv0, "dcpprofiles") << std::endl;
     App::get().setArgv0(argv0);
     App::get().setCreditsPath(creditsPath);
     App::get().setLicensePath(licensePath);

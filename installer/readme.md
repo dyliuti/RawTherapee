@@ -318,24 +318,72 @@ int main() {
 | `dcraw.json` / `rt.json` | 相机数据库补充 | 相机识别能力降低 |
 | `languages/default` | 内部消息语言包 | 错误信息显示乱码 |
 
-### 部署方式
+### 最终落地目录树（Windows 安装版 vs 便携版）
 
-将 `resource/` 目录放到与 `rawengine.dll` 同级目录：
+> 说明：当前工程在 Windows 下默认 `DATA_SEARCH_PATH = .`，运行时按“程序目录”查找资源（`iccprofiles/`、`profiles/`、`languages/` 等），也就是与可执行入口同根目录。
 
-```
-MyApp/
-├── MyApp.exe
+#### Windows 安装版（InnoSetup）
+
+```text
+{app}/
+├── rawtherapee.exe
+├── rawengine-cli.exe
 ├── rawengine.dll
-├── *.dll              ← 其他运行时 DLL（来自 bin/）
-└── resource/          ← 资源目录（来自 output/resource/）
-    ├── dcpprofiles/
-    ├── iccprofiles/
-    ├── profiles/
-    ├── languages/
-    └── *.json
+├── *.dll                     # 运行时依赖 DLL
+├── iccprofiles/
+│   ├── input/
+│   └── output/
+├── profiles/
+├── languages/
+├── dcpprofiles/
+├── camconst.json
+├── cammatrices.json
+├── dcraw.json
+├── rt.json
+├── themes/                   # GUI 主要使用
+└── images/                   # GUI 主要使用
 ```
 
-rawengine 初始化时会自动从 dll 同级 `resource/` 目录加载资源。
+对应 InnoSetup 示例（`tools/win/InnoSetup/WindowsInnoSetup.iss.in`）是把资源安装到 `{app}` 下同名目录，例如：
+- `iccprofiles\* -> {app}\iccprofiles\`
+- `profiles\* -> {app}\profiles\`
+- `languages\* -> {app}\languages\`
+- 以及 `themes\*`、`images\*`（GUI 侧）
+
+#### 便携版（Portable）
+
+```text
+RawEnginePortable/
+├── rawengine-cli.exe
+├── rawengine.dll
+├── *.dll                     # 运行时依赖 DLL
+├── iccprofiles/
+│   ├── input/
+│   └── output/
+├── profiles/
+├── languages/
+├── dcpprofiles/
+├── camconst.json
+├── cammatrices.json
+├── dcraw.json
+├── rt.json
+├── mysettings/               # 单用户模式下可落在程序目录
+└── mycache/                  # 单用户模式下可落在程序目录
+```
+
+#### `rawengine-cli.exe` 与 `rawengine.dll` 的资源关系
+
+- `rawengine-cli.exe`：调用 `rawengine_init()` 后，按程序资源根目录读取资源；必须保证上面列出的资源目录/文件可被找到。
+- `rawengine.dll`：被宿主程序调用 `rawengine_init()` 后，同样按资源根目录读取资源；部署时建议与宿主入口放在同一资源根下，确保 `iccprofiles/`、`profiles/`、`languages/`、`dcpprofiles/` 和相关 `*.json` 可见。
+- 最关键的相对关系可概括为：
+  - `<资源根>/iccprofiles/input|output`
+  - `<资源根>/profiles`
+  - `<资源根>/languages`
+  - `<资源根>/dcpprofiles`
+  - `<资源根>/camconst.json`、`cammatrices.json`、`dcraw.json`、`rt.json`
+
+- `themes/`、`images/` 主要是 RawTherapee GUI 使用；纯 `rawengine-cli.exe` 批处理通常不依赖这两项。
+
 
 ---
 
