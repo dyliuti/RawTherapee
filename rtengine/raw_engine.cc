@@ -3188,18 +3188,24 @@ void build_rules() {
 void apply_default_rule(const DecodeCtx& ctx,
                                rtengine::procparams::ProcParams& p)
 {
-    // TODO: 根据你需要的默认参数写这里
+    // DSC02364.arw decode 无法自动白平衡导致偏暗问题
     // 比如：p.exposure = 默认值；p.whiteBalance = 默认值；之类
     std::printf("in apply_default_rule \n");
     disable_lens_all(p);
-    p.icm.inputProfile = "(camera)";
-    set_icm_params(p);
+    p.icm.inputProfile = "";
+    p.icm.toneCurve = false;
+    p.icm.applyHueSatMap = false;
+    p.icm.applyLookTable = false;
+    p.icm.applyBaselineExposureOffset = false;
+    p.icm.workingProfile = "ProPhoto";
+    p.icm.outputProfile  = "sRGB";
     p.raw.bayersensor.method = RAWParams::BayerSensor::getMethodString(
                 RAWParams::BayerSensor::Method::AMAZE);
     p.raw.bayersensor.ccSteps = 0;
-    set_tone_curve_params(p);
-    p.toneCurve.curve = { 2.0, 0.25, 0.5, 0.75, 0.0, 35.0, 10.0, -30.0 };
+    p.toneCurve.histmatching = true;
+    p.toneCurve.fromHistMatching = false;
     p.toneCurve.clampOOG = true;
+    p.toneCurve.curveMode = ToneCurveMode::FILMLIKE;
     set_dirpyr_denoise(p);
 
 }
