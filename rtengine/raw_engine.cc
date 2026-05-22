@@ -3531,24 +3531,23 @@ int RAWENGINE_API rawengine_decode(const char* filename, void** buffer, int* len
         }
     }
 
-    // 结果兜底：与 raw/RAWEngine 对齐（关闭此处二次 fallback 裁切）
-    // if (!errorCode && !currentParams.crop.enabled) {
-    //     const auto fname = ii->getMetaData()->getFileName();
-    //     CropBox cb = read_crop_from_exif(fname);
-    //     if (cb.ok) {
-    //         int fullW=0, fullH=0;
-    //         get_sensor_full_wh_robust(fname, ii, fullW, fullH);
-    //         int ori = read_exif_orientation(fname);
-    //         final_fallback_fractional_crop(*width, *height,
-    //                                        fullW, fullH,
-    //                                        cb.x, cb.y, cb.w, cb.h,
-    //                                        ori,
-    //                                        buffer, length, width, height,
-    //                                        /*max_delta_px=*/96);
-    //
-    //     }
-    // }
-
+    // 结果兜底：与原逻辑一致
+    if (!errorCode && !currentParams.crop.enabled) {
+        const auto fname = ii->getMetaData()->getFileName();
+        CropBox cb = read_crop_from_exif(fname);
+        if (cb.ok) {
+            int fullW=0, fullH=0;
+            get_sensor_full_wh_robust(fname, ii, fullW, fullH);
+            int ori = read_exif_orientation(fname);
+            final_fallback_fractional_crop(*width, *height,
+                                           fullW, fullH,
+                                           cb.x, cb.y, cb.w, cb.h,
+                                           ori,
+                                           buffer, length, width, height,
+                                           /*max_delta_px=*/96);
+    
+        }
+    }
     if (errorCode) { 
         errors++; 
         std::cerr << "Image To RGBA ERROR: " << errorCode << std::endl; 
