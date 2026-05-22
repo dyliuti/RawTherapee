@@ -3,7 +3,7 @@
 test_rawengine.py — RawTherapee 工程 rawengine 单元测试
 
 测试 RawTherapee 工程 rawengine-cli，将转码图片输出到:
-    C:/download/output_rawtherapee
+    C:\pack\file\output_rawtherapee
 
 用法:
     python test_rawengine.py           # 运行所有测试
@@ -23,11 +23,11 @@ from PIL import Image
 # ============================================================
 # 路径配置
 # ============================================================
-INPUT_DIR  = r"C:\download\input"
-OUTPUT_DIR = r"C:\download\output_rawtherapee"
+INPUT_DIR  = r"C:\pack\file\input"
+OUTPUT_DIR = r"C:\pack\file\output\rawtherapee"
 
 # rawengine-cli 可执行文件路径（RawTherapee 工程编译产物）
-CLI_EXE = r"C:\project\raw\RawTherapee\installer\output\bin\rawengine-cli.exe"
+CLI_EXE = r"C:\pack\project\raw\RawTherapee\installer\output\bin\rawengine-cli.exe"
 
 ENGINE_NAME = "rawtherapee"
 

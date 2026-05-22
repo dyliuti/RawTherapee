@@ -71,8 +71,8 @@ if [[ $SKIP_BUILD -eq 0 ]]; then
         -DCMAKE_BUILD_TYPE=Release
 
     echo ""
-    echo "[ninja] Building rawengine-cli (jobs=$JOBS) ..."
-    ninja -C "$BUILD_DIR" -j"$JOBS" rawengine-cli
+    echo "[ninja] Building rawengine-cli and rawengine.dll (jobs=$JOBS) ..."
+    ninja -C "$BUILD_DIR" -j"$JOBS" rawengine-cli rawengine
 else
     echo "[skip-build] Skipping build, using existing artifacts in $BUILD_DIR"
 fi
