@@ -249,6 +249,11 @@ for f in cammatrices.json dcraw.json rt.json; do
     [[ -f "$RTDATA_DIR/$f" ]] && cp "$RTDATA_DIR/$f" "$OUTPUT_DIR/resource/"
 done
 
+# external DCP（用于 make+model Standard.dcp 精确命中）
+if [[ -d "$RTDATA_DIR/external" ]]; then
+    cp -r "$RTDATA_DIR/external" "$OUTPUT_DIR/resource/"
+fi
+
 # 编译生成的 camconst.json（包含更完整的相机参数，优先于源码中的版本）
 BUILT_CAMCONST="$BUILD_DIR/rtengine/camconst.json"
 if [[ -f "$BUILT_CAMCONST" ]]; then
@@ -256,6 +261,7 @@ if [[ -f "$BUILT_CAMCONST" ]]; then
 elif [[ -f "$RTDATA_DIR/camconst.json" ]]; then
     cp "$RTDATA_DIR/camconst.json" "$OUTPUT_DIR/resource/"
 fi
+
 
 # 默认语言包（rawengine 内部用于格式化消息）
 mkdir -p "$OUTPUT_DIR/resource/languages"
@@ -265,6 +271,13 @@ fi
 
 RESOURCE_COUNT=$(find "$OUTPUT_DIR/resource" -type f | wc -l)
 echo "  Copied ${RESOURCE_COUNT} resource file(s) to output/resource/"
+
+# ---------- 同步 resource 到 bin（按你的集成要求） ----------
+echo "[collect] Mirroring resource/ into bin/ ..."
+cp -rf "$OUTPUT_DIR/resource/." "$OUTPUT_DIR/bin/"
+RESOURCE_IN_BIN_COUNT=$(find "$OUTPUT_DIR/bin" -type f | wc -l)
+echo "  Bin now contains ${RESOURCE_IN_BIN_COUNT} file(s) including mirrored resources"
+
 
 # ---------- 汇总 ----------
 echo ""

@@ -22,6 +22,8 @@
 #include <cstring>
 #include <giomm.h>
 #include <iostream>
+#include <fstream>
+
 #include <locale.h>
 #include <tiffio.h>
 #include "rtgui/paramsedited.h"
@@ -933,19 +935,25 @@ void set_dirpyr_denoise(rtengine::procparams::ProcParams& p) {
     p.dirpyrDenoise.enabled = false;
 }
 
+
 void try_bind_dcp_exact(const DecodeCtx& c, rtengine::procparams::ProcParams& p) {
+
     // 按你原逻辑："make + model + Standard.dcp" 完整匹配
     if (c.externalDcp) {
         std::string full_name = to_lowercase(c.make + " " + c.model + " Standard.dcp");
         auto it = c.externalDcp->find(full_name);
         if (it != c.externalDcp->end()) {
             p.icm.inputProfile = it->second;
+            std::cout << "[RawEngine][DCP] hit: " << full_name << " -> " << it->second << std::endl;
             return;
         }
+        std::cout << "[RawEngine][DCP] miss: " << full_name << std::endl;
     }
     // 若未匹配，留空，由各分支/默认再设置其它 icm 行为
-    ensure_camera_profile_fallback(p);
+    // ensure_camera_profile_fallback(p);
 }
+
+
 
 void apply_exif_crop_display_mode(const DecodeCtx& c, rtengine::procparams::ProcParams& p) {
     CropBox cb = read_crop_from_exif(c.fname);
@@ -1838,7 +1846,7 @@ void build_rules() {
 
                 try_bind_dcp_exact(c, p);
                 std::printf("inputProfile = %s\n", p.icm.inputProfile.c_str());
-                p.wb.enabled = true;
+                p.wb.enabled = false;
                 p.icm.toneCurve = true;
                 p.icm.applyHueSatMap = true;
                 p.icm.applyLookTable = true;
@@ -2759,7 +2767,7 @@ void build_rules() {
 
                 try_bind_dcp_exact(c, p);
                 // std::printf("inputProfile = %s\n", p.icm.inputProfile.c_str());
-                p.wb.enabled = true;
+                p.wb.enabled = false;
                 p.icm.toneCurve = true;
                 p.icm.applyHueSatMap = true;
                 p.icm.applyLookTable = true;
@@ -3357,6 +3365,40 @@ int rawengine_init() {
 
     // 扫描外部 DCP
     external_dcp_map = find_dcp_files(externalPath.raw());
+    const Glib::ustring externalSubdir = Glib::build_filename(argv0, "external");
+    // CR2 亮度偏暗修复：当 externalPath 未命中 DCP 时，继续扫描 bin/external。
+    // 这样可命中 Canon * Standard.dcp，避免回退到默认色彩参数导致整体偏暗。
+    if (external_dcp_map.empty() && Glib::file_test(externalSubdir, Glib::FILE_TEST_IS_DIR)) {
+        external_dcp_map = find_dcp_files(externalSubdir.raw());
+    }
+
+    std::cout << "[RawEngine] externalPath: " << externalPath << std::endl;
+    std::cout << "[RawEngine] external DCP count: " << external_dcp_map.size() << std::endl;
+
+    const Glib::ustring logPath = Glib::build_filename(argv0, "rawengine_resource_log.txt");
+    std::ofstream logFile(logPath.c_str(), std::ios::out | std::ios::trunc);
+    auto log_line = [&](const std::string& s) {
+        std::cout << s << std::endl;
+        if (logFile.is_open()) {
+            logFile << s << "\n";
+        }
+    };
+    log_line(std::string("[RawEngine] log file: ") + logPath.raw());
+    log_line(std::string("[RawEngine] Resource root: ") + argv0.raw());
+    log_line(std::string("[RawEngine] externalPath: ") + externalPath.raw());
+    log_line(std::string("[RawEngine] external DCP count: ") + std::to_string(external_dcp_map.size()));
+
+    const Glib::ustring jsonCammatrices = Glib::build_filename(argv0, "cammatrices.json");
+    const Glib::ustring jsonDcraw = Glib::build_filename(argv0, "dcraw.json");
+    const Glib::ustring jsonRt = Glib::build_filename(argv0, "rt.json");
+    const Glib::ustring jsonCamconst = Glib::build_filename(argv0, "camconst.json");
+
+    log_line(std::string("[RawEngine] json cammatrices: ") + jsonCammatrices.raw() + " exists=" + std::to_string(Glib::file_test(jsonCammatrices, Glib::FILE_TEST_EXISTS) ? 1 : 0));
+    log_line(std::string("[RawEngine] json dcraw: ") + jsonDcraw.raw() + " exists=" + std::to_string(Glib::file_test(jsonDcraw, Glib::FILE_TEST_EXISTS) ? 1 : 0));
+    log_line(std::string("[RawEngine] json rt: ") + jsonRt.raw() + " exists=" + std::to_string(Glib::file_test(jsonRt, Glib::FILE_TEST_EXISTS) ? 1 : 0));
+    log_line(std::string("[RawEngine] json camconst: ") + jsonCamconst.raw() + " exists=" + std::to_string(Glib::file_test(jsonCamconst, Glib::FILE_TEST_EXISTS) ? 1 : 0));
+
+
 
 #ifndef _WIN32
     if (Glib::file_test(Glib::build_filename(options.rtdir, "cache"), Glib::FILE_TEST_IS_DIR) &&
@@ -3382,6 +3424,8 @@ int RAWENGINE_API rawengine_decode(const char* filename, void** buffer, int* len
     fast_export = true;
     App::get().mut_options().saveUsePathTemplate = false;
 
+
+
     Glib::ustring inputFile(fname_to_utf8(filename));
 
     rtengine::InitialImage* ii = nullptr;
@@ -3397,6 +3441,8 @@ int RAWENGINE_API rawengine_decode(const char* filename, void** buffer, int* len
 
     ii = rtengine::InitialImage::load(inputFile, isRaw, &errorCode, nullptr);
     if (errorCode) return RawEngineErrorLoadFail;
+
+
     if (!ii) { errors++; std::cerr << "Error loading file: " << inputFile << std::endl; }
 
     rtengine::procparams::ProcParams currentParams;
@@ -3485,23 +3531,24 @@ int RAWENGINE_API rawengine_decode(const char* filename, void** buffer, int* len
         }
     }
 
-    // 结果兜底：与原逻辑一致
-    if (!errorCode && !currentParams.crop.enabled) {
-        const auto fname = ii->getMetaData()->getFileName();
-        CropBox cb = read_crop_from_exif(fname);
-        if (cb.ok) {
-            int fullW=0, fullH=0;
-            get_sensor_full_wh_robust(fname, ii, fullW, fullH);
-            int ori = read_exif_orientation(fname);
-            final_fallback_fractional_crop(*width, *height,
-                                           fullW, fullH,
-                                           cb.x, cb.y, cb.w, cb.h,
-                                           ori,
-                                           buffer, length, width, height,
-                                           /*max_delta_px=*/96);
-    
-        }
-    }
+    // 结果兜底：与 raw/RAWEngine 对齐（关闭此处二次 fallback 裁切）
+    // if (!errorCode && !currentParams.crop.enabled) {
+    //     const auto fname = ii->getMetaData()->getFileName();
+    //     CropBox cb = read_crop_from_exif(fname);
+    //     if (cb.ok) {
+    //         int fullW=0, fullH=0;
+    //         get_sensor_full_wh_robust(fname, ii, fullW, fullH);
+    //         int ori = read_exif_orientation(fname);
+    //         final_fallback_fractional_crop(*width, *height,
+    //                                        fullW, fullH,
+    //                                        cb.x, cb.y, cb.w, cb.h,
+    //                                        ori,
+    //                                        buffer, length, width, height,
+    //                                        /*max_delta_px=*/96);
+    //
+    //     }
+    // }
+
     if (errorCode) { 
         errors++; 
         std::cerr << "Image To RGBA ERROR: " << errorCode << std::endl; 

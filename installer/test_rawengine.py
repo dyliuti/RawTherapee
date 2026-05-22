@@ -18,7 +18,10 @@ import time
 import pathlib
 import unittest
 import statistics
+import tempfile
+import shutil
 from PIL import Image
+
 
 # ============================================================
 # 路径配置
@@ -45,25 +48,63 @@ RAW_EXTENSIONS = {
 
 def run_cli(input_dir: str, output_dir: str, timeout: int = 600) -> tuple:
     """
-    运行 rawengine-cli，返回 (returncode, stdout+stderr, elapsed_seconds)。
-    output_dir 会自动创建。
+    逐文件运行 rawengine-cli，返回 (returncode, stdout+stderr, elapsed_seconds)。
+    输出目录结构与输入目录结构保持一致，并打印进度信息。
     """
     os.makedirs(output_dir, exist_ok=True)
     t0 = time.monotonic()
-    try:
-        result = subprocess.run(
-            [CLI_EXE, input_dir, output_dir],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            encoding="utf-8",
-            errors="replace",
-        )
-    except subprocess.TimeoutExpired:
-        return -1, "TIMEOUT", time.monotonic() - t0
+    lines = []
+
+    input_root = pathlib.Path(input_dir)
+    input_files = [pathlib.Path(p) for p in find_input_files(input_dir)]
+    total = len(input_files)
+
+    # rawengine-cli 目录输入会递归且平铺输出；这里对每个文件创建临时单文件目录解码，确保结构精确映射。
+    output_root = pathlib.Path(output_dir)
+    output_root.mkdir(parents=True, exist_ok=True)
+
+    done = 0
+    for src_path in sorted(input_files):
+        rel_path = src_path.relative_to(input_root)
+        rel_parent = rel_path.parent
+        out_subdir = output_root / rel_parent
+        out_subdir.mkdir(parents=True, exist_ok=True)
+
+        done += 1
+        print(f"[{ENGINE_NAME}] 解码进度: {done}/{total}")
+        print(f"[{ENGINE_NAME}] 当前文件: {src_path}")
+
+        with tempfile.TemporaryDirectory(prefix="rt_decode_") as tmp_in:
+            tmp_in_path = pathlib.Path(tmp_in)
+            staged_src = tmp_in_path / src_path.name
+            shutil.copy2(src_path, staged_src)
+
+            cmd = [CLI_EXE, str(tmp_in_path), str(out_subdir)]
+            try:
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                    encoding="utf-8",
+                    errors="replace",
+                )
+            except subprocess.TimeoutExpired:
+                return -1, "TIMEOUT", time.monotonic() - t0
+
+        combined = (result.stdout or "") + (result.stderr or "")
+        lines.append(f"CMD: {' '.join(cmd)}\nRET: {result.returncode}\n{combined}".strip())
+        if result.returncode != 0:
+            elapsed = time.monotonic() - t0
+            return result.returncode, "\n".join(lines), elapsed
+
+
+
+
     elapsed = time.monotonic() - t0
-    combined = result.stdout + result.stderr
-    return result.returncode, combined, elapsed
+    return 0, "\n".join(lines), elapsed
+
+
 
 
 def find_input_files(directory: str) -> list:
@@ -81,6 +122,17 @@ def find_output_images(directory: str) -> list:
         str(p) for p in pathlib.Path(directory).rglob("*")
         if p.is_file() and p.suffix.lower() in image_exts
     ]
+
+
+def expected_output_relpaths(input_dir: str, input_files: list) -> set:
+    """基于输入文件推导期望输出相对路径（保持目录结构，扩展名统一为 .jpg）。"""
+    root = pathlib.Path(input_dir)
+    rels = set()
+    for f in input_files:
+        rel = pathlib.Path(f).relative_to(root)
+        rels.add(str(rel.with_suffix(".jpg")).lower())
+    return rels
+
 
 
 def validate_image(path: str) -> dict:
@@ -138,20 +190,32 @@ class TestRawTherapeeEngine(unittest.TestCase):
     # Test 02: 输出文件数量匹配输入
     # ------------------------------------------------------------------
     def test_02_output_files_created(self):
-        """输出文件数量应等于输入文件数量。"""
+        """输出文件数量和相对路径应匹配输入目录结构。"""
         run_cli(INPUT_DIR, OUTPUT_DIR)
         output_files = find_output_images(OUTPUT_DIR)
         self.assertGreater(
             len(output_files), 0,
             f"[{ENGINE_NAME}] 输出目录为空: {OUTPUT_DIR}"
         )
+
+        expected = expected_output_relpaths(INPUT_DIR, self.input_files)
+        actual = {
+            str(pathlib.Path(f).relative_to(pathlib.Path(OUTPUT_DIR))).lower()
+            for f in output_files
+        }
+
         self.assertEqual(
             len(output_files), len(self.input_files),
             f"[{ENGINE_NAME}] 输入 {len(self.input_files)} 个文件，"
-            f"但输出 {len(output_files)} 个\n"
-            f"  输入: {[os.path.basename(f) for f in self.input_files]}\n"
-            f"  输出: {[os.path.basename(f) for f in output_files]}"
+            f"但输出 {len(output_files)} 个"
         )
+        self.assertSetEqual(
+            actual, expected,
+            f"[{ENGINE_NAME}] 输出目录结构与输入不一致\n"
+            f"  缺失: {sorted(expected - actual)}\n"
+            f"  多余: {sorted(actual - expected)}"
+        )
+
 
     # ------------------------------------------------------------------
     # Test 03: 输出图片可正常打开（完整性校验）
