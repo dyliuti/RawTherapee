@@ -13,7 +13,7 @@
 setlocal
 
 :: ---------- 查找 MSYS2 ----------
-set MSYS2_ROOT=C:\msys64
+set MSYS2_ROOT=C:\pack\app\code\msys2
 if not exist "%MSYS2_ROOT%\usr\bin\bash.exe" (
     echo [ERROR] MSYS2 not found at %MSYS2_ROOT%
     echo Please install MSYS2 from https://www.msys2.org/
