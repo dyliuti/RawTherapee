@@ -221,9 +221,13 @@ def main() -> None:
         raise SystemExit("两个目录没有可匹配的同名图片，请先完成两边解码输出。")
 
     rows: List[Dict[str, object]] = []
-    for rel in common:
+    total = len(common)
+    for idx, rel in enumerate(common, start=1):
         rt_path = rt_map[rel]
         raw_path = raw_map[rel]
+
+        print(f"[compare] 进度: {idx}/{total}")
+        print(f"[compare] 当前: {rel}")
 
         try:
             rt_img = load_rgb(rt_path)
