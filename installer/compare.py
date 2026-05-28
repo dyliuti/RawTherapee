@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import math
+import shutil
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -22,7 +23,7 @@ import numpy as np
 from PIL import Image
 
 try:
-    from openpyxl import Workbook
+    from openpyxl import Workbook, load_workbook
 except Exception as exc:  # pragma: no cover
     raise SystemExit(
         "缺少 openpyxl，请先安装: pip install openpyxl\n"
@@ -43,6 +44,16 @@ def parse_args() -> argparse.Namespace:
         "--raw-dir",
         default=r"C:\pack\file\output\raw",
         help="raw 输出目录",
+    )
+    parser.add_argument(
+        "--input-dir",
+        default=r"C:\pack\file\input",
+        help="原始输入目录",
+    )
+    parser.add_argument(
+        "--diff-copy-dir",
+        default=r"C:\pack\file\差异",
+        help="差异图片拷贝目录",
     )
     parser.add_argument(
         "--out",
@@ -202,64 +213,157 @@ def write_excel(rows: List[Dict[str, object]], out_file: Path) -> None:
     wb.save(out_file)
 
 
+def load_diff_rows_from_report(report_file: Path) -> List[Dict[str, object]]:
+    wb = load_workbook(report_file, data_only=True)
+    rows: List[Dict[str, object]] = []
+
+    for ws in wb.worksheets:
+        if ws.title.lower() == "summary":
+            continue
+
+        header_cells = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), None)
+        if not header_cells:
+            continue
+
+        headers = [str(h).strip() if h is not None else "" for h in header_cells]
+        try:
+            rel_idx = headers.index("relative_path")
+            flag_idx = headers.index("差异大(有/无)")
+        except ValueError:
+            continue
+
+        for r in ws.iter_rows(min_row=2, values_only=True):
+            if not r:
+                continue
+            rel = r[rel_idx] if rel_idx < len(r) else None
+            flag = r[flag_idx] if flag_idx < len(r) else None
+            if not rel:
+                continue
+            rows.append({
+                "relative_path": str(rel).replace("\\", "/"),
+                "差异大(有/无)": str(flag) if flag is not None else "",
+            })
+
+    return rows
+
+
+def copy_diff_images(
+    rows: List[Dict[str, object]],
+    input_dir: Path,
+    rt_dir: Path,
+    raw_dir: Path,
+    diff_copy_dir: Path,
+) -> int:
+    if diff_copy_dir.exists():
+        shutil.rmtree(diff_copy_dir)
+
+    copied = 0
+    for row in rows:
+        if row.get("差异大(有/无)") != "有":
+            continue
+
+        rel = str(row.get("relative_path", "")).replace("\\", "/")
+        if not rel:
+            continue
+
+        stem = Path(rel).stem
+        parent = Path(rel).parent
+
+        input_src = input_dir / parent / f"{stem}.CR2"
+        if not input_src.exists():
+            input_src = input_dir / parent / Path(rel).name
+
+        rt_src = rt_dir / rel
+        raw_src = raw_dir / rel
+
+        targets = [
+            (input_src, diff_copy_dir / "input" / parent / input_src.name),
+            (rt_src, diff_copy_dir / "rawtherapee" / parent / Path(rel).name),
+            (raw_src, diff_copy_dir / "raw" / parent / Path(rel).name),
+        ]
+
+        for src, dst in targets:
+            if src.exists():
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dst)
+        copied += 1
+
+    return copied
+
+
 def main() -> None:
     args = parse_args()
+    input_dir = Path(args.input_dir)
     rt_dir = Path(args.rt_dir)
     raw_dir = Path(args.raw_dir)
+    diff_copy_dir = Path(args.diff_copy_dir)
     out_file = Path(args.out)
 
+    if not input_dir.is_dir():
+        raise SystemExit(f"input 目录不存在: {input_dir}")
     if not rt_dir.is_dir():
         raise SystemExit(f"RawTherapee 输出目录不存在: {rt_dir}")
     if not raw_dir.is_dir():
         raise SystemExit(f"raw 输出目录不存在: {raw_dir}")
 
-    rt_map = list_images(rt_dir)
-    raw_map = list_images(raw_dir)
-    common = sorted(set(rt_map.keys()) & set(raw_map.keys()))
-
-    if not common:
-        raise SystemExit("两个目录没有可匹配的同名图片，请先完成两边解码输出。")
-
     rows: List[Dict[str, object]] = []
-    total = len(common)
-    for idx, rel in enumerate(common, start=1):
-        rt_path = rt_map[rel]
-        raw_path = raw_map[rel]
 
-        print(f"[compare] 进度: {idx}/{total}")
-        print(f"[compare] 当前: {rel}")
+    if out_file.is_file():
+        print(f"检测到已有报告，直接按报告拷贝差异图片: {out_file}")
+        rows = load_diff_rows_from_report(out_file)
+        if not rows:
+            raise SystemExit(f"报告中未解析到有效记录: {out_file}")
+    else:
+        rt_map = list_images(rt_dir)
+        raw_map = list_images(raw_dir)
+        common = sorted(set(rt_map.keys()) & set(raw_map.keys()))
 
-        try:
-            rt_img = load_rgb(rt_path)
-            raw_img = load_rgb(raw_path)
-            metrics = compute_metrics(rt_img, raw_img)
-            flag = classify(metrics, args.luma_threshold, args.mae_threshold)
-            row: Dict[str, object] = {
-                "relative_path": rel,
-                "rt_path": str(rt_path),
-                "raw_path": str(raw_path),
-                **{k: round(v, 4) for k, v in metrics.items()},
-                "差异大(有/无)": flag,
-            }
-        except Exception as exc:
-            row = {
-                "relative_path": rel,
-                "rt_path": str(rt_path),
-                "raw_path": str(raw_path),
-                "差异大(有/无)": "有",
-                "psnr": "ERROR",
-                "mae_rgb_mean": "ERROR",
-                "delta_luma_mean": f"ERROR: {exc}",
-            }
-        rows.append(row)
+        if not common:
+            raise SystemExit("两个目录没有可匹配的同名图片，请先完成两边解码输出。")
 
-    out_file.parent.mkdir(parents=True, exist_ok=True)
-    write_excel(rows, out_file)
+        total = len(common)
+        for idx, rel in enumerate(common, start=1):
+            rt_path = rt_map[rel]
+            raw_path = raw_map[rel]
+
+            print(f"[compare] 进度: {idx}/{total}")
+            print(f"[compare] 当前: {rel}")
+
+            try:
+                rt_img = load_rgb(rt_path)
+                raw_img = load_rgb(raw_path)
+                metrics = compute_metrics(rt_img, raw_img)
+                flag = classify(metrics, args.luma_threshold, args.mae_threshold)
+                row = {
+                    "relative_path": rel,
+                    "rt_path": str(rt_path),
+                    "raw_path": str(raw_path),
+                    **{k: round(v, 4) for k, v in metrics.items()},
+                    "差异大(有/无)": flag,
+                }
+            except Exception as exc:
+                row = {
+                    "relative_path": rel,
+                    "rt_path": str(rt_path),
+                    "raw_path": str(raw_path),
+                    "差异大(有/无)": "有",
+                    "psnr": "ERROR",
+                    "mae_rgb_mean": "ERROR",
+                    "delta_luma_mean": f"ERROR: {exc}",
+                }
+            rows.append(row)
+
+        out_file.parent.mkdir(parents=True, exist_ok=True)
+        write_excel(rows, out_file)
 
     diff_count = sum(1 for r in rows if r.get("差异大(有/无)") == "有")
+    copied_groups = copy_diff_images(rows, input_dir, rt_dir, raw_dir, diff_copy_dir)
+
     print(f"完成对比: {len(rows)} 张")
     print(f"差异大(有): {diff_count} 张")
     print(f"报告输出: {out_file}")
+    print(f"差异图片已拷贝: {copied_groups} 组")
+    print(f"差异目录: {diff_copy_dir}")
 
 
 if __name__ == "__main__":

@@ -46,7 +46,12 @@ def safe_name_from_rel_parent(rel_parent: pathlib.Path) -> str:
     return str(rel_parent).replace("\\", "_").replace("/", "_")
 
 
+def expected_output_path(src_path: pathlib.Path, out_subdir: pathlib.Path) -> pathlib.Path:
+    return out_subdir / f"{src_path.stem}.jpg"
+
+
 def run_one_file(cli_exe: str, src_path: pathlib.Path, out_subdir: pathlib.Path, timeout_sec: int) -> tuple:
+
     """返回: (status, elapsed_seconds, output_text)"""
     start_one = time.monotonic()
 
@@ -144,8 +149,17 @@ def decode_all(input_dir: str, output_dir: str, timeout_sec: int = 600) -> int:
         print(f"[{ENGINE_NAME}] 解码进度: {idx}/{total}")
         print(f"[{ENGINE_NAME}] 当前文件: {src_path}")
 
-        status, elapsed_one, out_text = run_one_file(CLI_EXE, src_path, out_subdir, timeout_sec)
+        expected_out = expected_output_path(src_path, out_subdir)
+        if expected_out.exists():
+            status = "SKIP"
+            elapsed_one = 0.0
+            out_text = ""
+            print(f"[{ENGINE_NAME}] 跳过(已存在): {expected_out}")
+        else:
+            status, elapsed_one, out_text = run_one_file(CLI_EXE, src_path, out_subdir, timeout_sec)
+
         per_dir_times[str(rel_parent)].append((str(rel_path), elapsed_one, status))
+
 
         if status == "OK":
             print(f"[{ENGINE_NAME}] 单张耗时: {elapsed_one:.3f}s")
