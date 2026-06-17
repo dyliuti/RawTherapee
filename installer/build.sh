@@ -37,6 +37,10 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ---------- 验证工具链 ----------
+if [[ "$(uname -s)" == "Darwin" && -x "/opt/homebrew/bin/cmake" && -x "/opt/homebrew/bin/ninja" ]]; then
+    export PATH="/opt/homebrew/bin:$PATH"
+    export PKG_CONFIG_PATH="/opt/homebrew/lib/pkgconfig:/opt/homebrew/share/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+fi
 if ! command -v cmake &>/dev/null; then
     echo "[ERROR] cmake not found. Please run in MSYS2 ucrt64 shell."
     exit 1
@@ -44,6 +48,36 @@ fi
 if ! command -v ninja &>/dev/null; then
     echo "[ERROR] ninja not found. Install: pacman -S mingw-w64-ucrt-x86_64-ninja"
     exit 1
+fi
+if ! command -v pkg-config &>/dev/null; then
+    echo "[ERROR] pkg-config not found."
+    exit 1
+fi
+
+if [[ "$(uname -s)" == "Darwin" ]] && pkg-config --exists libffi 2>/dev/null; then
+    LIBFFI_FIX_DIR="/tmp/rt_pkgconfig_fix_build"
+    FFI_INCLUDEDIR="$(pkg-config --variable=includedir libffi 2>/dev/null || true)"
+    if [[ -n "$FFI_INCLUDEDIR" && ! -d "$FFI_INCLUDEDIR" ]]; then
+        ACTUAL_SDK="$(xcrun --sdk macosx --show-sdk-path 2>/dev/null || true)"
+        if [[ -n "$ACTUAL_SDK" && -d "$ACTUAL_SDK/usr/include/ffi" ]]; then
+            echo "[warn] libffi includedir '$FFI_INCLUDEDIR' does not exist; using SDK at $ACTUAL_SDK"
+            mkdir -p "$LIBFFI_FIX_DIR"
+            cat > "$LIBFFI_FIX_DIR/libffi.pc" << LIBFFI_PC_EOF
+prefix=${ACTUAL_SDK}/usr
+exec_prefix=/usr
+libdir=\${exec_prefix}/lib
+toolexeclibdir=\${libdir}
+includedir=\${prefix}/include/ffi
+
+Name: libffi
+Description: Library supporting Foreign Function Interfaces
+Version: 3.4-rc1
+Libs: -L\${toolexeclibdir} -lffi
+Cflags: -I\${includedir}
+LIBFFI_PC_EOF
+            export PKG_CONFIG_PATH="$LIBFFI_FIX_DIR${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+        fi
+    fi
 fi
 
 echo "============================================================"
@@ -53,6 +87,17 @@ echo " Build dir   : $BUILD_DIR"
 echo " Output dir  : $OUTPUT_DIR"
 echo " Jobs        : $JOBS"
 echo "============================================================"
+
+HOST_OS="$(uname -s)"
+if [[ "$HOST_OS" == "Darwin" ]]; then
+    CLI_NAME="rawengine-cli"
+    RAWENGINE_LIB_NAME="therapee.dylib"
+    RUNTIME_LIB_GLOB="*.dylib"
+else
+    CLI_NAME="rawengine-cli.exe"
+    RAWENGINE_LIB_NAME="therapee.dll"
+    RUNTIME_LIB_GLOB="*.dll"
+fi
 
 # ---------- 清理 ----------
 if [[ $DO_CLEAN -eq 1 ]]; then
@@ -65,22 +110,43 @@ if [[ $SKIP_BUILD -eq 0 ]]; then
     echo ""
     echo "[cmake] Configuring ..."
     mkdir -p "$BUILD_DIR"
-    cmake -S "$RT_DIR" -B "$BUILD_DIR" \
-        -G Ninja \
-        -DWITH_SYSTEM_LIBRAW=ON \
+    CMAKE_ARGS=(
+        -G Ninja
         -DCMAKE_BUILD_TYPE=Release
+    )
+    if pkg-config --exists 'libraw_r >= 0.21'; then
+        CMAKE_ARGS+=(-DWITH_SYSTEM_LIBRAW=ON)
+    else
+        CMAKE_ARGS+=(-DWITH_SYSTEM_LIBRAW=OFF)
+    fi
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+        HOMEBREW_PREFIX="${HOMEBREW_PREFIX:-/opt/homebrew}"
+        CMAKE_ARGS+=(
+            -DCMAKE_OSX_DEPLOYMENT_TARGET="${CMAKE_OSX_DEPLOYMENT_TARGET:-12.0}"
+            -DCMAKE_OSX_ARCHITECTURES="$(uname -m)"
+            -DCMAKE_PREFIX_PATH="$HOMEBREW_PREFIX"
+            -DLOCAL_PREFIX="$HOMEBREW_PREFIX"
+            -DJPEG_INCLUDE_DIR="$HOMEBREW_PREFIX/include"
+            -DJPEG_LIBRARY="$HOMEBREW_PREFIX/lib/libjpeg.dylib"
+            -DPNG_PNG_INCLUDE_DIR="$HOMEBREW_PREFIX/include"
+            -DPNG_LIBRARY="$HOMEBREW_PREFIX/lib/libpng.dylib"
+            -DTIFF_INCLUDE_DIR="$HOMEBREW_PREFIX/include"
+            -DTIFF_LIBRARY="$HOMEBREW_PREFIX/lib/libtiff.dylib"
+        )
+    fi
+    cmake -S "$RT_DIR" -B "$BUILD_DIR" "${CMAKE_ARGS[@]}"
 
     echo ""
-    echo "[ninja] Building rawengine-cli and rawtherapee.dll (jobs=$JOBS) ..."
+    echo "[ninja] Building rawengine-cli and therapee.dll (jobs=$JOBS) ..."
     ninja -C "$BUILD_DIR" -j"$JOBS" rawengine-cli rawengine
 else
     echo "[skip-build] Skipping build, using existing artifacts in $BUILD_DIR"
 fi
 
 # ---------- 验证产物存在 ----------
-CLI_EXE="$BUILD_DIR/rtengine/rawengine-cli.exe"
+CLI_EXE="$BUILD_DIR/rtengine/$CLI_NAME"
 LIB_A="$BUILD_DIR/rtengine/librtengine.a"
-RAWENGINE_DLL="$BUILD_DIR/rtengine/rawtherapee.dll"
+RAWENGINE_DLL="$BUILD_DIR/rtengine/$RAWENGINE_LIB_NAME"
 
 if [[ ! -f "$CLI_EXE" ]]; then
     echo "[ERROR] $CLI_EXE not found. Build may have failed."
@@ -115,47 +181,49 @@ cp "$RT_DIR/rtengine/raw_engine_error_def.h" "$OUTPUT_DIR/include/"
 echo "[collect] Static library ..."
 cp "$LIB_A" "$OUTPUT_DIR/lib/"
 
-# ---------- 动态库（DLL + MinGW 导入库） ----------
-echo "[collect] rawtherapee.dll ..."
+# ---------- 动态库（DLL/dylib + MinGW 导入库） ----------
+echo "[collect] $RAWENGINE_LIB_NAME ..."
 cp "$RAWENGINE_DLL" "$OUTPUT_DIR/bin/"
-# MinGW 同时生成 librawtherapee.dll.a（MinGW/GCC 工程可直接链接）
-RAWENGINE_DLL_A="$BUILD_DIR/rtengine/librawtherapee.dll.a"
+# MinGW 同时生成 libtherapee.dll.a（MinGW/GCC 工程可直接链接）
+RAWENGINE_DLL_A="$BUILD_DIR/rtengine/libtherapee.dll.a"
 if [[ -f "$RAWENGINE_DLL_A" ]]; then
     cp "$RAWENGINE_DLL_A" "$OUTPUT_DIR/lib/"
 fi
 
 # ---------- 为 MSVC 生成导入库（.def + .lib） ----------
-# gendef 从 DLL 提取导出表 → MSVC lib.exe 生成 rawtherapee.lib
+# gendef 从 DLL 提取导出表 → MSVC lib.exe 生成 therapee.lib
+if [[ "$HOST_OS" != "Darwin" ]]; then
 echo "[collect] Generating MSVC import library (gendef + lib.exe) ..."
 
 # lib.exe 路径由 build.bat 通过 RAWENGINE_MSVC_LIB 传入（Windows 路径，可能含空格）
 LIB_EXE_WIN="${RAWENGINE_MSVC_LIB:-}"
 
 if ! command -v gendef >/dev/null 2>&1; then
-    echo "  [warn] gendef not found in ucrt64; rawtherapee.lib not generated"
+    echo "  [warn] gendef not found in ucrt64; therapee.lib not generated"
     echo "         Install via: pacman -S mingw-w64-ucrt-x86_64-tools"
 elif [[ -z "$LIB_EXE_WIN" ]]; then
-    echo "  [warn] RAWENGINE_MSVC_LIB not set; rawtherapee.lib not generated"
+    echo "  [warn] RAWENGINE_MSVC_LIB not set; therapee.lib not generated"
     echo "         (build.bat should locate MSVC lib.exe via vswhere and pass it in)"
 else
     (
         cd "$OUTPUT_DIR/lib"
-        cp -f "$OUTPUT_DIR/bin/rawtherapee.dll" ./rawtherapee.dll
-        gendef ./rawtherapee.dll
+        cp -f "$OUTPUT_DIR/bin/therapee.dll" ./therapee.dll
+        gendef ./therapee.dll
         # 直接用 Windows 路径调用 lib.exe（cygpath 转 MSYS 路径再走 exec，处理空格）
         LIB_EXE_MSYS="$(cygpath -u "$LIB_EXE_WIN" 2>/dev/null || echo "$LIB_EXE_WIN")"
-        "$LIB_EXE_MSYS" //def:rawtherapee.def //out:rawtherapee.lib //machine:x64
-        rm -f ./rawtherapee.dll ./rawtherapee.exp
+        "$LIB_EXE_MSYS" //def:therapee.def //out:therapee.lib //machine:x64
+        rm -f ./therapee.dll ./therapee.exp
     )
-    if [[ -f "$OUTPUT_DIR/lib/rawtherapee.lib" ]]; then
-        echo "  rawtherapee.def + rawtherapee.lib generated in $OUTPUT_DIR/lib/"
+    if [[ -f "$OUTPUT_DIR/lib/therapee.lib" ]]; then
+        echo "  therapee.def + therapee.lib generated in $OUTPUT_DIR/lib/"
     else
-        echo "  [warn] failed to generate rawtherapee.lib (lib.exe call failed)"
+        echo "  [warn] failed to generate therapee.lib (lib.exe call failed)"
     fi
+fi
 fi
 
 # ---------- CLI 可执行文件 ----------
-echo "[collect] rawengine-cli.exe ..."
+echo "[collect] $CLI_NAME ..."
 cp "$CLI_EXE" "$OUTPUT_DIR/bin/"
 
 # ---------- 运行时 DLL（从 ucrt64/bin 复制依赖） ----------
@@ -181,12 +249,17 @@ collect_dlls_recursive() {
     done || true
 }
 
-collect_dlls_recursive "$OUTPUT_DIR/bin/rawengine-cli.exe"
-collect_dlls_recursive "$OUTPUT_DIR/bin/rawtherapee.dll"
-rm -f "$DLL_SEEN"
+if [[ "$HOST_OS" == "Darwin" ]]; then
+    DLL_COUNT=$(find "$OUTPUT_DIR/bin" -name "*.dylib" | wc -l)
+    echo "  Copied $DLL_COUNT dylib(s) to output/bin/"
+else
+    collect_dlls_recursive "$OUTPUT_DIR/bin/$CLI_NAME"
+    collect_dlls_recursive "$OUTPUT_DIR/bin/$RAWENGINE_LIB_NAME"
+    rm -f "$DLL_SEEN"
 
-DLL_COUNT=$(find "$OUTPUT_DIR/bin" -name "*.dll" | wc -l)
-echo "  Copied $DLL_COUNT DLL(s) to output/bin/"
+    DLL_COUNT=$(find "$OUTPUT_DIR/bin" -name "*.dll" | wc -l)
+    echo "  Copied $DLL_COUNT DLL(s) to output/bin/"
+fi
 
 # ---------- 调试符号（DWARF → .debug 文件） ----------
 echo "[collect] Extracting debug symbols ..."
@@ -206,8 +279,8 @@ extract_debug() {
     fi
 }
 
-extract_debug "$OUTPUT_DIR/bin/rawengine-cli.exe"
-extract_debug "$OUTPUT_DIR/bin/rawtherapee.dll"
+extract_debug "$OUTPUT_DIR/bin/$CLI_NAME"
+extract_debug "$OUTPUT_DIR/bin/$RAWENGINE_LIB_NAME"
 
 # 同时为静态库提取符号索引信息（可选）
 if command -v nm &>/dev/null; then
@@ -221,7 +294,7 @@ echo "[collect] readme.md ..."
 cp "$SCRIPT_DIR/readme.md" "$OUTPUT_DIR/readme.md"
 
 # ---------- 运行时资源（rawengine 加载色彩/相机数据所需） ----------
-# 集成方需将 resource/ 目录内容放到与 rawtherapee.dll 同级目录下
+# 集成方需将 resource/ 目录内容放到与 therapee.dll 同级目录下
 # 并在调用 rawengine_init() 前通过 RAWENGINE_DATADIR 环境变量或
 # rawengine_set_datadir() 指定资源路径
 echo "[collect] Runtime resources ..."
@@ -283,7 +356,7 @@ echo "============================================================"
 echo " Output collected successfully:"
 echo "  include/  : $(find "$OUTPUT_DIR/include" -name "*.h" | wc -l) header(s)"
 echo "  lib/      : $(find "$OUTPUT_DIR/lib" -name "*.a" | wc -l) static lib(s), $(find "$OUTPUT_DIR/lib" -name "*.lib" -o -name "*.def" -o -name "*.dll.a" 2>/dev/null | wc -l) MSVC/import file(s)"
-echo "  bin/      : $(find "$OUTPUT_DIR/bin" -name "*.exe" | wc -l) exe(s), $DLL_COUNT DLL(s)"
+echo "  bin/      : $(find "$OUTPUT_DIR/bin" -type f \( -name "*.exe" -o -name "rawengine-cli" \) | wc -l) executable(s), $DLL_COUNT runtime lib(s)"
 echo "  pdb/      : $(find "$OUTPUT_DIR/pdb" -type f | wc -l) debug file(s)"
 echo "  resource/ : ${RESOURCE_COUNT} file(s) (dcpprofiles/iccprofiles/profiles/camconst)"
 echo "============================================================"

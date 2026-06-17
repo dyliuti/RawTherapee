@@ -33,6 +33,8 @@ Release
 exe/*
 output/*
 installer/output
+installer/output_arm
+installer/output_intel
 installer/output_gui
 installer/output_gui_arm
 

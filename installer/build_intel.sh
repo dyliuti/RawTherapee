@@ -25,9 +25,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RT_DIR="$(dirname "$SCRIPT_DIR")"
 BUILD_DIR="$RT_DIR/build_intel"
-OUTPUT_DIR="$SCRIPT_DIR/output"
-DYLIB_DIR="$OUTPUT_DIR/dylib/intel"
-DSYM_DIR="$OUTPUT_DIR/dsym/intel"
+OUTPUT_DIR="$SCRIPT_DIR/output_intel"
+DYLIB_DIR="$OUTPUT_DIR/bin"
+DSYM_DIR="$OUTPUT_DIR/dsym"
 
 # ---------- 平台配置 ----------
 HOMEBREW_PREFIX="/usr/local"
@@ -172,7 +172,7 @@ else
 fi
 
 # ---------- 验证产物 ----------
-RAWENGINE_DYLIB="$BUILD_DIR/rtengine/rawengine.dylib"
+RAWENGINE_DYLIB="$BUILD_DIR/rtengine/therapee.dylib"
 CLI_BIN="$BUILD_DIR/rtengine/rawengine-cli"
 
 if [[ ! -f "$RAWENGINE_DYLIB" ]]; then
@@ -214,6 +214,11 @@ collect_dylibs_recursive() {
     otool -L "$f" 2>/dev/null | tail -n +2 | awk '{print $1}' | \
     while IFS= read -r dep; do
         [[ -z "$dep" ]] && continue
+        # 将 @rpath/xxx 解析为 Homebrew lib 目录下的绝对路径
+        if [[ "$dep" == "@rpath/"* ]]; then
+            dep="$HOMEBREW_PREFIX/lib/${dep#@rpath/}"
+        fi
+        # 仅收集来自 Homebrew prefix 的依赖，跳过系统库。
         [[ "$dep" != "$HOMEBREW_PREFIX"* ]] && continue
         [[ ! -f "$dep" ]] && continue
         local dep_name

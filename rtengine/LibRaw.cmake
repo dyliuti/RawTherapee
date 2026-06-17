@@ -29,6 +29,13 @@ add_custom_target(
 # Configuration flags.
 set(CONFIGURE_FLAGS "--disable-examples")
 set(LIBRAW_CXX_FLAGS "${CXX_FLAGS} -std=gnu++11 -Wno-error=unknown-pragmas")
+set(LIBRAW_C_FLAGS "${C_FLAGS}")
+if(APPLE AND CMAKE_OSX_ARCHITECTURES)
+    foreach(arch ${CMAKE_OSX_ARCHITECTURES})
+        string(APPEND LIBRAW_CXX_FLAGS " -arch ${arch}")
+        string(APPEND LIBRAW_C_FLAGS " -arch ${arch}")
+    endforeach()
+endif()
 # Let the configure script handle OpenMP flags.
 string(REPLACE "${OpenMP_CXX_FLAGS}" "" LIBRAW_CXX_FLAGS "${LIBRAW_CXX_FLAGS}")
 if(OPTION_OMP)
@@ -38,6 +45,7 @@ else()
 endif()
 set(CONFIGURE_FLAGS "${CONFIGURE_FLAGS} CC=\"${CMAKE_C_COMPILER}\"")
 set(CONFIGURE_FLAGS "${CONFIGURE_FLAGS} CXX=\"${CMAKE_CXX_COMPILER}\"")
+set(CONFIGURE_FLAGS "${CONFIGURE_FLAGS} CFLAGS=\"${LIBRAW_C_FLAGS}\"")
 set(CONFIGURE_FLAGS "${CONFIGURE_FLAGS} CXXFLAGS=\"${LIBRAW_CXX_FLAGS} -DCMS_NO_REGISTER_KEYWORD=1\"")
 
 # Configuration commands.

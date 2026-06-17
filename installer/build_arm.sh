@@ -8,8 +8,8 @@
 # 产物目录结构:
 #   installer/output/
 #     include/          — C API 头文件（arm/intel 共享）
-#     dylib/arm/        — rawengine.dylib (arm64) + 运行时依赖 dylib
-#     dsym/arm/         — rawengine.dylib.dSYM 调试符号包
+#     bin/              — therapee.dylib (arm64) + 运行时依赖 dylib
+#     dsym/arm/         — therapee.dylib.dSYM 调试符号包
 #     resource/         — 运行时色彩/相机资源（arm/intel 共享）
 #     readme_mac.md     — macOS 集成说明文档
 # =============================================================================
@@ -19,9 +19,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RT_DIR="$(dirname "$SCRIPT_DIR")"
 BUILD_DIR="$RT_DIR/build_arm"
-OUTPUT_DIR="$SCRIPT_DIR/output"
-DYLIB_DIR="$OUTPUT_DIR/dylib/arm"
-DSYM_DIR="$OUTPUT_DIR/dsym/arm"
+OUTPUT_DIR="$SCRIPT_DIR/output_arm"
+BIN_DIR="$OUTPUT_DIR/bin"
+DSYM_DIR="$OUTPUT_DIR/dsym"
 
 # ---------- 平台配置 ----------
 HOMEBREW_PREFIX="/opt/homebrew"
@@ -133,8 +133,8 @@ echo "============================================================"
 if [[ $DO_CLEAN -eq 1 ]]; then
     echo "[clean] Removing $BUILD_DIR ..."
     rm -rf "$BUILD_DIR"
-    echo "[clean] Removing $DYLIB_DIR ..."
-    rm -rf "$DYLIB_DIR"
+    echo "[clean] Removing $BIN_DIR ..."
+    rm -rf "$BIN_DIR"
     echo "[clean] Removing $DSYM_DIR ..."
     rm -rf "$DSYM_DIR"
 fi
@@ -164,7 +164,7 @@ else
 fi
 
 # ---------- 验证产物 ----------
-RAWENGINE_DYLIB="$BUILD_DIR/rtengine/rawengine.dylib"
+RAWENGINE_DYLIB="$BUILD_DIR/rtengine/therapee.dylib"
 CLI_BIN="$BUILD_DIR/rtengine/rawengine-cli"
 
 if [[ ! -f "$RAWENGINE_DYLIB" ]]; then
@@ -175,8 +175,8 @@ fi
 # ---------- 准备输出目录 ----------
 echo ""
 echo "[collect] Preparing output directories ..."
-rm -rf "$DYLIB_DIR" "$DSYM_DIR"
-mkdir -p "$DYLIB_DIR" "$DSYM_DIR"
+rm -rf "$BIN_DIR" "$DSYM_DIR"
+mkdir -p "$BIN_DIR" "$DSYM_DIR"
 mkdir -p "$OUTPUT_DIR/include"
 mkdir -p "$OUTPUT_DIR/resource"
 
@@ -187,13 +187,13 @@ cp "$RT_DIR/rtengine/rawengine_types.h"      "$OUTPUT_DIR/include/"
 cp "$RT_DIR/rtengine/raw_engine_error_def.h" "$OUTPUT_DIR/include/"
 
 # ---------- 主 dylib ----------
-echo "[collect] rawengine.dylib ..."
-cp -f "$RAWENGINE_DYLIB" "$DYLIB_DIR/"
+echo "[collect] therapee.dylib ..."
+cp -f "$RAWENGINE_DYLIB" "$BIN_DIR/"
 
 # ---------- CLI 工具 ----------
 if [[ -f "$CLI_BIN" ]]; then
     echo "[collect] rawengine-cli ..."
-    cp -f "$CLI_BIN" "$DYLIB_DIR/"
+    cp -f "$CLI_BIN" "$BIN_DIR/"
 fi
 
 # ---------- 递归收集运行时 dylib 依赖（来自 Homebrew） ----------
@@ -206,26 +206,30 @@ collect_dylibs_recursive() {
     otool -L "$f" 2>/dev/null | tail -n +2 | awk '{print $1}' | \
     while IFS= read -r dep; do
         [[ -z "$dep" ]] && continue
-        # 仅收集来自 Homebrew prefix 的依赖
+        # 将 @rpath/xxx 解析为 Homebrew lib 目录下的绝对路径
+        if [[ "$dep" == "@rpath/"* ]]; then
+            dep="$HOMEBREW_PREFIX/lib/${dep#@rpath/}"
+        fi
+        # 仅收集来自 Homebrew prefix 的依赖，跳过系统库。
         [[ "$dep" != "$HOMEBREW_PREFIX"* ]] && continue
         [[ ! -f "$dep" ]] && continue
         local dep_name
         dep_name="$(basename "$dep")"
         grep -qxF "$dep_name" "$DYLIB_SEEN" 2>/dev/null && continue
         echo "$dep_name" >> "$DYLIB_SEEN"
-        cp -f "$dep" "$DYLIB_DIR/"
+        cp -f "$dep" "$BIN_DIR/"
         collect_dylibs_recursive "$dep"
     done || true
 }
 
-collect_dylibs_recursive "$DYLIB_DIR/rawengine.dylib"
-if [[ -f "$DYLIB_DIR/rawengine-cli" ]]; then
-    collect_dylibs_recursive "$DYLIB_DIR/rawengine-cli"
+collect_dylibs_recursive "$BIN_DIR/therapee.dylib"
+if [[ -f "$BIN_DIR/rawengine-cli" ]]; then
+    collect_dylibs_recursive "$BIN_DIR/rawengine-cli"
 fi
 rm -f "$DYLIB_SEEN"
 
-DYLIB_COUNT=$(find "$DYLIB_DIR" -name "*.dylib" | wc -l | tr -d ' ')
-echo "  Collected ${DYLIB_COUNT} dylib(s) in dylib/arm/"
+DYLIB_COUNT=$(find "$BIN_DIR" -maxdepth 1 -name "*.dylib" | wc -l | tr -d ' ')
+echo "  Collected ${DYLIB_COUNT} dylib(s) in bin/"
 
 # ---------- 修正 install name（统一使用 @rpath） ----------
 echo "[collect] Fixing install names ..."
@@ -242,43 +246,43 @@ fix_install_names() {
         [[ -z "$dep" ]] && continue
         local dep_name
         dep_name="$(basename "$dep")"
-        [[ -f "$DYLIB_DIR/$dep_name" ]] || continue
+        [[ -f "$BIN_DIR/$dep_name" ]] || continue
         [[ "$dep" == "@rpath/$dep_name" ]] && continue
         install_name_tool -change "$dep" "@rpath/$dep_name" "$lib" 2>/dev/null || true
     done || true
 }
 
-for dylib in "$DYLIB_DIR"/*.dylib; do
+for dylib in "$BIN_DIR"/*.dylib; do
     [[ -f "$dylib" ]] || continue
     fix_install_names "$dylib"
 done
 
 # CLI 可执行文件：更新库引用并添加 @executable_path rpath
-if [[ -f "$DYLIB_DIR/rawengine-cli" ]]; then
-    otool -L "$DYLIB_DIR/rawengine-cli" 2>/dev/null | tail -n +2 | awk '{print $1}' | \
+if [[ -f "$BIN_DIR/rawengine-cli" ]]; then
+    otool -L "$BIN_DIR/rawengine-cli" 2>/dev/null | tail -n +2 | awk '{print $1}' | \
     while IFS= read -r dep; do
         [[ -z "$dep" ]] && continue
         dep_name="$(basename "$dep")"
-        [[ -f "$DYLIB_DIR/$dep_name" ]] || continue
+        [[ -f "$BIN_DIR/$dep_name" ]] || continue
         [[ "$dep" == "@rpath/$dep_name" ]] && continue
-        install_name_tool -change "$dep" "@rpath/$dep_name" "$DYLIB_DIR/rawengine-cli" 2>/dev/null || true
+        install_name_tool -change "$dep" "@rpath/$dep_name" "$BIN_DIR/rawengine-cli" 2>/dev/null || true
     done || true
     # 确保 CLI 能在同目录找到 dylib
-    install_name_tool -add_rpath "@executable_path" "$DYLIB_DIR/rawengine-cli" 2>/dev/null || true
+    install_name_tool -add_rpath "@executable_path" "$BIN_DIR/rawengine-cli" 2>/dev/null || true
 fi
 
 # ---------- 提取 dSYM 调试符号 ----------
 echo "[collect] Extracting dSYM symbols ..."
 if command -v dsymutil &>/dev/null; then
-    dsymutil "$DYLIB_DIR/rawengine.dylib" \
-        -o "$DSYM_DIR/rawengine.dylib.dSYM" 2>/dev/null || true
-    strip -S "$DYLIB_DIR/rawengine.dylib" 2>/dev/null || true
-    echo "  rawengine.dylib → dsym/arm/rawengine.dylib.dSYM"
+    dsymutil "$BIN_DIR/therapee.dylib" \
+        -o "$DSYM_DIR/therapee.dylib.dSYM" 2>/dev/null || true
+    strip -S "$BIN_DIR/therapee.dylib" 2>/dev/null || true
+    echo "  therapee.dylib → dsym/arm/therapee.dylib.dSYM"
 
-    if [[ -f "$DYLIB_DIR/rawengine-cli" ]]; then
-        dsymutil "$DYLIB_DIR/rawengine-cli" \
+    if [[ -f "$BIN_DIR/rawengine-cli" ]]; then
+        dsymutil "$BIN_DIR/rawengine-cli" \
             -o "$DSYM_DIR/rawengine-cli.dSYM" 2>/dev/null || true
-        strip "$DYLIB_DIR/rawengine-cli" 2>/dev/null || true
+        strip "$BIN_DIR/rawengine-cli" 2>/dev/null || true
         echo "  rawengine-cli   → dsym/arm/rawengine-cli.dSYM"
     fi
 else
@@ -317,7 +321,7 @@ echo ""
 echo "============================================================"
 echo " Output collected successfully (arm64):"
 echo "  include/       : $(find "$OUTPUT_DIR/include" -name "*.h" | wc -l | tr -d ' ') header(s)"
-echo "  dylib/arm/     : ${DYLIB_COUNT} dylib(s)"
+echo "  bin/           : ${DYLIB_COUNT} dylib(s) + $(find "$BIN_DIR" -maxdepth 1 -type f -name "rawengine-cli" | wc -l | tr -d ' ') executable(s)"
 echo "  dsym/arm/      : ${DSYM_COUNT} dSYM bundle(s)"
 echo "  resource/      : ${RESOURCE_COUNT} file(s)"
 echo "============================================================"
