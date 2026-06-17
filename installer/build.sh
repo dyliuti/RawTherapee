@@ -71,7 +71,7 @@ if [[ $SKIP_BUILD -eq 0 ]]; then
         -DCMAKE_BUILD_TYPE=Release
 
     echo ""
-    echo "[ninja] Building rawengine-cli and rawengine.dll (jobs=$JOBS) ..."
+    echo "[ninja] Building rawengine-cli and rawtherapee.dll (jobs=$JOBS) ..."
     ninja -C "$BUILD_DIR" -j"$JOBS" rawengine-cli rawengine
 else
     echo "[skip-build] Skipping build, using existing artifacts in $BUILD_DIR"
@@ -80,7 +80,7 @@ fi
 # ---------- 验证产物存在 ----------
 CLI_EXE="$BUILD_DIR/rtengine/rawengine-cli.exe"
 LIB_A="$BUILD_DIR/rtengine/librtengine.a"
-RAWENGINE_DLL="$BUILD_DIR/rtengine/rawengine.dll"
+RAWENGINE_DLL="$BUILD_DIR/rtengine/rawtherapee.dll"
 
 if [[ ! -f "$CLI_EXE" ]]; then
     echo "[ERROR] $CLI_EXE not found. Build may have failed."
@@ -116,44 +116,42 @@ echo "[collect] Static library ..."
 cp "$LIB_A" "$OUTPUT_DIR/lib/"
 
 # ---------- 动态库（DLL + MinGW 导入库） ----------
-echo "[collect] rawengine.dll ..."
+echo "[collect] rawtherapee.dll ..."
 cp "$RAWENGINE_DLL" "$OUTPUT_DIR/bin/"
-# MinGW 同时生成 librawengine.dll.a（MinGW/GCC 工程可直接链接）
-RAWENGINE_DLL_A="$BUILD_DIR/rtengine/librawengine.dll.a"
+# MinGW 同时生成 librawtherapee.dll.a（MinGW/GCC 工程可直接链接）
+RAWENGINE_DLL_A="$BUILD_DIR/rtengine/librawtherapee.dll.a"
 if [[ -f "$RAWENGINE_DLL_A" ]]; then
     cp "$RAWENGINE_DLL_A" "$OUTPUT_DIR/lib/"
 fi
 
 # ---------- 为 MSVC 生成导入库（.def + .lib） ----------
-echo "[collect] Generating MSVC import library ..."
-RAWENGINE_DEF="$OUTPUT_DIR/lib/rawengine.def"
-RAWENGINE_LIB="$OUTPUT_DIR/lib/rawengine.lib"
+# gendef 从 DLL 提取导出表 → MSVC lib.exe 生成 rawtherapee.lib
+echo "[collect] Generating MSVC import library (gendef + lib.exe) ..."
 
-# 直接从 DLL 导出表提取函数名，生成 .def 文件
-{
-    echo "LIBRARY rawengine.dll"
-    echo "EXPORTS"
-    objdump -x "$OUTPUT_DIR/bin/rawengine.dll" 2>/dev/null \
-        | awk '/\[Name Pointer\/Ordinal\]/{found=1} found && /\+base\[/{
-            # lines like:  [  74] +base[  75]  004a rawengine_decode
-            match($0, /[0-9a-f]{4} ([A-Za-z_][A-Za-z0-9_]+)$/, m)
-            if (m[1] != "" && substr(m[1],1,10) == "rawengine_") print "    " m[1]
-        }'
-} > "$RAWENGINE_DEF"
+# lib.exe 路径由 build.bat 通过 RAWENGINE_MSVC_LIB 传入（Windows 路径，可能含空格）
+LIB_EXE_WIN="${RAWENGINE_MSVC_LIB:-}"
 
-# 用 llvm-dlltool 生成 MSVC 兼容的 .lib（比 GNU dlltool 生成的格式更兼容）
-if command -v llvm-dlltool &>/dev/null; then
-    llvm-dlltool -m i386:x86-64 -D rawengine.dll -d "$RAWENGINE_DEF" -l "$RAWENGINE_LIB" 2>/dev/null || true
-    if [[ -f "$RAWENGINE_LIB" ]]; then
-        EXPORTED_COUNT=$(grep -c '    ' "$RAWENGINE_DEF" 2>/dev/null || echo 0)
-        echo "  rawengine.def (${EXPORTED_COUNT} exports) + rawengine.lib generated"
-    else
-        echo "  [warn] llvm-dlltool failed to generate rawengine.lib"
-    fi
+if ! command -v gendef >/dev/null 2>&1; then
+    echo "  [warn] gendef not found in ucrt64; rawtherapee.lib not generated"
+    echo "         Install via: pacman -S mingw-w64-ucrt-x86_64-tools"
+elif [[ -z "$LIB_EXE_WIN" ]]; then
+    echo "  [warn] RAWENGINE_MSVC_LIB not set; rawtherapee.lib not generated"
+    echo "         (build.bat should locate MSVC lib.exe via vswhere and pass it in)"
 else
-    echo "  [warn] llvm-dlltool not found; rawengine.lib not generated"
-    echo "         Install: pacman -S mingw-w64-ucrt-x86_64-llvm"
-    echo "         Or on MSVC machine: lib /DEF:rawengine.def /MACHINE:X64 /OUT:rawengine.lib"
+    (
+        cd "$OUTPUT_DIR/lib"
+        cp -f "$OUTPUT_DIR/bin/rawtherapee.dll" ./rawtherapee.dll
+        gendef ./rawtherapee.dll
+        # 直接用 Windows 路径调用 lib.exe（cygpath 转 MSYS 路径再走 exec，处理空格）
+        LIB_EXE_MSYS="$(cygpath -u "$LIB_EXE_WIN" 2>/dev/null || echo "$LIB_EXE_WIN")"
+        "$LIB_EXE_MSYS" //def:rawtherapee.def //out:rawtherapee.lib //machine:x64
+        rm -f ./rawtherapee.dll ./rawtherapee.exp
+    )
+    if [[ -f "$OUTPUT_DIR/lib/rawtherapee.lib" ]]; then
+        echo "  rawtherapee.def + rawtherapee.lib generated in $OUTPUT_DIR/lib/"
+    else
+        echo "  [warn] failed to generate rawtherapee.lib (lib.exe call failed)"
+    fi
 fi
 
 # ---------- CLI 可执行文件 ----------
@@ -184,7 +182,7 @@ collect_dlls_recursive() {
 }
 
 collect_dlls_recursive "$OUTPUT_DIR/bin/rawengine-cli.exe"
-collect_dlls_recursive "$OUTPUT_DIR/bin/rawengine.dll"
+collect_dlls_recursive "$OUTPUT_DIR/bin/rawtherapee.dll"
 rm -f "$DLL_SEEN"
 
 DLL_COUNT=$(find "$OUTPUT_DIR/bin" -name "*.dll" | wc -l)
@@ -209,7 +207,7 @@ extract_debug() {
 }
 
 extract_debug "$OUTPUT_DIR/bin/rawengine-cli.exe"
-extract_debug "$OUTPUT_DIR/bin/rawengine.dll"
+extract_debug "$OUTPUT_DIR/bin/rawtherapee.dll"
 
 # 同时为静态库提取符号索引信息（可选）
 if command -v nm &>/dev/null; then
@@ -223,7 +221,7 @@ echo "[collect] readme.md ..."
 cp "$SCRIPT_DIR/readme.md" "$OUTPUT_DIR/readme.md"
 
 # ---------- 运行时资源（rawengine 加载色彩/相机数据所需） ----------
-# 集成方需将 resource/ 目录内容放到与 rawengine.dll 同级目录下
+# 集成方需将 resource/ 目录内容放到与 rawtherapee.dll 同级目录下
 # 并在调用 rawengine_init() 前通过 RAWENGINE_DATADIR 环境变量或
 # rawengine_set_datadir() 指定资源路径
 echo "[collect] Runtime resources ..."

@@ -318,7 +318,7 @@ endif()
 # Define RAWENGINE_EXPORTS so RAWENGINE_API → __declspec(dllexport) for this target
 target_compile_definitions(rawengine PRIVATE RAWENGINE_EXPORTS)
 set_target_properties(rawengine PROPERTIES
-    OUTPUT_NAME "rawengine"
+    OUTPUT_NAME "rawtherapee"
     PREFIX ""
     POSITION_INDEPENDENT_CODE ON
 )
