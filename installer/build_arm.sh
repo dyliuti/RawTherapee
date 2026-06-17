@@ -154,6 +154,8 @@ if [[ $SKIP_BUILD -eq 0 ]]; then
         -DLOCAL_PREFIX="$HOMEBREW_PREFIX" \
         -DWITH_SYSTEM_LIBRAW="$WITH_SYSTEM_LIBRAW" \
         -DOSX_DEV_BUILD=ON \
+        -DBUILD_BUNDLE=ON \
+        -DDATADIR="../Resources" \
         -DCMAKE_MAKE_PROGRAM="$HOMEBREW_PREFIX/bin/ninja"
 
     echo ""
