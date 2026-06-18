@@ -944,10 +944,10 @@ void try_bind_dcp_exact(const DecodeCtx& c, rtengine::procparams::ProcParams& p)
         auto it = c.externalDcp->find(full_name);
         if (it != c.externalDcp->end()) {
             p.icm.inputProfile = it->second;
-            std::cout << "[RawEngine][DCP] hit: " << full_name << " -> " << it->second << std::endl;
+            std::cout << "[RawTherapee][DCP] hit: " << full_name << " -> " << it->second << std::endl;
             return;
         }
-        std::cout << "[RawEngine][DCP] miss: " << full_name << std::endl;
+        std::cout << "[RawTherapee][DCP] miss: " << full_name << std::endl;
     }
     // 若未匹配，留空，由各分支/默认再设置其它 icm 行为
     // ensure_camera_profile_fallback(p);
@@ -3303,11 +3303,11 @@ int rawengine_init() {
 
     options.rtSettings.lensfunDbDirectory = LENSFUN_DB_PATH;
     options.rtSettings.lensfunDbBundleDirectory = LENSFUN_DB_PATH;
-    std::cout << "[RawEngine] Resource root: " << argv0 << std::endl;
-    std::cout << "[RawEngine] iccprofiles: " << Glib::build_filename(argv0, "iccprofiles") << std::endl;
-    std::cout << "[RawEngine] profiles: " << Glib::build_filename(argv0, "profiles") << std::endl;
-    std::cout << "[RawEngine] languages: " << Glib::build_filename(argv0, "languages") << std::endl;
-    std::cout << "[RawEngine] dcpprofiles: " << Glib::build_filename(argv0, "dcpprofiles") << std::endl;
+    std::cout << "[RawTherapee] Resource root: " << argv0 << std::endl;
+    std::cout << "[RawTherapee] iccprofiles: " << Glib::build_filename(argv0, "iccprofiles") << std::endl;
+    std::cout << "[RawTherapee] profiles: " << Glib::build_filename(argv0, "profiles") << std::endl;
+    std::cout << "[RawTherapee] languages: " << Glib::build_filename(argv0, "languages") << std::endl;
+    std::cout << "[RawTherapee] dcpprofiles: " << Glib::build_filename(argv0, "dcpprofiles") << std::endl;
     // Sync paths into App
     App::get().setArgv0(argv0);
     App::get().setCreditsPath(creditsPath);
@@ -3318,11 +3318,11 @@ int rawengine_init() {
     licensePath = LICENCE_SEARCH_PATH;
     options.rtSettings.lensfunDbDirectory = LENSFUN_DB_PATH;
     options.rtSettings.lensfunDbBundleDirectory = LENSFUN_DB_PATH;
-    std::cout << "[RawEngine] Resource root: " << argv0 << std::endl;
-    std::cout << "[RawEngine] iccprofiles: " << Glib::build_filename(argv0, "iccprofiles") << std::endl;
-    std::cout << "[RawEngine] profiles: " << Glib::build_filename(argv0, "profiles") << std::endl;
-    std::cout << "[RawEngine] languages: " << Glib::build_filename(argv0, "languages") << std::endl;
-    std::cout << "[RawEngine] dcpprofiles: " << Glib::build_filename(argv0, "dcpprofiles") << std::endl;
+    std::cout << "[RawTherapee] Resource root: " << argv0 << std::endl;
+    std::cout << "[RawTherapee] iccprofiles: " << Glib::build_filename(argv0, "iccprofiles") << std::endl;
+    std::cout << "[RawTherapee] profiles: " << Glib::build_filename(argv0, "profiles") << std::endl;
+    std::cout << "[RawTherapee] languages: " << Glib::build_filename(argv0, "languages") << std::endl;
+    std::cout << "[RawTherapee] dcpprofiles: " << Glib::build_filename(argv0, "dcpprofiles") << std::endl;
     App::get().setArgv0(argv0);
     App::get().setCreditsPath(creditsPath);
     App::get().setLicensePath(licensePath);
@@ -3372,31 +3372,31 @@ int rawengine_init() {
         external_dcp_map = find_dcp_files(externalSubdir.raw());
     }
 
-    std::cout << "[RawEngine] externalPath: " << externalPath << std::endl;
-    std::cout << "[RawEngine] external DCP count: " << external_dcp_map.size() << std::endl;
+    std::cout << "[RawTherapee] externalPath: " << externalPath << std::endl;
+    std::cout << "[RawTherapee] external DCP count: " << external_dcp_map.size() << std::endl;
 
-    const Glib::ustring logPath = Glib::build_filename(argv0, "rawengine_resource_log.txt");
-    std::ofstream logFile(logPath.c_str(), std::ios::out | std::ios::trunc);
+    // const Glib::ustring logPath = Glib::build_filename(argv0, "rawengine_resource_log.txt");
+    // std::ofstream logFile(logPath.c_str(), std::ios::out | std::ios::trunc);
     auto log_line = [&](const std::string& s) {
         std::cout << s << std::endl;
-        if (logFile.is_open()) {
-            logFile << s << "\n";
-        }
+        // if (logFile.is_open()) {
+        //     logFile << s << "\n";
+        // }
     };
-    log_line(std::string("[RawEngine] log file: ") + logPath.raw());
-    log_line(std::string("[RawEngine] Resource root: ") + argv0.raw());
-    log_line(std::string("[RawEngine] externalPath: ") + externalPath.raw());
-    log_line(std::string("[RawEngine] external DCP count: ") + std::to_string(external_dcp_map.size()));
+    // log_line(std::string("[RawTherapee] log file: ") + logPath.raw());
+    log_line(std::string("[RawTherapee] Resource root: ") + argv0.raw());
+    log_line(std::string("[RawTherapee] externalPath: ") + externalPath.raw());
+    log_line(std::string("[RawTherapee] external DCP count: ") + std::to_string(external_dcp_map.size()));
 
     const Glib::ustring jsonCammatrices = Glib::build_filename(argv0, "cammatrices.json");
     const Glib::ustring jsonDcraw = Glib::build_filename(argv0, "dcraw.json");
     const Glib::ustring jsonRt = Glib::build_filename(argv0, "rt.json");
     const Glib::ustring jsonCamconst = Glib::build_filename(argv0, "camconst.json");
 
-    log_line(std::string("[RawEngine] json cammatrices: ") + jsonCammatrices.raw() + " exists=" + std::to_string(Glib::file_test(jsonCammatrices, Glib::FILE_TEST_EXISTS) ? 1 : 0));
-    log_line(std::string("[RawEngine] json dcraw: ") + jsonDcraw.raw() + " exists=" + std::to_string(Glib::file_test(jsonDcraw, Glib::FILE_TEST_EXISTS) ? 1 : 0));
-    log_line(std::string("[RawEngine] json rt: ") + jsonRt.raw() + " exists=" + std::to_string(Glib::file_test(jsonRt, Glib::FILE_TEST_EXISTS) ? 1 : 0));
-    log_line(std::string("[RawEngine] json camconst: ") + jsonCamconst.raw() + " exists=" + std::to_string(Glib::file_test(jsonCamconst, Glib::FILE_TEST_EXISTS) ? 1 : 0));
+    log_line(std::string("[RawTherapee] json cammatrices: ") + jsonCammatrices.raw() + " exists=" + std::to_string(Glib::file_test(jsonCammatrices, Glib::FILE_TEST_EXISTS) ? 1 : 0));
+    log_line(std::string("[RawTherapee] json dcraw: ") + jsonDcraw.raw() + " exists=" + std::to_string(Glib::file_test(jsonDcraw, Glib::FILE_TEST_EXISTS) ? 1 : 0));
+    log_line(std::string("[RawTherapee] json rt: ") + jsonRt.raw() + " exists=" + std::to_string(Glib::file_test(jsonRt, Glib::FILE_TEST_EXISTS) ? 1 : 0));
+    log_line(std::string("[RawTherapee] json camconst: ") + jsonCamconst.raw() + " exists=" + std::to_string(Glib::file_test(jsonCamconst, Glib::FILE_TEST_EXISTS) ? 1 : 0));
 
 
 
