@@ -162,7 +162,7 @@ if(WIN32)
         CACHE STRING "Additional search paths")
 endif()
 
-if(APPLE) # TODO make -mtune generic conditional and/or specifiable.
+if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS") # TODO make -mtune generic conditional and/or specifiable.
     if(CMAKE_CXX_COMPILER MATCHES "g\\+\\+-mp-4.[5-8]"
        OR CMAKE_CXX_COMPILER_ARG1 MATCHES "g\\+\\+-mp-4.[5-8]")
         set(CMAKE_EXE_LINKER_FLAGS
@@ -186,6 +186,11 @@ if(APPLE) # TODO make -mtune generic conditional and/or specifiable.
 endif()
 
 option(BUILD_SHARED "Build with shared libraries" OFF)
+option(RAWENGINE_ONLY "Build only the RawEngine library without desktop GUI targets" OFF)
+option(RAWENGINE_STATIC "Build the RawEngine integration target as a static library" OFF)
+if(RAWENGINE_ONLY)
+    add_compile_definitions(RAWENGINE_ONLY)
+endif()
 option(WARNINGS_AS_ERRORS "Error out on compiler warnings" OFF)
 option(WITH_BENCHMARK "Build with benchmark code" OFF)
 option(WITH_MYFILE_MMAP "Build using memory mapped file" ON)
@@ -446,17 +451,37 @@ if(WIN32)
 endif()
 
 # Set the appropriate FFTW flags on macOS
-if(APPLE AND OPTION_OMP)
+if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS" AND OPTION_OMP)
     set(EXTRA_LIB "-L${LOCAL_PREFIX}/lib -lfftw3f_omp -lfftw3f -lm")
 endif()
 
 include(cmake/Compile.cmake)
+if(RAWENGINE_ONLY)
+    set(BUILD_BUNDLE ON)
+    set(OSX_DEV_BUILD ON)
+    set(DATADIR "../Resources")
+    set(DOCDIR "../Resources/doc")
+    set(CREDITSDIR "../Resources/..")
+    set(LICENCEDIR "../Resources/..")
+    set(LENSFUNDBDIR "")
+    file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/rtgui")
+    configure_file(
+        "${CMAKE_SOURCE_DIR}/rtgui/config.h.in"
+        "${CMAKE_BINARY_DIR}/rtgui/config.h"
+    )
+endif()
 add_subdirectory(rtengine)
-add_subdirectory(rtgui)
-add_subdirectory(rtdata)
+if(NOT RAWENGINE_ONLY)
+    add_subdirectory(rtgui)
+    add_subdirectory(rtdata)
+endif()
 
 include(cmake/AboutThisBuild.cmake)
-rt_generate_about_command(ABOUT_COMMAND_WITH_ARGS rtengine rth)
+if(RAWENGINE_ONLY)
+    rt_generate_about_command(ABOUT_COMMAND_WITH_ARGS rtengine "")
+else()
+    rt_generate_about_command(ABOUT_COMMAND_WITH_ARGS rtengine rth)
+endif()
 add_custom_target(
     UpdateInfo ALL
     COMMAND ${ABOUT_COMMAND_WITH_ARGS}

@@ -31,7 +31,11 @@
 #include "settings.h"
 #include "utils.h"
 #include <fmt/format.h>
+#ifdef RAWENGINE_ONLY
+#include "labgrid_constants.h"
+#else
 #include "rtgui/labgrid.h"
+#endif
 
 namespace rtengine
 {

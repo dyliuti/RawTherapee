@@ -18,8 +18,6 @@
  */
 #pragma once
 
-#include <gtkmm.h>
-
 enum CursorShape {
     CSAddColPicker,
     CSArrow,
@@ -49,6 +47,8 @@ enum CursorShape {
     CSWait
 };
 
+#ifndef RAWENGINE_ONLY
+#include <gtkmm.h>
 class CursorManager
 {
 
@@ -87,3 +87,4 @@ public:
 
 extern CursorManager mainWindowCursorManager;
 extern CursorManager editWindowCursorManager;
+#endif

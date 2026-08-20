@@ -291,6 +291,17 @@ else
     echo "  [warn] dsymutil not found; dSYM not generated (install Xcode Command Line Tools)"
 fi
 
+# install_name_tool and strip invalidate existing Mach-O signatures. Re-sign
+# collected binaries so macOS does not kill rawengine-cli while loading them.
+echo "[collect] Ad-hoc signing binaries ..."
+for dylib in "$BIN_DIR"/*.dylib; do
+    [[ -f "$dylib" ]] || continue
+    codesign --force --sign - "$dylib"
+done
+if [[ -f "$BIN_DIR/rawengine-cli" ]]; then
+    codesign --force --sign - "$BIN_DIR/rawengine-cli"
+fi
+
 # ---------- 运行时资源 ----------
 echo "[collect] Runtime resources ..."
 RTDATA_DIR="$RT_DIR/rtdata"

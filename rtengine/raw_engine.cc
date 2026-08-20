@@ -35,6 +35,7 @@
 #include <glibmm/threads.h>
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
+#include <TargetConditionals.h>
 #endif
 #else
 // >>> 修正 winsock2.h 顺序开始
@@ -81,12 +82,29 @@
 #define ECLIPSE_ARGS 0
 #define CROP_COORD_SPACE_SENSOR 1
 
-// stores path to data files
-Glib::ustring argv0;
-Glib::ustring creditsPath;
-Glib::ustring licensePath;
-Glib::ustring externalPath;
-Glib::ustring argv1;
+// Stores paths to data files. These must not be namespace-scope Glib::ustring
+// objects: the iOS static build can run C++ initializers before GLib's quark
+// tables have been initialized. Construct the state on first RawEngine use,
+// after rawengine_init() has entered the controlled initialization path.
+struct RawEnginePathState {
+    Glib::ustring argv0;
+    Glib::ustring creditsPath;
+    Glib::ustring licensePath;
+    Glib::ustring externalPath;
+    Glib::ustring argv1;
+};
+
+RawEnginePathState& rawengine_path_state()
+{
+    static RawEnginePathState state;
+    return state;
+}
+
+#define argv0 (rawengine_path_state().argv0)
+#define creditsPath (rawengine_path_state().creditsPath)
+#define licensePath (rawengine_path_state().licensePath)
+#define externalPath (rawengine_path_state().externalPath)
+#define argv1 (rawengine_path_state().argv1)
 
 static constexpr int NON_FF_WIDTH_TH = 5000;
 
@@ -94,7 +112,12 @@ using namespace rtengine::procparams;
 
 namespace {
 bool fast_export = true;
-static std::map<std::string, std::string> external_dcp_map;
+
+std::map<std::string, std::string>& external_dcp_map()
+{
+    static std::map<std::string, std::string> value;
+    return value;
+}
 } // namespace
 
 struct DecodeCtx {
@@ -136,7 +159,13 @@ struct ModelRule {
         : match(std::move(m)), apply(std::move(a)), priority(p) {}
 };
 
-std::vector<ModelRule> _model_rules;
+std::vector<ModelRule>& model_rules()
+{
+    static std::vector<ModelRule> value;
+    return value;
+}
+
+#define _model_rules (model_rules())
 const CanonCIOrientIdx kCanonCIOrientTable[] = {
     { "EOS 6D",          131 },
     { "EOS 6D Mark II",  154 },
@@ -944,10 +973,8 @@ void try_bind_dcp_exact(const DecodeCtx& c, rtengine::procparams::ProcParams& p)
         auto it = c.externalDcp->find(full_name);
         if (it != c.externalDcp->end()) {
             p.icm.inputProfile = it->second;
-            std::cout << "[RawTherapee][DCP] hit: " << full_name << " -> " << it->second << std::endl;
             return;
         }
-        std::cout << "[RawTherapee][DCP] miss: " << full_name << std::endl;
     }
     // 若未匹配，留空，由各分支/默认再设置其它 icm 行为
     // ensure_camera_profile_fallback(p);
@@ -2249,7 +2276,6 @@ void build_rules() {
             if (sensorW <= 0 || sensorH <= 0) {
                 libraw_get_full_wh(fname, sensorW, sensorH);
             }
-
             if (sensorW > 0 && sensorH > 0) {
                 // 3) 读取 EXIF 方向并把传感器坐标映射到显示坐标
                 const int ori = read_exif_orientation(fname);
@@ -2257,7 +2283,6 @@ void build_rules() {
                 map_nikon_sensor_to_display_roi(ori, sensorW, sensorH,
                                           cb.x,cb.y,cb.w,cb.h,
                                           dx,dy,dw,dh, dispFullW,dispFullH);
-
                 // 4) 显示坐标下裁剪框的边界钳制 + Bayer 偶数对齐
                 // sanitize_crop_even_align(dx,dy,dw,dh, dispFullW,dispFullH);
 
@@ -2273,7 +2298,6 @@ void build_rules() {
                        raw_ptr->recycle();
                    }
                } catch (...) {}
-
                auto fit_inside = [](int& x,int& y,int& w,int& h,int W,int H){
                    // 保持中心点，尽量只缩 w/h
                     int cx = x + w/2;
@@ -2289,15 +2313,13 @@ void build_rules() {
                else                      fit_inside(dx,dy,dw,dh, dispFullW, dispFullH);
                // 最后再做一次偶数对齐，避免 CFA 半像素
                sanitize_nikon_crop_even_align_neutral(dx,dy,dw,dh, (libW>0?libW:dispFullW), (libH>0?libH:dispFullH));
- 
-
                 // 5) 写入裁剪参数（注意关闭 resize 避免“再缩一次”）
                 p.resize.enabled = false;
                 p.crop.enabled   = true;
                 p.crop.fixratio  = false;
                 p.crop.x = dx - 4; p.crop.y = dy - 4; p.crop.w = dw; p.crop.h = dh;
             }
-        } 
+        }
             try_bind_dcp_exact(c, p);
             // std::printf("inputProfile = %s\n", p.icm.inputProfile.c_str());
 
@@ -3113,6 +3135,10 @@ void build_rules() {
             // disable_lens_all(p);
             //  const auto fname = c.fname;
 
+        // Temporarily keep RawTherapee's native RAW geometry for Nikon Z 7 II.
+        // The previous custom CropArea/display-coordinate mapping produced
+        // valid-looking ProcParams but processImage() returned 4716x3.
+#if 0
         // 1) 读取 Nikon CropArea
         CropBox cb = read_nikon_crop_from_exif(fname);
         if (cb.ok) {
@@ -3170,9 +3196,9 @@ void build_rules() {
                 p.crop.fixratio  = false;
                 p.crop.x = dx - 4; p.crop.y = dy - 4; p.crop.w = dw; p.crop.h = dh;
             }
-        } 
+        }
+#endif
             try_bind_dcp_exact(c, p);
-            std::printf(" z 7 2  = inputProfile = %s\n", p.icm.inputProfile.c_str());
 
             p.lensProf.lcMode  = rtengine::procparams::LensProfParams::LcMode::LENSFUNAUTOMATCH;
             p.lensProf.useDist = true; 
@@ -3198,7 +3224,6 @@ void apply_default_rule(const DecodeCtx& ctx,
 {
     // DSC02364.arw decode 无法自动白平衡导致偏暗问题
     // 比如：p.exposure = 默认值；p.whiteBalance = 默认值；之类
-    std::printf("in apply_default_rule \n");
     disable_lens_all(p);
     p.icm.inputProfile = "";
     p.icm.toneCurve = false;
@@ -3241,10 +3266,7 @@ void apply_rules(const DecodeCtx& ctx, rtengine::procparams::ProcParams& p) {
 
 // ======================= 初始化/解码/释放 =======================
 
-#ifdef __cplusplus
-extern "C"
-#endif
-int rawengine_init() {
+static int rawengine_init_impl(const char* explicit_resource_path) {
     setlocale(LC_ALL, "");
     setlocale(LC_NUMERIC, "C");
 
@@ -3281,7 +3303,6 @@ int rawengine_init() {
             exePath = path.substr(0, pos + 9);
         }
 #endif
-        std::cout << "Current working directory exePath : " << exePath.data() << std::endl; 
     }
 #else
     if (readlink("/proc/self/exe", exname, 511) < 0) {
@@ -3289,25 +3310,38 @@ int rawengine_init() {
     }
 #endif
 
+    if (explicit_resource_path && explicit_resource_path[0] != '\0') {
+        argv0 = explicit_resource_path;
+        externalPath = explicit_resource_path;
+    }
+
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+    // iOS resources are copied into the application bundle root by the
+    // PhotoEditor target.  ../Resources points outside the signed bundle and
+    // is therefore not available on a device.
+    if (!explicit_resource_path || explicit_resource_path[0] == '\0')
+        argv0 = exePath;
+#else
     if (Glib::path_is_absolute(DATA_SEARCH_PATH)) argv0 = DATA_SEARCH_PATH;
     else argv0 = Glib::build_filename(exePath, DATA_SEARCH_PATH);
+#endif
 
     if (Glib::path_is_absolute(CREDITS_SEARCH_PATH)) creditsPath = CREDITS_SEARCH_PATH;
     else creditsPath = Glib::build_filename(exePath, CREDITS_SEARCH_PATH);
 
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+    if (!explicit_resource_path || explicit_resource_path[0] == '\0')
+        externalPath = exePath;
+#else
     if (Glib::path_is_absolute(EXTERNAL_PATH)) externalPath = EXTERNAL_PATH;
     else externalPath = Glib::build_filename(exePath, EXTERNAL_PATH);
+#endif
 
     if (Glib::path_is_absolute(LICENCE_SEARCH_PATH)) licensePath = LICENCE_SEARCH_PATH;
     else licensePath = Glib::build_filename(exePath, LICENCE_SEARCH_PATH);
 
     options.rtSettings.lensfunDbDirectory = LENSFUN_DB_PATH;
     options.rtSettings.lensfunDbBundleDirectory = LENSFUN_DB_PATH;
-    std::cout << "[RawTherapee] Resource root: " << argv0 << std::endl;
-    std::cout << "[RawTherapee] iccprofiles: " << Glib::build_filename(argv0, "iccprofiles") << std::endl;
-    std::cout << "[RawTherapee] profiles: " << Glib::build_filename(argv0, "profiles") << std::endl;
-    std::cout << "[RawTherapee] languages: " << Glib::build_filename(argv0, "languages") << std::endl;
-    std::cout << "[RawTherapee] dcpprofiles: " << Glib::build_filename(argv0, "dcpprofiles") << std::endl;
     // Sync paths into App
     App::get().setArgv0(argv0);
     App::get().setCreditsPath(creditsPath);
@@ -3318,11 +3352,6 @@ int rawengine_init() {
     licensePath = LICENCE_SEARCH_PATH;
     options.rtSettings.lensfunDbDirectory = LENSFUN_DB_PATH;
     options.rtSettings.lensfunDbBundleDirectory = LENSFUN_DB_PATH;
-    std::cout << "[RawTherapee] Resource root: " << argv0 << std::endl;
-    std::cout << "[RawTherapee] iccprofiles: " << Glib::build_filename(argv0, "iccprofiles") << std::endl;
-    std::cout << "[RawTherapee] profiles: " << Glib::build_filename(argv0, "profiles") << std::endl;
-    std::cout << "[RawTherapee] languages: " << Glib::build_filename(argv0, "languages") << std::endl;
-    std::cout << "[RawTherapee] dcpprofiles: " << Glib::build_filename(argv0, "dcpprofiles") << std::endl;
     App::get().setArgv0(argv0);
     App::get().setCreditsPath(creditsPath);
     App::get().setLicensePath(licensePath);
@@ -3364,41 +3393,13 @@ int rawengine_init() {
     TIFFSetWarningHandler(nullptr);
 
     // 扫描外部 DCP
-    external_dcp_map = find_dcp_files(externalPath.raw());
+    external_dcp_map() = find_dcp_files(externalPath.raw());
     const Glib::ustring externalSubdir = Glib::build_filename(argv0, "external");
     // CR2 亮度偏暗修复：当 externalPath 未命中 DCP 时，继续扫描 bin/external。
     // 这样可命中 Canon * Standard.dcp，避免回退到默认色彩参数导致整体偏暗。
-    if (external_dcp_map.empty() && Glib::file_test(externalSubdir, Glib::FILE_TEST_IS_DIR)) {
-        external_dcp_map = find_dcp_files(externalSubdir.raw());
+    if (external_dcp_map().empty() && Glib::file_test(externalSubdir, Glib::FILE_TEST_IS_DIR)) {
+        external_dcp_map() = find_dcp_files(externalSubdir.raw());
     }
-
-    std::cout << "[RawTherapee] externalPath: " << externalPath << std::endl;
-    std::cout << "[RawTherapee] external DCP count: " << external_dcp_map.size() << std::endl;
-
-    // const Glib::ustring logPath = Glib::build_filename(argv0, "rawengine_resource_log.txt");
-    // std::ofstream logFile(logPath.c_str(), std::ios::out | std::ios::trunc);
-    auto log_line = [&](const std::string& s) {
-        std::cout << s << std::endl;
-        // if (logFile.is_open()) {
-        //     logFile << s << "\n";
-        // }
-    };
-    // log_line(std::string("[RawTherapee] log file: ") + logPath.raw());
-    log_line(std::string("[RawTherapee] Resource root: ") + argv0.raw());
-    log_line(std::string("[RawTherapee] externalPath: ") + externalPath.raw());
-    log_line(std::string("[RawTherapee] external DCP count: ") + std::to_string(external_dcp_map.size()));
-
-    const Glib::ustring jsonCammatrices = Glib::build_filename(argv0, "cammatrices.json");
-    const Glib::ustring jsonDcraw = Glib::build_filename(argv0, "dcraw.json");
-    const Glib::ustring jsonRt = Glib::build_filename(argv0, "rt.json");
-    const Glib::ustring jsonCamconst = Glib::build_filename(argv0, "camconst.json");
-
-    log_line(std::string("[RawTherapee] json cammatrices: ") + jsonCammatrices.raw() + " exists=" + std::to_string(Glib::file_test(jsonCammatrices, Glib::FILE_TEST_EXISTS) ? 1 : 0));
-    log_line(std::string("[RawTherapee] json dcraw: ") + jsonDcraw.raw() + " exists=" + std::to_string(Glib::file_test(jsonDcraw, Glib::FILE_TEST_EXISTS) ? 1 : 0));
-    log_line(std::string("[RawTherapee] json rt: ") + jsonRt.raw() + " exists=" + std::to_string(Glib::file_test(jsonRt, Glib::FILE_TEST_EXISTS) ? 1 : 0));
-    log_line(std::string("[RawTherapee] json camconst: ") + jsonCamconst.raw() + " exists=" + std::to_string(Glib::file_test(jsonCamconst, Glib::FILE_TEST_EXISTS) ? 1 : 0));
-
-
 
 #ifndef _WIN32
     if (Glib::file_test(Glib::build_filename(options.rtdir, "cache"), Glib::FILE_TEST_IS_DIR) &&
@@ -3418,13 +3419,29 @@ int rawengine_init() {
 #ifdef __cplusplus
 extern "C"
 #endif
+int rawengine_init()
+{
+    return rawengine_init_impl(nullptr);
+}
+
+#ifdef __cplusplus
+extern "C"
+#endif
+int rawengine_init_with_resource_path(const char* resource_path)
+{
+    if (!resource_path || resource_path[0] == '\0')
+        return rawengine_init_impl(nullptr);
+    return rawengine_init_impl(resource_path);
+}
+
+#ifdef __cplusplus
+extern "C"
+#endif
 int RAWENGINE_API rawengine_decode(const char* filename, void** buffer, int* length, int* width, int* height, int preview_type, const RawEngineLensParams* lens_params)
 {
     unsigned errors = 0;
     fast_export = true;
     App::get().mut_options().saveUsePathTemplate = false;
-
-
 
     Glib::ustring inputFile(fname_to_utf8(filename));
 
@@ -3442,7 +3459,6 @@ int RAWENGINE_API rawengine_decode(const char* filename, void** buffer, int* len
     ii = rtengine::InitialImage::load(inputFile, isRaw, &errorCode, nullptr);
     if (errorCode) return RawEngineErrorLoadFail;
 
-
     if (!ii) { errors++; std::cerr << "Error loading file: " << inputFile << std::endl; }
 
     rtengine::procparams::ProcParams currentParams;
@@ -3457,7 +3473,7 @@ int RAWENGINE_API rawengine_decode(const char* filename, void** buffer, int* len
     ctx.make  = ii->getMetaData()->getMake();
     ctx.model = ii->getMetaData()->getModel();
     std::replace(ctx.model.begin(), ctx.model.end(), '_', ' '); // 兼容 "nikon z 7_2"
-    ctx.externalDcp = &external_dcp_map;
+    ctx.externalDcp = &external_dcp_map();
 
     apply_rules(ctx, currentParams);
 

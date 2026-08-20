@@ -36,8 +36,11 @@ class ColorManagementParams;
 
 class App {
 public:
-    static const Glib::ustring VERSION;
-    static const Glib::ustring PARAM_FILE_EXTENSION;
+    // Keep these as static C strings. Constructing namespace-scope
+    // Glib::ustring values in the iOS static archive can run before GLib's
+    // quark tables are initialized.
+    static const char* const VERSION;
+    static const char* const PARAM_FILE_EXTENSION;
 
     static App& get();
 

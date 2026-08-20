@@ -20,7 +20,14 @@
 
 #include <set>
 #include <vector>
-#if defined __has_include
+#ifdef RAWENGINE_ONLY
+namespace Gtk {
+enum SortType {
+    SORT_ASCENDING,
+    SORT_DESCENDING
+};
+}
+#elif defined __has_include
 #if __has_include(<gtkmm/enums.h>)
 #include <gtkmm/enums.h>
 #else

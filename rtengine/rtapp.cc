@@ -26,8 +26,8 @@
 
 using namespace rtengine;
 
-const Glib::ustring App::VERSION = RTVERSION;
-const Glib::ustring App::PARAM_FILE_EXTENSION = ".pp3";
+const char* const App::VERSION = RTVERSION;
+const char* const App::PARAM_FILE_EXTENSION = ".pp3";
 
 App& App::get()
 {

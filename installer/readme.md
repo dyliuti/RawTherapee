@@ -65,6 +65,16 @@ int rawengine_init();
 初始化 RawTherapee 引擎、lensfun 数据库、ICC 色彩配置等。  
 返回 `0` 表示成功，非零表示失败。
 
+需要显式指定运行时资源目录时（iOS App Bundle、插件宿主等），使用：
+
+```c
+int rawengine_init_with_resource_path(const char* resource_path);
+```
+
+`resource_path` 必须指向直接包含 `profiles/`、`iccprofiles/`、
+`dcpprofiles/`、`camconst.json`、`rt.json` 等资源的目录。该函数应和
+`rawengine_init()` 二选一，并且同样只调用一次。
+
 ---
 
 ### 解码 RAW 文件

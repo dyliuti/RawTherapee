@@ -28,7 +28,9 @@
 #include <sstream>
 #include "multilangmgr.h"
 #include "addsetids.h"
+#ifndef RAWENGINE_ONLY
 #include "guiutils.h"
+#endif
 #include "pathutils.h"
 #include "version.h"
 

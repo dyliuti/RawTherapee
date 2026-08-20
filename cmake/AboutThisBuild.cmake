@@ -14,7 +14,11 @@ function(rt_generate_about_command OUTPUT_VAR ENGINE_TARGET GUI_TARGET)
 
     # Get C++ and linker flags for rtengine (GUI's flags may have fewer)
     rt_get_target_flags(CXX_FLAGS ${ENGINE_TARGET} COMPILE_OPTIONS CMAKE_CXX_FLAGS)
-    rt_get_target_flags(LFLAGS ${GUI_TARGET} LINK_OPTIONS CMAKE_EXE_LINKER_FLAGS)
+    if(GUI_TARGET AND TARGET ${GUI_TARGET})
+        rt_get_target_flags(LFLAGS ${GUI_TARGET} LINK_OPTIONS CMAKE_EXE_LINKER_FLAGS)
+    else()
+        set(LFLAGS "")
+    endif()
 
     if(NOT APPLE)
         set(ABOUT_COMMAND_WITH_ARGS

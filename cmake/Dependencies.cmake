@@ -16,14 +16,23 @@ macro(rt_setup_dependencies)
 
     find_package(JPEG REQUIRED)
     find_package(PNG REQUIRED)
+    if(CMAKE_SYSTEM_NAME STREQUAL "iOS" AND NOT TARGET CMath::CMath)
+        add_library(CMath::CMath INTERFACE IMPORTED)
+        set_property(
+            TARGET CMath::CMath
+            PROPERTY INTERFACE_LINK_LIBRARIES m
+        )
+    endif()
     find_package(TIFF 4.0.4 REQUIRED)
     find_package(ZLIB REQUIRED)
 
-    # Gtk version shall be greater than 3.24.3 for fixed Hi-DPI support
-    pkg_check_modules(GTK REQUIRED IMPORTED_TARGET gtk+-3.0>=3.24.3)
-    pkg_check_modules(GTKMM REQUIRED IMPORTED_TARGET gtkmm-3.0>=3.24)
+    if(NOT RAWENGINE_ONLY)
+        # Gtk version shall be greater than 3.24.3 for fixed Hi-DPI support
+        pkg_check_modules(GTK REQUIRED IMPORTED_TARGET gtk+-3.0>=3.24.3)
+        pkg_check_modules(GTKMM REQUIRED IMPORTED_TARGET gtkmm-3.0>=3.24)
+    endif()
 
-    if(GTK_VERSION VERSION_GREATER "3.24.1" AND GTK_VERSION VERSION_LESS "3.24.7")
+    if(NOT RAWENGINE_ONLY AND GTK_VERSION VERSION_GREATER "3.24.1" AND GTK_VERSION VERSION_LESS "3.24.7")
         if(GTK_VERSION VERSION_EQUAL "3.24.5")
             set(CERTAINTY "known to")
         else()

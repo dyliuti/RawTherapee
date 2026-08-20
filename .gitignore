@@ -21,6 +21,7 @@ install_manifest.txt
 
 build/*
 build_arm/*
+build_ios/*
 build_arm_gui/*
 build_intel/*
 cmake-build*
@@ -37,6 +38,10 @@ installer/output_arm
 installer/output_intel
 installer/output_gui
 installer/output_gui_arm
+installer/.ios_deps*
+installer/.dlls_seen*
+installer/output_ios
+installer/output_ios_deps
 
 rtdata/rawtherapee.desktop
 rtengine/librtengine.a

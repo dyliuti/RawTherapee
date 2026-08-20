@@ -18,6 +18,9 @@ extern "C"
 #endif
 
 int RAWENGINE_API rawengine_init();
+// Initialize using an explicit directory containing the RawTherapee runtime
+// resources (profiles, ICC/DCP data, and JSON databases).
+int RAWENGINE_API rawengine_init_with_resource_path(const char* resource_path);
 int RAWENGINE_API rawengine_decode(const char* filename, void** buffer, int* length, int* widht, int* height, int preview_type, const RawEngineLensParams* lens_params);
 int RAWENGINE_API rawengine_free(void* buffer);
 
