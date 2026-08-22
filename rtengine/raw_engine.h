@@ -7,6 +7,12 @@
 #define RAWENGINE_PREVIEW_TYPE_3K 1
 #define RAWENGINE_PREVIEW_TYPE_2K 2
 
+// 与 rtengine/CMakeLists.txt 中的 RAWENGINE_VERSION_* 保持一致
+#define RAWENGINE_VERSION_MAJOR 1
+#define RAWENGINE_VERSION_MINOR 0
+#define RAWENGINE_VERSION_PATCH 0
+#define RAWENGINE_VERSION_STRING "1.0.0"
+
 // 镜头校正模式
 #define RAWENGINE_LENS_MODE_NONE    0   // 不做镜头校正
 #define RAWENGINE_LENS_MODE_AUTO    1   // 从 EXIF 自动匹配 lensfun 数据库
@@ -18,6 +24,8 @@ extern "C"
 #endif
 
 int RAWENGINE_API rawengine_init();
+// 返回三位版本号字符串，例如 "1.0.0"（静态存储，无需释放）
+const char* RAWENGINE_API rawengine_get_version();
 // Initialize using an explicit directory containing the RawTherapee runtime
 // resources (profiles, ICC/DCP data, and JSON databases).
 int RAWENGINE_API rawengine_init_with_resource_path(const char* resource_path);

@@ -300,6 +300,14 @@ set_source_files_properties(raw_engine.cc PROPERTIES
     COMPILE_DEFINITIONS "RAWENGINE_EXPORTS"
 )
 
+# Three-digit library version (Windows file properties / macOS Mach-O + Info.plist).
+# Override with -DRAWENGINE_VERSION_MAJOR=1 -DRAWENGINE_VERSION_MINOR=2 -DRAWENGINE_VERSION_PATCH=3
+set(RAWENGINE_VERSION_MAJOR 1 CACHE STRING "RawEngine major version")
+set(RAWENGINE_VERSION_MINOR 0 CACHE STRING "RawEngine minor version")
+set(RAWENGINE_VERSION_PATCH 0 CACHE STRING "RawEngine patch version")
+set(RAWENGINE_VERSION "${RAWENGINE_VERSION_MAJOR}.${RAWENGINE_VERSION_MINOR}.${RAWENGINE_VERSION_PATCH}")
+message(STATUS "RawEngine version: ${RAWENGINE_VERSION}")
+
 # ===== rawengine.dll — shared library for cross-compiler (MSVC) integration =====
 #
 # Exposes only the public C API (RAWENGINE_API functions from raw_engine.h).
@@ -329,7 +337,10 @@ if(NOT WITH_SYSTEM_LIBRAW)
     target_include_directories(rawengine PRIVATE "${CMAKE_SOURCE_DIR}/rtengine/libraw")
 endif()
 # Define RAWENGINE_EXPORTS so RAWENGINE_API → __declspec(dllexport) for this target
-target_compile_definitions(rawengine PRIVATE RAWENGINE_EXPORTS)
+target_compile_definitions(rawengine PRIVATE
+    RAWENGINE_EXPORTS
+    "RAWENGINE_VERSION_STRING=\"${RAWENGINE_VERSION}\""
+)
 if(RAWENGINE_STATIC)
     set_target_properties(rawengine PROPERTIES
         OUTPUT_NAME "RawEngine"
@@ -341,6 +352,34 @@ else()
         PREFIX ""
         POSITION_INDEPENDENT_CODE ON
     )
+endif()
+
+# Windows: VERSIONINFO resource so Explorer Properties -> Details shows 1.0.0
+# macOS: Mach-O current_version + embedded Info.plist (otool -L / mdls)
+if(NOT RAWENGINE_STATIC)
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/therapee.rc.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/therapee.rc"
+        @ONLY
+    )
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/therapee_Info.plist.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/therapee_Info.plist"
+        @ONLY
+    )
+    if(WIN32)
+        target_sources(rawengine PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/therapee.rc")
+    elseif(APPLE)
+        target_link_options(rawengine PRIVATE
+            "LINKER:-current_version,${RAWENGINE_VERSION}"
+            "LINKER:-compatibility_version,${RAWENGINE_VERSION_MAJOR}.0.0"
+            "LINKER:-sectcreate,__TEXT,__info_plist,${CMAKE_CURRENT_BINARY_DIR}/therapee_Info.plist"
+        )
+        install(FILES "${CMAKE_CURRENT_BINARY_DIR}/therapee_Info.plist"
+            DESTINATION "${BINDIR}"
+            RENAME "therapee.plist"
+        )
+    endif()
 endif()
 # Link against the static rtengine lib to resolve all engine symbols called by
 # raw_engine.cc. Only the dllexport-marked functions become DLL exports.

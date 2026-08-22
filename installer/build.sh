@@ -184,6 +184,12 @@ cp "$LIB_A" "$OUTPUT_DIR/lib/"
 # ---------- 动态库（DLL/dylib + MinGW 导入库） ----------
 echo "[collect] $RAWENGINE_LIB_NAME ..."
 cp "$RAWENGINE_DLL" "$OUTPUT_DIR/bin/"
+if [[ "$HOST_OS" == "Darwin" ]]; then
+    RAWENGINE_PLIST="$BUILD_DIR/rtengine/therapee_Info.plist"
+    if [[ -f "$RAWENGINE_PLIST" ]]; then
+        cp "$RAWENGINE_PLIST" "$OUTPUT_DIR/bin/therapee.plist"
+    fi
+fi
 # MinGW 同时生成 libtherapee.dll.a（MinGW/GCC 工程可直接链接）
 RAWENGINE_DLL_A="$BUILD_DIR/rtengine/libtherapee.dll.a"
 if [[ -f "$RAWENGINE_DLL_A" ]]; then

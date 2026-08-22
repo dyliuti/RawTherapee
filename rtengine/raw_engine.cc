@@ -3419,6 +3419,18 @@ static int rawengine_init_impl(const char* explicit_resource_path) {
 #ifdef __cplusplus
 extern "C"
 #endif
+const char* rawengine_get_version()
+{
+#ifdef RAWENGINE_VERSION_STRING
+    return RAWENGINE_VERSION_STRING;
+#else
+    return "1.0.0";
+#endif
+}
+
+#ifdef __cplusplus
+extern "C"
+#endif
 int rawengine_init()
 {
     return rawengine_init_impl(nullptr);
