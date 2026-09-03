@@ -37,6 +37,8 @@
 #include "processingjob.h"
 #include "procparams.h"
 #include "rawimagesource.h"
+#include "rawperf.h"
+
 #include "rtengine.h"
 #include "utils.h"
 
@@ -116,6 +118,19 @@ public:
     }
 
 private:
+    // perf 打点用的文件名；stage_init 之前 imgsrc 尚未就绪，回退到 job 上取
+    std::string perf_name() const
+    {
+        if (imgsrc) {
+            return imgsrc->getFileName().raw();
+        }
+        if (job && job->initialImage) {
+            return job->initialImage->getFileName().raw();
+        }
+
+        return std::string("unknown");
+    }
+
     Imagefloat *normal_pipeline()
     {
         if (!stage_init()) {
@@ -147,7 +162,9 @@ private:
 
     bool stage_init()
     {
+        rawperf::Timer perf_stage(perf_name(), "stage_init");
         errorCode = 0;
+
 
         if (pl) {
             pl->setProgressStr("PROGRESSBAR_PROCESSING");
@@ -223,7 +240,10 @@ private:
         float reddeha = 0.f;
         float greendeha = 0.f;
         float bluedeha = 0.f;
-        imgsrc->preprocess(params.raw, params.lensProf, params.coarse, reddeha, greendeha, bluedeha, params.dirpyrDenoise.enabled);
+        {
+            rawperf::Timer t(perf_name(), "preprocess"); // 黑电平/坏点/暗场/平场，含 raw 级镜头校正
+            imgsrc->preprocess(params.raw, params.lensProf, params.coarse, reddeha, greendeha, bluedeha, params.dirpyrDenoise.enabled);
+        }
 
         if (pl) {
             pl->setProgress(0.20);
@@ -232,11 +252,21 @@ private:
         bool autoContrast = imgsrc->getSensorType() == ST_BAYER ? params.raw.bayersensor.dualDemosaicAutoContrast : params.raw.xtranssensor.dualDemosaicAutoContrast;
         double contrastThreshold = imgsrc->getSensorType() == ST_BAYER ? params.raw.bayersensor.dualDemosaicContrast : params.raw.xtranssensor.dualDemosaicContrast;
 
-        imgsrc->demosaic(params.raw, autoContrast, contrastThreshold, params.pdsharpening.enabled && pl);
+        {
+            // demosaic 本体：这是判断"耗时是否主要在 demosaic"的关键一项
+            const bool is_bayer = imgsrc->getSensorType() == ST_BAYER;
+            rawperf::Timer t(perf_name(), "demosaic");
+            imgsrc->demosaic(params.raw, autoContrast, contrastThreshold, params.pdsharpening.enabled && pl);
+            t.stop(std::string("sensor=") + (is_bayer ? "bayer" : (imgsrc->getSensorType() == ST_FUJI_XTRANS ? "xtrans" : "other"))
+                   + " method=" + rawperf::sanitize(is_bayer ? params.raw.bayersensor.method.raw() : params.raw.xtranssensor.method.raw()));
+
+        }
 
         if (params.pdsharpening.enabled) {
+            rawperf::Timer t(perf_name(), "capture_sharpening");
             imgsrc->captureSharpening(params.pdsharpening, false, params.pdsharpening.contrast, params.pdsharpening.deconvradius);
         }
+
 
 
         if (pl) {
@@ -831,7 +861,11 @@ private:
         }
 
         baseImg = new Imagefloat(fw, fh);
-        imgsrc->getImage(currWB, tr, baseImg, pp, params.toneCurve, params.raw);
+        {
+            rawperf::Timer t(perf_name(), "get_image");   // 应用白平衡/曲线，输出到 baseImg
+            imgsrc->getImage(currWB, tr, baseImg, pp, params.toneCurve, params.raw);
+        }
+
 
         if (pl) {
             pl->setProgress(0.50);
@@ -888,7 +922,9 @@ private:
 
     void stage_denoise()
     {
+        rawperf::Timer perf_stage(perf_name(), "stage_denoise");
         const procparams::ProcParams& params = job->pparams;
+
 
         DirPyrDenoiseParams denoiseParams = params.dirpyrDenoise;   // make a copy because we cheat here
 
@@ -943,7 +979,9 @@ private:
 
     void stage_transform()
     {
+        rawperf::Timer perf_stage(perf_name(), "stage_transform");
         const procparams::ProcParams& params = job->pparams;
+
         //ImProcFunctions ipf (&params, true);
         ImProcFunctions &ipf = * (ipf_p.get());
 
@@ -962,8 +1000,10 @@ private:
             }
 
         } else {
+            rawperf::Timer t(perf_name(), "color_convert"); // 输入色彩空间 -> 工作空间（DCP/ICC）
             imgsrc->convertColorSpace(baseImg, params.icm, currWB);
         }
+
 
         // perform first analysis
         hist16(65536);
@@ -985,6 +1025,7 @@ private:
 
         // perform transform (excepted resizing)
         if (ipf.needsTransform(fw, fh, imgsrc->getRotateDegree(), imgsrc->getMetaData())) {
+            rawperf::Timer t(perf_name(), "geom_transform"); // 旋转/畸变/CA/暗角等几何与镜头校正
             Imagefloat* trImg = nullptr;
 
             if (ipf.needsLuminanceOnly()) {
@@ -1003,9 +1044,12 @@ private:
         }
     }
 
+
     Imagefloat *stage_finish()
     {
+        rawperf::Timer perf_stage(perf_name(), "stage_finish");
         procparams::ProcParams& params = job->pparams;
+
         //ImProcFunctions ipf (&params, true);
         ImProcFunctions &ipf = * (ipf_p.get());
 
@@ -1588,9 +1632,11 @@ private:
 
       //  if (((params.colorappearance.enabled && !settings->autocielab) || (!params.colorappearance.enabled)) && params.sharpening.enabled) {
         if (((params.colorappearance.enabled && !settings->autocielab) || (!cam02)) && params.sharpening.enabled) {
+            rawperf::Timer t(perf_name(), "sharpening");
             ipf.sharpening(labView, params.sharpening);
 
         }
+
 
 
 
@@ -2140,11 +2186,13 @@ private:
             int imh = framingData.imgHeight;
             if (readyImg->getWidth() != imw || readyImg->getHeight() != imh) {
                 // resize rgb data (gamma applied)
+                rawperf::Timer t(perf_name(), "resize");
                 Imagefloat* tempImage = new Imagefloat(imw, imh);
                 ipf.resize(readyImg, tempImage, framingData.scale);
                 delete readyImg;
                 readyImg = tempImage;
             }
+
         }
 
         if (framingData.enabled) {
@@ -2230,7 +2278,9 @@ private:
 
     void stage_early_resize()
     {
+        rawperf::Timer perf_stage(perf_name(), "stage_early_resize");
         procparams::ProcParams& params = job->pparams;
+
         //ImProcFunctions ipf (&params, true);
         ImProcFunctions &ipf = * (ipf_p.get());
 

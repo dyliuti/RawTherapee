@@ -134,7 +134,7 @@ def run_one_file(cli_exe: str, src_path: pathlib.Path, out_subdir: pathlib.Path,
 
 
 def decode_all(input_dir: str, output_dir: str, timeout_sec: int = 600,
-               demosaic_method: str = None) -> int:
+               demosaic_method: str = None, perf_log: str = None) -> int:
     input_root = pathlib.Path(input_dir)
     output_root = pathlib.Path(output_dir)
     output_root.mkdir(parents=True, exist_ok=True)
@@ -142,6 +142,11 @@ def decode_all(input_dir: str, output_dir: str, timeout_sec: int = 600,
     env_override = {}
     if demosaic_method:
         env_override["RAWENGINE_DEMOSAIC"] = demosaic_method.lower()
+    if perf_log:
+        # 阶段耗时打点：由 rtengine/rawperf.h 读取，追加写入同一个日志文件
+        env_override["RAWENGINE_PERF"] = "1"
+        env_override["RAWENGINE_PERF_LOG"] = perf_log
+
 
     input_files = sorted(find_input_files(input_dir))
     if not input_files:
@@ -248,12 +253,26 @@ def main() -> int:
     parser.add_argument("--method",     default=None,
                         help="demosaic 算法 (amazebilinear/rcd/dcb/lmmse/...)")
     parser.add_argument("--timeout",    default=600, type=int, help="单张超时秒数")
+    parser.add_argument("--perf", nargs="?", const="auto", default=None,
+                        help="开启阶段耗时打点。不带值时日志自动命名为 perf_<method>.log")
     args = parser.parse_args()
 
     out_dir = args.output_dir
     # 若指定了 method 且输出目录是默认值，则自动追加 method 后缀，避免两组结果混在一起
     if args.method and args.output_dir == OUTPUT_DIR:
         out_dir = str(pathlib.Path(OUTPUT_DIR).parent / f"rawtherapee_{args.method.lower()}")
+
+    perf_log = None
+    if args.perf:
+        if args.perf == "auto":
+            tag = (args.method or "default").lower()
+            perf_log = str(pathlib.Path(__file__).resolve().parent / f"perf_{tag}.log")
+        else:
+            perf_log = str(pathlib.Path(args.perf).resolve())
+        # 每次运行重置，避免与上一轮数据混在一起
+        pathlib.Path(perf_log).parent.mkdir(parents=True, exist_ok=True)
+        if pathlib.Path(perf_log).exists():
+            pathlib.Path(perf_log).unlink()
 
     print("=" * 60)
     print(" rawtherapee 工程 rawengine-cli 解码脚本")
@@ -262,6 +281,7 @@ def main() -> int:
     print(f" CLI 路径  : {CLI_EXE}")
     print(f" CLI 存在  : {os.path.isfile(CLI_EXE)}")
     print(f" Demosaic  : {args.method or '(默认)'}")
+    print(f" 耗时打点  : {perf_log or '(关闭)'}")
     print("=" * 60)
 
     if not os.path.isfile(CLI_EXE):
@@ -271,7 +291,12 @@ def main() -> int:
         print(f"[{ENGINE_NAME}] 输入目录不存在: {args.input_dir}")
         return 1
 
-    return decode_all(args.input_dir, out_dir, args.timeout, args.method)
+    ret = decode_all(args.input_dir, out_dir, args.timeout, args.method, perf_log)
+    if perf_log:
+        print(f"[{ENGINE_NAME}] 阶段耗时日志: {perf_log}")
+        print(f"[{ENGINE_NAME}] 分析命令: python analyze_perf.py {pathlib.Path(perf_log).name}")
+    return ret
+
 
 
 

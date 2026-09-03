@@ -1,6 +1,8 @@
 // main-cli.cc — RawTherapee rawengine-cli: minimal [Timer] and [Monitor] output
 
 #include "../raw_engine.h"
+#include "../rawperf.h"
+
 
 #include <iostream>
 #include <vector>
@@ -10,6 +12,8 @@
 #include <mutex>
 #include <thread>
 #include <chrono>
+#include <cctype>
+
 #include <iomanip>
 #include <sstream>
 #include <cstdio>
@@ -84,6 +88,9 @@ static std::condition_variable g_cv;
 static std::atomic<int> g_active_threads(0);
 static std::string g_output_path = OUTPUT_DIR;
 static int g_max_threads = (MAX_THREADS <= 0 ? 1 : MAX_THREADS);
+// 输出尺寸档位（-s/--scale 覆盖），默认全尺寸
+static rte_scale_mode g_scale_mode = RTE_SCALE_FULL;
+
 
 // ===== 时间戳 =====
 static inline std::string now_ts() {
@@ -345,12 +352,11 @@ inline bool write_jpeg_from_buffer(
 
 // ===== 核心处理 =====
 static void process_file(const std::string& file_path, int index) {
-    void* buffer = nullptr;
-    int length = 0, width = 0, height = 0;
+    rte_image_buffer image = {};
 
     std::string local_path;
 #ifdef _WIN32
-    // g_dir_read_name 返回 UTF-8；rawengine_decode 内部通过 fname_to_utf8 → locale_to_utf8
+    // g_dir_read_name 返回 UTF-8；rte_decode 内部通过 fname_to_utf8 → locale_to_utf8
     // 将路径从 locale 编码转为 UTF-8，因此这里需要先将 UTF-8 转为系统 locale（如 GBK），
     // 否则中文文件名会被 locale_to_utf8 二次转码，导致路径解析失败。
     try {
@@ -368,27 +374,27 @@ static void process_file(const std::string& file_path, int index) {
 
     auto t0 = std::chrono::high_resolution_clock::now();
 
-    // 原图
-    int ret = rawengine_decode(local_path.c_str(), &buffer, &length, &width, &height, 0, nullptr);
-
-    // 3K 图（可选）
-    // int ret = rawengine_decode(local_path.c_str(), &buffer, &length, &width, &height, RAWENGINE_PREVIEW_TYPE_3K, nullptr);
-
-    // 2K 图（可选）
-    // int ret = rawengine_decode(local_path.c_str(), &buffer, &length, &width, &height, RAWENGINE_PREVIEW_TYPE_2K, nullptr);
+    // 解码（尺寸档位由 -s/--scale 全局参数控制，默认全尺寸）
+    rte_decode_options opts = {};
+    opts.struct_size = (int)sizeof(rte_decode_options);
+    opts.scale = g_scale_mode;
+    int ret = rte_decode(local_path.c_str(), &opts, &image);
 
     auto t1 = std::chrono::high_resolution_clock::now();
     auto ms_decode = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
 
-    std::cout << now_ts() << " [Timer] rawengine_decode preprocess cost " << 0 << " ms\n";
-    std::cout << now_ts() << " [Timer] rawengine_decode infer cost " << ms_decode << " ms\n";
-    std::cout << now_ts() << " [Timer] rawengine_decode postprocess cost " << 0 << " ms\n";
+    std::cout << now_ts() << " [Timer] rte_decode preprocess cost " << 0 << " ms\n";
+    std::cout << now_ts() << " [Timer] rte_decode infer cost " << ms_decode << " ms\n";
+    std::cout << now_ts() << " [Timer] rte_decode postprocess cost " << 0 << " ms\n";
 
     print_monitor();
 
-    if (ret != 0 || buffer == nullptr) {
+    if (ret != 0 || image.data == nullptr) {
         return; // 解码失败，直接返回
     }
+
+    const int width  = image.width;
+    const int height = image.height;
 
     // === 写出 JPEG ===
     {
@@ -403,7 +409,7 @@ static void process_file(const std::string& file_path, int index) {
 
         auto t2 = std::chrono::high_resolution_clock::now();
         bool ok = write_jpeg_from_buffer(
-            reinterpret_cast<const unsigned char*>(buffer),
+            reinterpret_cast<const unsigned char*>(image.data),
             width, height,
             /*channels*/4,
             out_path.c_str(),
@@ -414,14 +420,30 @@ static void process_file(const std::string& file_path, int index) {
         auto t3 = std::chrono::high_resolution_clock::now();
         auto ms_encode = std::chrono::duration_cast<std::chrono::milliseconds>(t3 - t2).count();
         std::cout << now_ts() << " [Timer] jpeg encode cost " << ms_encode << " ms\n";
+        rawperf::log_stage(file_path, "jpeg_encode",
+                           std::chrono::duration<double, std::milli>(t3 - t2).count());
+        rawperf::log_stage(file_path, "cli_total",
+                           std::chrono::duration<double, std::milli>(t3 - t0).count());
         (void)ok;
         print_monitor();
     }
 
-    rawengine_free(buffer);
+
+    rte_image_buffer_free(&image);
 }
 
+
 // ===== 入口 =====
+static bool parse_scale(const char* s, rte_scale_mode& out) {
+    std::string v(s ? s : "");
+    for (auto& c : v) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (v == "full" || v == "origin" || v == "0") { out = RTE_SCALE_FULL; return true; }
+    if (v == "4k")  { out = RTE_SCALE_4K;  return true; }
+    if (v == "3k")  { out = RTE_SCALE_3K;  return true; }
+    if (v == "2k")  { out = RTE_SCALE_2K;  return true; }
+    return false;
+}
+
 int main(int argc, char** argv) {
     std::ios::sync_with_stdio(false);
     std::cin.tie(nullptr);
@@ -443,17 +465,33 @@ int main(int argc, char** argv) {
     std::string input_dir = INPUT_DIR;
 #endif
 
-    // 支持命令行覆盖 input/output 目录
+    // 支持命令行覆盖 input/output 目录与尺寸档位
+    // 用法: rawengine-cli [input_dir] [output_dir] [-s full|4k|3k|2k]
     if (argc >= 2) {
         input_dir = argv[1];
     }
     if (argc >= 3) {
         g_output_path = argv[2];
     }
+    for (int i = 1; i < argc; ++i) {
+        const std::string a(argv[i]);
+        if ((a == "-s" || a == "--scale") && i + 1 < argc) {
+            if (!parse_scale(argv[++i], g_scale_mode)) {
+                std::cerr << "invalid scale '" << argv[i] << "' (expected full|4k|3k|2k)\n";
+                return 1;
+            }
+        }
+    }
+
+    std::cout << now_ts() << " [Init] scale = "
+              << (g_scale_mode == RTE_SCALE_FULL ? "full" :
+                  g_scale_mode == RTE_SCALE_4K  ? "4k"  :
+                  g_scale_mode == RTE_SCALE_3K  ? "3k"  : "2k") << "\n";
 
     // 初始化 & 遍历
-    rawengine_init();
+    rte_engine_init(nullptr);
     traverse(input_dir);
+
 
     int idx = 0;
     for (const auto& file_path : g_file_paths) {

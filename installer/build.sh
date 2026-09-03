@@ -10,7 +10,6 @@
 #     include/   — C API 头文件
 #     lib/       — 静态库 librtengine.a
 #     bin/       — rawengine-cli.exe + 全部运行时 DLL
-#     pdb/       — DWARF 调试符号文件（.debug）
 #     readme.md  — 集成说明文档
 # =============================================================================
 set -euo pipefail
@@ -144,6 +143,7 @@ else
 fi
 
 # ---------- 验证产物存在 ----------
+
 CLI_EXE="$BUILD_DIR/rtengine/$CLI_NAME"
 LIB_A="$BUILD_DIR/rtengine/librtengine.a"
 RAWENGINE_DLL="$BUILD_DIR/rtengine/$RAWENGINE_LIB_NAME"
@@ -168,7 +168,6 @@ rm -rf "$OUTPUT_DIR"
 mkdir -p "$OUTPUT_DIR/include"
 mkdir -p "$OUTPUT_DIR/lib"
 mkdir -p "$OUTPUT_DIR/bin"
-mkdir -p "$OUTPUT_DIR/pdb"
 mkdir -p "$OUTPUT_DIR/resource"
 
 # ---------- 头文件 ----------
@@ -267,34 +266,6 @@ else
     echo "  Copied $DLL_COUNT DLL(s) to output/bin/"
 fi
 
-# ---------- 调试符号（DWARF → .debug 文件） ----------
-echo "[collect] Extracting debug symbols ..."
-
-extract_debug() {
-    local src="$1"
-    local base
-    base="$(basename "$src")"
-    local dbg="$OUTPUT_DIR/pdb/${base}.debug"
-
-    if command -v objcopy &>/dev/null; then
-        # 提取调试符号
-        objcopy --only-keep-debug "$src" "$dbg" 2>/dev/null || true
-        # 从可执行文件中剥离调试信息（保留链接信息）
-        objcopy --strip-debug --add-gnu-debuglink="$dbg" "$src" 2>/dev/null || true
-        echo "  $base → pdb/${base}.debug"
-    fi
-}
-
-extract_debug "$OUTPUT_DIR/bin/$CLI_NAME"
-extract_debug "$OUTPUT_DIR/bin/$RAWENGINE_LIB_NAME"
-
-# 同时为静态库提取符号索引信息（可选）
-if command -v nm &>/dev/null; then
-    nm --extern-only --defined-only "$OUTPUT_DIR/lib/librtengine.a" \
-        > "$OUTPUT_DIR/pdb/librtengine_symbols.txt" 2>/dev/null || true
-    echo "  librtengine.a → pdb/librtengine_symbols.txt"
-fi
-
 # ---------- 复制 readme ----------
 echo "[collect] readme.md ..."
 cp "$SCRIPT_DIR/readme.md" "$OUTPUT_DIR/readme.md"
@@ -346,8 +317,22 @@ if [[ -f "$RTDATA_DIR/languages/default" ]]; then
     cp "$RTDATA_DIR/languages/default" "$OUTPUT_DIR/resource/languages/"
 fi
 
+# lensfun 数据库（rte_camera_list / rte_lens_list / rte_detect_lens 依赖）
+# 引擎通过 lfDatabase::LoadDirectory 加载 <资源根>/lensfun/ 下平铺的 *.xml
+# （LoadDirectory 不递归 version_N 子目录，因此取 version_1 内容平铺拷贝）
+LENSFUN_DB_SRC="/ucrt64/share/lensfun"
+mkdir -p "$OUTPUT_DIR/bin/lensfun"
+if [[ -d "$LENSFUN_DB_SRC/version_1" ]]; then
+    cp "$LENSFUN_DB_SRC"/version_1/*.xml "$OUTPUT_DIR/bin/lensfun/"
+    echo "  lensfun db copied to bin/lensfun/"
+else
+    echo "  [warn] lensfun db not found at $LENSFUN_DB_SRC, camera/lens query APIs will return empty"
+fi
+
+
 RESOURCE_COUNT=$(find "$OUTPUT_DIR/resource" -type f | wc -l)
 echo "  Copied ${RESOURCE_COUNT} resource file(s) to output/resource/"
+
 
 # ---------- 同步 resource 到 bin（按你的集成要求） ----------
 echo "[collect] Mirroring resource/ into bin/ ..."
@@ -363,7 +348,6 @@ echo " Output collected successfully:"
 echo "  include/  : $(find "$OUTPUT_DIR/include" -name "*.h" | wc -l) header(s)"
 echo "  lib/      : $(find "$OUTPUT_DIR/lib" -name "*.a" | wc -l) static lib(s), $(find "$OUTPUT_DIR/lib" -name "*.lib" -o -name "*.def" -o -name "*.dll.a" 2>/dev/null | wc -l) MSVC/import file(s)"
 echo "  bin/      : $(find "$OUTPUT_DIR/bin" -type f \( -name "*.exe" -o -name "rawengine-cli" \) | wc -l) executable(s), $DLL_COUNT runtime lib(s)"
-echo "  pdb/      : $(find "$OUTPUT_DIR/pdb" -type f | wc -l) debug file(s)"
 echo "  resource/ : ${RESOURCE_COUNT} file(s) (dcpprofiles/iccprofiles/profiles/camconst)"
 echo "============================================================"
 echo " Output directory: $OUTPUT_DIR"

@@ -2,6 +2,8 @@
 // Ported to use RawTherapee's own libraw and App/Options infrastructure.
 
 #include "raw_engine.h"
+#include "rawperf.h"
+
 
 #ifdef __GNUC__
 #if defined(__FAST_MATH__)
@@ -69,7 +71,9 @@
 #include <stdexcept>
 #include <filesystem>
 #include <algorithm>
+#include <cctype>
 #include <map>
+
 #include <functional>
 #include <vector>
 
@@ -85,7 +89,8 @@
 // Stores paths to data files. These must not be namespace-scope Glib::ustring
 // objects: the iOS static build can run C++ initializers before GLib's quark
 // tables have been initialized. Construct the state on first RawEngine use,
-// after rawengine_init() has entered the controlled initialization path.
+// after rte_engine_init() has entered the controlled initialization path.
+
 struct RawEnginePathState {
     Glib::ustring argv0;
     Glib::ustring creditsPath;
@@ -126,7 +131,8 @@ struct DecodeCtx {
     std::string   extLower;
     std::string   make;
     std::string   model; // 下划线已替空格
-    int           previewType = RAWENGINE_PREVIEW_TYPE_ORIGIN;
+    int           previewType = (int)RTE_SCALE_FULL;
+
     bool          isRaw = true;
     const std::map<std::string,std::string>* externalDcp = nullptr;
 };
@@ -922,32 +928,33 @@ void enable_lens_auto(rtengine::procparams::ProcParams& p) {
     p.lensProf.useDist = true;  p.lensProf.useVign = true;  p.lensProf.useCA   = false;
 }
 
-static void apply_lens_override(const RawEngineLensParams* lp, rtengine::procparams::ProcParams& p) {
+static void apply_lens_override(const rte_lens_options* lp, rtengine::procparams::ProcParams& p) {
     if (!lp) return;
-    switch (lp->lens_mode) {
-    case RAWENGINE_LENS_MODE_NONE:
+    switch (lp->mode) {
+    case RTE_LENS_OFF:
         p.lensProf.lcMode  = rtengine::procparams::LensProfParams::LcMode::NONE;
         p.lensProf.useDist = false;
         p.lensProf.useVign = false;
         p.lensProf.useCA   = false;
         break;
-    case RAWENGINE_LENS_MODE_AUTO:
+    case RTE_LENS_AUTO:
         p.lensProf.lcMode  = rtengine::procparams::LensProfParams::LcMode::LENSFUNAUTOMATCH;
-        p.lensProf.useDist = (lp->use_distortion != 0);
+        p.lensProf.useDist = (lp->enable_distortion != 0);
         p.lensProf.useVign = false;
         p.lensProf.useCA   = false;
         break;
-    case RAWENGINE_LENS_MODE_MANUAL:
+    case RTE_LENS_MANUAL:
         p.lensProf.lcMode  = rtengine::procparams::LensProfParams::LcMode::LENSFUNMANUAL;
         p.lensProf.lfCameraMake  = lp->camera_make  ? lp->camera_make  : "";
         p.lensProf.lfCameraModel = lp->camera_model ? lp->camera_model : "";
         p.lensProf.lfLens        = lp->lens_name    ? lp->lens_name    : "";
-        p.lensProf.useDist = (lp->use_distortion != 0);
+        p.lensProf.useDist = (lp->enable_distortion != 0);
         p.lensProf.useVign = false;
         p.lensProf.useCA   = false;
         break;
     }
 }
+
 
 void use_fast_demosaic(rtengine::procparams::ProcParams& p) {
     p.raw.bayersensor.method  = RAWParams::BayerSensor::getMethodString(RAWParams::BayerSensor::Method::AMAZE);
@@ -3236,7 +3243,13 @@ void apply_default_rule(const DecodeCtx& ctx,
                 RAWParams::BayerSensor::Method::AMAZE);
     p.raw.bayersensor.ccSteps = 0;
     p.toneCurve.histmatching = true;
+    // 诊断开关：RAWENGINE_NO_HISTMATCH=1 时关闭直方图匹配（该步骤需解码内嵌缩略图，
+    // 是 stage_init 里的主要耗时项），用于对比验证 LibRAWEngine 与 RT 的解码差距来源
+    if (const char* e = std::getenv("RAWENGINE_NO_HISTMATCH"); e && e[0] != '\0' && e[0] != '0') {
+        p.toneCurve.histmatching = false;
+    }
     p.toneCurve.fromHistMatching = false;
+
     p.toneCurve.clampOOG = true;
     p.toneCurve.curveMode = ToneCurveMode::FILMLIKE;
     set_dirpyr_denoise(p);
@@ -3310,7 +3323,11 @@ static int rawengine_init_impl(const char* explicit_resource_path) {
     }
 #endif
 
-    if (explicit_resource_path && explicit_resource_path[0] != '\0') {
+    // 显式资源路径优先；未提供时按可执行文件目录推断。
+    // 注意不能先赋值再走下面的 exe 相对路径分支——DATA_SEARCH_PATH 是相对路径（"."），
+    // 会把显式路径无条件覆盖掉（旧 init_with_resource_path 在 Windows 上因此从未生效）。
+    const bool has_explicit_path = explicit_resource_path && explicit_resource_path[0] != '\0';
+    if (has_explicit_path) {
         argv0 = explicit_resource_path;
         externalPath = explicit_resource_path;
     }
@@ -3319,40 +3336,65 @@ static int rawengine_init_impl(const char* explicit_resource_path) {
     // iOS resources are copied into the application bundle root by the
     // PhotoEditor target.  ../Resources points outside the signed bundle and
     // is therefore not available on a device.
-    if (!explicit_resource_path || explicit_resource_path[0] == '\0')
+    if (!has_explicit_path)
         argv0 = exePath;
 #else
-    if (Glib::path_is_absolute(DATA_SEARCH_PATH)) argv0 = DATA_SEARCH_PATH;
-    else argv0 = Glib::build_filename(exePath, DATA_SEARCH_PATH);
+    if (!has_explicit_path) {
+        if (Glib::path_is_absolute(DATA_SEARCH_PATH)) argv0 = DATA_SEARCH_PATH;
+        else argv0 = Glib::build_filename(exePath, DATA_SEARCH_PATH);
+    }
 #endif
+
 
     if (Glib::path_is_absolute(CREDITS_SEARCH_PATH)) creditsPath = CREDITS_SEARCH_PATH;
     else creditsPath = Glib::build_filename(exePath, CREDITS_SEARCH_PATH);
 
 #if defined(__APPLE__) && TARGET_OS_IPHONE
-    if (!explicit_resource_path || explicit_resource_path[0] == '\0')
+    if (!has_explicit_path)
         externalPath = exePath;
 #else
-    if (Glib::path_is_absolute(EXTERNAL_PATH)) externalPath = EXTERNAL_PATH;
-    else externalPath = Glib::build_filename(exePath, EXTERNAL_PATH);
+    if (!has_explicit_path) {
+        if (Glib::path_is_absolute(EXTERNAL_PATH)) externalPath = EXTERNAL_PATH;
+        else externalPath = Glib::build_filename(exePath, EXTERNAL_PATH);
+    }
 #endif
+
 
     if (Glib::path_is_absolute(LICENCE_SEARCH_PATH)) licensePath = LICENCE_SEARCH_PATH;
     else licensePath = Glib::build_filename(exePath, LICENCE_SEARCH_PATH);
 
-    options.rtSettings.lensfunDbDirectory = LENSFUN_DB_PATH;
-    options.rtSettings.lensfunDbBundleDirectory = LENSFUN_DB_PATH;
+    // lensfun 数据库路径：优先用编译期配置（macOS bundle 等场景）；
+    // 编译期未配置（当前 Windows 构建为空串）时指向资源根目录下的 lensfun/ 子目录（绝对路径）。
+    // 不能依赖 lensfunDbBundleDirectory 回退分支——LFDatabase::init("") 在 Windows 下加载
+    // 默认目录会"成功"返回空库，ok=true 导致 bundle 路径永远不被尝试。
+    // 部署形态：<资源根>/lensfun/version_1/*.xml
+    if (LENSFUN_DB_PATH[0] != '\0') {
+        options.rtSettings.lensfunDbDirectory = LENSFUN_DB_PATH;
+        options.rtSettings.lensfunDbBundleDirectory = LENSFUN_DB_PATH;
+    } else {
+        options.rtSettings.lensfunDbDirectory = Glib::build_filename(argv0, "lensfun");
+        options.rtSettings.lensfunDbBundleDirectory = "";
+    }
+
     // Sync paths into App
     App::get().setArgv0(argv0);
     App::get().setCreditsPath(creditsPath);
     App::get().setLicensePath(licensePath);
+
 #else
     argv0 = DATA_SEARCH_PATH;
     creditsPath = CREDITS_SEARCH_PATH;
     licensePath = LICENCE_SEARCH_PATH;
-    options.rtSettings.lensfunDbDirectory = LENSFUN_DB_PATH;
-    options.rtSettings.lensfunDbBundleDirectory = LENSFUN_DB_PATH;
+    if (LENSFUN_DB_PATH[0] != '\0') {
+        options.rtSettings.lensfunDbDirectory = LENSFUN_DB_PATH;
+        options.rtSettings.lensfunDbBundleDirectory = LENSFUN_DB_PATH;
+    } else {
+        options.rtSettings.lensfunDbDirectory = Glib::build_filename(argv0, "lensfun");
+        options.rtSettings.lensfunDbBundleDirectory = "";
+    }
     App::get().setArgv0(argv0);
+
+
     App::get().setCreditsPath(creditsPath);
     App::get().setLicensePath(licensePath);
 #endif
@@ -3363,6 +3405,15 @@ static int rawengine_init_impl(const char* explicit_resource_path) {
         std::cerr << "\nFATAL ERROR:\n" << e.get_msg() << std::endl;
         return -2;
     }
+
+    // Options::load 会把 rtSettings.lensfunDbDirectory 重置为空（options.cc 默认值），
+    // 其内部的 rtengine::init 因此加载了空 lensfun 库。编译期未配置 LENSFUN_DB_PATH 时，
+    // 这里用资源根下的 lensfun/ 显式重载，保证 rte_camera_list / rte_lens_list /
+    // rte_detect_lens 可用。
+    if (LENSFUN_DB_PATH[0] == '\0') {
+        rtengine::LFDatabase::init(Glib::build_filename(argv0, "lensfun"));
+    }
+
 
     if (options.is_defProfRawMissing()) {
         options.defProfRaw = DEFPROFILE_RAW;
@@ -3419,43 +3470,86 @@ static int rawengine_init_impl(const char* explicit_resource_path) {
 #ifdef __cplusplus
 extern "C"
 #endif
-const char* rawengine_get_version()
+int RAWENGINE_API rte_api_version(void)
 {
-#ifdef RAWENGINE_VERSION_STRING
-    return RAWENGINE_VERSION_STRING;
-#else
-    return "1.0.0";
-#endif
+    return RTE_API_VERSION;
 }
 
 #ifdef __cplusplus
 extern "C"
 #endif
-int rawengine_init()
+int RAWENGINE_API rte_engine_init(const rte_engine_options* options)
 {
-    return rawengine_init_impl(nullptr);
-}
-
-#ifdef __cplusplus
-extern "C"
-#endif
-int rawengine_init_with_resource_path(const char* resource_path)
-{
-    if (!resource_path || resource_path[0] == '\0')
-        return rawengine_init_impl(nullptr);
+    const char* resource_path = (options && options->resource_path && options->resource_path[0] != '\0')
+        ? options->resource_path
+        : nullptr;
     return rawengine_init_impl(resource_path);
 }
 
-#ifdef __cplusplus
-extern "C"
-#endif
-int RAWENGINE_API rawengine_decode(const char* filename, void** buffer, int* length, int* width, int* height, int preview_type, const RawEngineLensParams* lens_params)
+
+// 通过环境变量 RAWENGINE_DEMOSAIC 覆盖 Bayer demosaic 算法，用于横向对比解码耗时/画质。
+// 未设置或取值非法时保持规则系统的原有选择。无论是否覆盖，都会把最终生效的算法打进 perf 日志，
+// 便于事后确认某次测试跑的到底是哪个算法。
+static void apply_demosaic_override(rtengine::procparams::ProcParams& p, const std::string& perf_file)
 {
+    using BayerSensor = rtengine::procparams::RAWParams::BayerSensor;
+
+    const char* env_method = std::getenv("RAWENGINE_DEMOSAIC");
+    if (env_method && env_method[0] != '\0') {
+        std::string m(env_method);
+        std::transform(m.begin(), m.end(), m.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+        static const std::map<std::string, BayerSensor::Method> method_map = {
+            {"amaze",         BayerSensor::Method::AMAZE},
+            {"amazebilinear", BayerSensor::Method::AMAZEBILINEAR},
+            {"amazevng4",     BayerSensor::Method::AMAZEVNG4},
+            {"rcd",           BayerSensor::Method::RCD},
+            {"rcdbilinear",   BayerSensor::Method::RCDBILINEAR},
+            {"rcdvng4",       BayerSensor::Method::RCDVNG4},
+            {"dcb",           BayerSensor::Method::DCB},
+            {"dcbbilinear",   BayerSensor::Method::DCBBILINEAR},
+            {"dcbvng4",       BayerSensor::Method::DCBVNG4},
+            {"lmmse",         BayerSensor::Method::LMMSE},
+            {"igv",           BayerSensor::Method::IGV},
+            {"ahd",           BayerSensor::Method::AHD},
+            {"eahd",          BayerSensor::Method::EAHD},
+            {"hphd",          BayerSensor::Method::HPHD},
+            {"vng4",          BayerSensor::Method::VNG4},
+            {"fast",          BayerSensor::Method::FAST},
+            {"mono",          BayerSensor::Method::MONO},
+            {"none",          BayerSensor::Method::NONE},
+        };
+
+        const auto it = method_map.find(m);
+        if (it != method_map.end()) {
+            p.raw.bayersensor.method = BayerSensor::getMethodString(it->second);
+        } else {
+            std::cerr << "RAWENGINE_DEMOSAIC: unknown value '" << m << "', keep default\n";
+        }
+    }
+
+    rawperf::log_info(perf_file, "demosaic_method",
+                      "bayer=" + rawperf::sanitize(p.raw.bayersensor.method.raw())
+                      + " xtrans=" + rawperf::sanitize(p.raw.xtranssensor.method.raw()));
+
+}
+
+// 解码实现：rte_decode 的内部主体（选项已归一化）
+static int rawengine_decode_impl(const char* filename, rte_scale_mode scale,
+                                 const rte_lens_options* lens_params,
+                                 void** buffer, int* length, int* width, int* height)
+{
+
     unsigned errors = 0;
     fast_export = true;
     App::get().mut_options().saveUsePathTemplate = false;
 
+
     Glib::ustring inputFile(fname_to_utf8(filename));
+
+    const std::string perf_file = inputFile.raw();
+    const auto perf_total_start = rawperf::Clock::now();
 
     rtengine::InitialImage* ii = nullptr;
     rtengine::ProcessingJob* job = nullptr;
@@ -3468,7 +3562,10 @@ int RAWENGINE_API rawengine_decode(const char* filename, void** buffer, int* len
         isRaw = false;
     }
 
-    ii = rtengine::InitialImage::load(inputFile, isRaw, &errorCode, nullptr);
+    {
+        rawperf::Timer t(perf_file, "load");           // 读文件 + libraw unpack + raw2image
+        ii = rtengine::InitialImage::load(inputFile, isRaw, &errorCode, nullptr);
+    }
     if (errorCode) return RawEngineErrorLoadFail;
 
     if (!ii) { errors++; std::cerr << "Error loading file: " << inputFile << std::endl; }
@@ -3480,31 +3577,38 @@ int RAWENGINE_API rawengine_decode(const char* filename, void** buffer, int* len
     ctx.ii = ii;
     ctx.fname = ii->getMetaData()->getFileName();
     ctx.isRaw = isRaw;
-    ctx.previewType = preview_type;
+    ctx.previewType = (int)scale;
+
     ctx.extLower = ext.lowercase();
     ctx.make  = ii->getMetaData()->getMake();
     ctx.model = ii->getMetaData()->getModel();
     std::replace(ctx.model.begin(), ctx.model.end(), '_', ' '); // 兼容 "nikon z 7_2"
     ctx.externalDcp = &external_dcp_map();
 
-    apply_rules(ctx, currentParams);
+    {
+        rawperf::Timer t(perf_file, "rules");          // 规则匹配 + 参数装配（含 DCP 查找）
+        apply_rules(ctx, currentParams);
 
-    // 用户传入镜头参数时，覆盖规则系统设置的镜头校正
-    apply_lens_override(lens_params, currentParams);
+        // 用户传入镜头参数时，覆盖规则系统设置的镜头校正
+        apply_lens_override(lens_params, currentParams);
+    }
+
+    // demosaic 算法覆盖：便于对比不同算法的解码耗时与画质
+    // 用法：设置环境变量 RAWENGINE_DEMOSAIC=rcd / amaze / amazebilinear / dcb / lmmse / fast ...
+    // 注意仅作用于 Bayer 传感器；X-Trans（富士）走 xtranssensor.method，不受影响。
+    apply_demosaic_override(currentParams, perf_file);
 
     // 预览 resize（后续规则可覆盖）
-    if (preview_type != RAWENGINE_PREVIEW_TYPE_ORIGIN) {
+    if (scale != RTE_SCALE_FULL) {
         currentParams.resize.enabled = true;
         currentParams.resize.allowUpscaling = false;
         currentParams.resize.scale = 1.0;
-        if (preview_type == RAWENGINE_PREVIEW_TYPE_3K) {
-            currentParams.resize.height = 3000; 
-            currentParams.resize.width = 3000;
-        } else if (preview_type == RAWENGINE_PREVIEW_TYPE_2K) {
-            currentParams.resize.height = 2000; 
-            currentParams.resize.width = 2000;
-        }
+        const int edge = (scale == RTE_SCALE_4K) ? 4000 :
+                         (scale == RTE_SCALE_3K) ? 3000 : 2000;
+        currentParams.resize.height = edge;
+        currentParams.resize.width = edge;
     }
+
 
     job = rtengine::ProcessingJob::create(ii, currentParams, fast_export);
     if (!job) {
@@ -3514,7 +3618,11 @@ int RAWENGINE_API rawengine_decode(const char* filename, void** buffer, int* len
         return errors > 0 ? -2 : 0;
     }
 
-    rtengine::IImagefloat* resultImage = rtengine::processImage(job, errorCode, nullptr);
+    rtengine::IImagefloat* resultImage = nullptr;
+    {
+        rawperf::Timer t(perf_file, "process_image"); // 整个 ImageProcessor 流水线（阶段细分见 simpleprocess.cc）
+        resultImage = rtengine::processImage(job, errorCode, nullptr);
+    }
     if (!resultImage) {
         errors++; 
         std::cerr << "Error processing: " << inputFile << std::endl;
@@ -3526,7 +3634,9 @@ int RAWENGINE_API rawengine_decode(const char* filename, void** buffer, int* len
     // RawTherapee's IImagefloat does not have getRGBA(); implement inline using getScanline().
     errorCode = 0;
     {
+        rawperf::Timer t(perf_file, "to_rgba");        // float -> 8bit RGBA 拷贝
         const int img_w = resultImage->getWidth();
+
         const int img_h = resultImage->getHeight();
         if (img_w < 1 || img_h < 1) {
             errorCode = -1;
@@ -3561,6 +3671,7 @@ int RAWENGINE_API rawengine_decode(const char* filename, void** buffer, int* len
 
     // 结果兜底：与原逻辑一致
     if (!errorCode && !currentParams.crop.enabled) {
+        rawperf::Timer t(perf_file, "fallback_crop");  // EXIF 兜底裁剪（含 EXIF 二次读取）
         const auto fname = ii->getMetaData()->getFileName();
         CropBox cb = read_crop_from_exif(fname);
         if (cb.ok) {
@@ -3584,33 +3695,101 @@ int RAWENGINE_API rawengine_decode(const char* filename, void** buffer, int* len
     ii->decreaseRef();
     delete resultImage;
 
+    {
+        // 整个 rawengine_decode 的总耗时，作为各阶段之和的对账基准
+        char extra[128];
+        std::snprintf(extra, sizeof(extra), "width=%d height=%d", width ? *width : 0, height ? *height : 0);
+        rawperf::log_stage(perf_file, "decode_total",
+                           rawperf::ms_since(perf_total_start), extra);
+    }
+
     return errors > 0 ? -2 : 0;
 }
 
 #ifdef __cplusplus
 extern "C"
 #endif
-int RAWENGINE_API rawengine_free(void* buffer) {
-    std::free(buffer);
+int RAWENGINE_API rte_decode(const char* filename, const rte_decode_options* options, rte_image_buffer* out)
+
+{
+    if (!out) return -1;
+    std::memset(out, 0, sizeof(*out));
+    if (!filename) return -1;
+
+    // 选项归一化：options 为 NULL 时走 { FULL, 无镜头校正 }
+    rte_scale_mode scale = RTE_SCALE_FULL;
+    const rte_lens_options* lens = nullptr;
+    if (options) {
+        scale = options->scale;
+        lens  = options->lens;
+        // 非法档位回退 FULL，容错调用方传错值
+        if (scale != RTE_SCALE_FULL && scale != RTE_SCALE_4K
+            && scale != RTE_SCALE_3K && scale != RTE_SCALE_2K) {
+            scale = RTE_SCALE_FULL;
+        }
+    }
+
+    void* buffer = nullptr;
+    int length = 0;
+    int width = 0;
+    int height = 0;
+
+    const int ret = rawengine_decode_impl(filename, scale, lens,
+                                          &buffer, &length, &width, &height);
+    if (ret == 0 && buffer) {
+        out->data   = buffer;
+        out->size   = length;
+        out->width  = width;
+        out->height = height;
+        return 0;
+    }
+    // 失败路径：保证不泄漏半成品缓冲
+    if (buffer) std::free(buffer);
+    return ret != 0 ? ret : -2;
+}
+
+#ifdef __cplusplus
+extern "C"
+#endif
+int RAWENGINE_API rte_image_buffer_free(rte_image_buffer* buffer) {
+    if (!buffer) return 0;
+    std::free(buffer->data);
+    std::memset(buffer, 0, sizeof(*buffer));
     return 0;
 }
 
+
 #ifdef __cplusplus
 extern "C"
 #endif
-void RAWENGINE_API rawengine_lens_params_default(RawEngineLensParams* params) {
-    if (!params) return;
-    std::memset(params, 0, sizeof(RawEngineLensParams));
-    params->lens_mode = RAWENGINE_LENS_MODE_AUTO;
-    params->use_distortion = 1;
+void RAWENGINE_API rte_lens_options_default(rte_lens_options* options) {
+    if (!options) return;
+    std::memset(options, 0, sizeof(rte_lens_options));
+    options->struct_size = (int)sizeof(rte_lens_options);
+    options->mode = RTE_LENS_AUTO;
+    options->enable_distortion = 1;
 }
 
 #ifdef __cplusplus
 extern "C"
 #endif
-int RAWENGINE_API rawengine_get_cameras(RawEngineCameraInfo** cameras, int* count) {
-    if (!cameras || !count) return -1;
-    *cameras = nullptr;
+void RAWENGINE_API rte_denoise_options_default(rte_denoise_options* options) {
+    if (!options) return;
+    std::memset(options, 0, sizeof(rte_denoise_options));
+    options->struct_size = (int)sizeof(rte_denoise_options);
+    // 默认值对齐线上 LibRAWEngine 的 rawengine_denoise_params_default
+    options->luminance_detail = 50;
+    options->color_amount = 25;
+    options->color_detail = 50;
+    options->color_smoothness = 50;
+}
+
+#ifdef __cplusplus
+extern "C"
+#endif
+int RAWENGINE_API rte_camera_list(rte_camera_entry** out, int* count) {
+    if (!out || !count) return -1;
+    *out = nullptr;
     *count = 0;
 
     const rtengine::LFDatabase* db = rtengine::LFDatabase::getInstance();
@@ -3620,7 +3799,7 @@ int RAWENGINE_API rawengine_get_cameras(RawEngineCameraInfo** cameras, int* coun
     int n = (int)cams.size();
     if (n == 0) return 0;
 
-    RawEngineCameraInfo* arr = (RawEngineCameraInfo*)std::malloc(sizeof(RawEngineCameraInfo) * n);
+    rte_camera_entry* arr = (rte_camera_entry*)std::malloc(sizeof(rte_camera_entry) * n);
     if (!arr) return -1;
 
     for (int i = 0; i < n; ++i) {
@@ -3630,15 +3809,15 @@ int RAWENGINE_API rawengine_get_cameras(RawEngineCameraInfo** cameras, int* coun
 #ifdef _WIN32
         arr[i].make = _strdup(make.c_str());
         arr[i].model = _strdup(model.c_str());
-        arr[i].display_string = _strdup(display.c_str());
+        arr[i].display_name = _strdup(display.c_str());
 #else
         arr[i].make = strdup(make.c_str());
         arr[i].model = strdup(model.c_str());
-        arr[i].display_string = strdup(display.c_str());
+        arr[i].display_name = strdup(display.c_str());
 #endif
     }
 
-    *cameras = arr;
+    *out = arr;
     *count = n;
     return 0;
 }
@@ -3646,23 +3825,23 @@ int RAWENGINE_API rawengine_get_cameras(RawEngineCameraInfo** cameras, int* coun
 #ifdef __cplusplus
 extern "C"
 #endif
-int RAWENGINE_API rawengine_free_cameras(RawEngineCameraInfo* cameras, int count) {
-    if (!cameras) return 0;
+int RAWENGINE_API rte_camera_list_free(rte_camera_entry* list, int count) {
+    if (!list) return 0;
     for (int i = 0; i < count; ++i) {
-        std::free((void*)cameras[i].make);
-        std::free((void*)cameras[i].model);
-        std::free((void*)cameras[i].display_string);
+        std::free((void*)list[i].make);
+        std::free((void*)list[i].model);
+        std::free((void*)list[i].display_name);
     }
-    std::free(cameras);
+    std::free(list);
     return 0;
 }
 
 #ifdef __cplusplus
 extern "C"
 #endif
-int RAWENGINE_API rawengine_get_lenses(RawEngineLensInfo** lenses, int* count) {
-    if (!lenses || !count) return -1;
-    *lenses = nullptr;
+int RAWENGINE_API rte_lens_list(rte_lens_entry** out, int* count) {
+    if (!out || !count) return -1;
+    *out = nullptr;
     *count = 0;
 
     const rtengine::LFDatabase* db = rtengine::LFDatabase::getInstance();
@@ -3672,22 +3851,22 @@ int RAWENGINE_API rawengine_get_lenses(RawEngineLensInfo** lenses, int* count) {
     int n = (int)lens_list.size();
     if (n == 0) return 0;
 
-    RawEngineLensInfo* arr = (RawEngineLensInfo*)std::malloc(sizeof(RawEngineLensInfo) * n);
+    rte_lens_entry* arr = (rte_lens_entry*)std::malloc(sizeof(rte_lens_entry) * n);
     if (!arr) return -1;
 
     for (int i = 0; i < n; ++i) {
         std::string name = lens_list[i].getLens().raw();
         std::string make = lens_list[i].getMake().raw();
 #ifdef _WIN32
-        arr[i].lens_name = _strdup(name.c_str());
+        arr[i].name = _strdup(name.c_str());
         arr[i].make = _strdup(make.c_str());
 #else
-        arr[i].lens_name = strdup(name.c_str());
+        arr[i].name = strdup(name.c_str());
         arr[i].make = strdup(make.c_str());
 #endif
     }
 
-    *lenses = arr;
+    *out = arr;
     *count = n;
     return 0;
 }
@@ -3695,26 +3874,45 @@ int RAWENGINE_API rawengine_get_lenses(RawEngineLensInfo** lenses, int* count) {
 #ifdef __cplusplus
 extern "C"
 #endif
-int RAWENGINE_API rawengine_free_lenses(RawEngineLensInfo* lenses, int count) {
-    if (!lenses) return 0;
+int RAWENGINE_API rte_lens_list_free(rte_lens_entry* list, int count) {
+    if (!list) return 0;
     for (int i = 0; i < count; ++i) {
-        std::free((void*)lenses[i].lens_name);
-        std::free((void*)lenses[i].make);
+        std::free((void*)list[i].name);
+        std::free((void*)list[i].make);
     }
-    std::free(lenses);
+    std::free(list);
     return 0;
 }
+
+
+// 原实现主体：EXIF 读取 + lensfun 匹配，返回列表索引（-1 = 未识别）
+static int rawengine_detect_lens_impl(const char* filename, int& camera_index, int& lens_index);
 
 #ifdef __cplusplus
 extern "C"
 #endif
-int RAWENGINE_API rawengine_detect_lens(const char* filename, int* camera_index, int* lens_index) {
-    if (!camera_index || !lens_index) return -1;
-    *camera_index = -1;
-    *lens_index   = -1;
+int RAWENGINE_API rte_detect_lens(const char* filename, rte_lens_detection* out) {
+    if (!out) return -1;
+    out->camera_index = -1;
+    out->lens_index   = -1;
+
+    int camera_index = -1;
+    int lens_index   = -1;
+    const int ret = rawengine_detect_lens_impl(filename, camera_index, lens_index);
+    out->camera_index = camera_index;
+    out->lens_index   = lens_index;
+    return ret;
+}
+
+static int rawengine_detect_lens_impl(const char* filename, int& camera_index, int& lens_index)
+{
+
+    camera_index = -1;
+    lens_index   = -1;
 
     const rtengine::LFDatabase* db = rtengine::LFDatabase::getInstance();
     if (!db) return -1;
+
 
     // 1. 从 EXIF 读取 make / model / lens / focalLen
     Glib::ustring fname(fname_to_utf8(filename));
@@ -3775,10 +3973,11 @@ int RAWENGINE_API rawengine_detect_lens(const char* filename, int* camera_index,
     for (int i = 0; i < (int)allCams.size(); ++i) {
         if (allCams[i].getMake().raw()  == matchedCamMake &&
             allCams[i].getModel().raw() == matchedCamModel) {
-            *camera_index = i;
+            camera_index = i;
             break;
         }
     }
+
 
     // 4. 镜头匹配
     if (!exifLens.empty()) {
@@ -3788,7 +3987,7 @@ int RAWENGINE_API rawengine_detect_lens(const char* filename, int* camera_index,
             std::vector<rtengine::LFLens> allLenses = db->getLenses();
             for (int i = 0; i < (int)allLenses.size(); ++i) {
                 if (allLenses[i].getLens().raw() == matchedLensName) {
-                    *lens_index = i;
+                    lens_index = i;
                     break;
                 }
             }
@@ -3797,6 +3996,7 @@ int RAWENGINE_API rawengine_detect_lens(const char* filename, int* camera_index,
 
     return 0;
 }
+
 
 void deleteProcParams(std::vector<rtengine::procparams::PartialProfile*>& pparams) {
     for (unsigned int i = 0; i < pparams.size(); i++) {

@@ -6,23 +6,22 @@
 ::   build.bat [--jobs N] [--skip-build] [--clean]
 ::
 :: 前提条件:
-::   已安装 MSYS2，默认路径 C:\msys64
-::   ucrt64 工具链已安装相关依赖（运行一次后会自动检查）
+::   已安装 MSYS2，默认路径 C:\pack\app\code\msys2
+::   ucrt64 工具链已安装相关依赖
 :: =============================================================================
 
-setlocal
+setlocal EnableExtensions DisableDelayedExpansion
 
 :: ---------- 查找 MSYS2 ----------
-set MSYS2_ROOT=C:\pack\app\code\msys2
+set "MSYS2_ROOT=C:\pack\app\code\msys2"
 if not exist "%MSYS2_ROOT%\usr\bin\bash.exe" (
     echo [ERROR] MSYS2 not found at %MSYS2_ROOT%
     echo Please install MSYS2 from https://www.msys2.org/
-    pause
     exit /b 1
 )
 
 :: ---------- 当前脚本目录 ----------
-set SCRIPT_DIR=%~dp0
+set "SCRIPT_DIR=%~dp0"
 :: 去掉末尾反斜杠
 if "%SCRIPT_DIR:~-1%"=="\" set SCRIPT_DIR=%SCRIPT_DIR:~0,-1%
 
@@ -37,11 +36,10 @@ for %%i in (a b c d e f g h i j k l m n o p q r s t u v w x y z) do (
 set MSYS_SCRIPT_DIR=/%DRIVE%/%MSYS_SCRIPT_DIR:~3%
 
 :: ---------- 拼接传递给 build.sh 的参数 ----------
-set EXTRA_ARGS=%*
+set "EXTRA_ARGS=%*"
 
-:: ---------- 定位 MSVC lib.exe（仅传路径，不加载 vcvars，避免污染 ucrt64 gcc 构建环境） ----------
-:: 注意：%ProgramFiles(x86)% 含 ")"，不能放进 ( ... ) 块，会提前结束块。
-::      用临时文件接 vswhere 输出，避开 for /f 反引号里嵌套引号的转义难题。
+rem ---------- 定位 MSVC lib.exe（仅传路径，不加载 vcvars，避免污染 ucrt64 gcc 构建环境） ----------
+rem 使用临时文件接收 vswhere 输出，避免 for /f 嵌套引号的转义问题。
 set "PF86=%ProgramFiles(x86)%"
 set "VSWHERE=%PF86%\Microsoft Visual Studio\Installer\vswhere.exe"
 if not exist "%VSWHERE%" set "VSWHERE=%ProgramFiles%\Microsoft Visual Studio\Installer\vswhere.exe"
@@ -60,7 +58,7 @@ del /q "%_VSW_TMP%" >nul 2>&1
 if defined MSVC_LIB_EXE (
     echo Found MSVC lib.exe: %MSVC_LIB_EXE%
 ) else (
-    echo [WARN] MSVC lib.exe not found via vswhere; rawtherapee.lib will be skipped.
+    echo [WARN] MSVC lib.exe not found via vswhere; therapee.lib will be skipped.
 )
 
 :: ---------- 执行 ----------
@@ -73,16 +71,17 @@ echo.
 set "RAWENGINE_MSVC_LIB=%MSVC_LIB_EXE%"
 
 "%MSYS2_ROOT%\usr\bin\bash.exe" -l -c ^
-    "export PATH=/ucrt64/bin:/usr/bin:$PATH; bash '%MSYS_SCRIPT_DIR%/build.sh' %EXTRA_ARGS%"
+    "export PATH=/ucrt64/bin:/usr/bin:$PATH; exec bash '%MSYS_SCRIPT_DIR%/build.sh' %EXTRA_ARGS%"
+set "BUILD_EXIT=%ERRORLEVEL%"
 
-if %ERRORLEVEL% NEQ 0 (
+if not "%BUILD_EXIT%"=="0" (
     echo.
-    echo [FAILED] Build or collect step returned error %ERRORLEVEL%
-    pause
-    exit /b %ERRORLEVEL%
+    echo [FAILED] Build or collect step returned error %BUILD_EXIT%
+    endlocal
+    exit /b %BUILD_EXIT%
 )
 
 echo.
 echo [SUCCESS] Output is at: %SCRIPT_DIR%\output\
-pause
 endlocal
+exit /b 0

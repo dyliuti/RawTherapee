@@ -3,53 +3,51 @@
 
 #include "rawengine_types.h"
 
-#define RAWENGINE_PREVIEW_TYPE_ORIGIN 0
-#define RAWENGINE_PREVIEW_TYPE_3K 1
-#define RAWENGINE_PREVIEW_TYPE_2K 2
-
-// 与 rtengine/CMakeLists.txt 中的 RAWENGINE_VERSION_* 保持一致
-#define RAWENGINE_VERSION_MAJOR 1
-#define RAWENGINE_VERSION_MINOR 0
-#define RAWENGINE_VERSION_PATCH 0
-#define RAWENGINE_VERSION_STRING "1.0.0"
-
-// 镜头校正模式
-#define RAWENGINE_LENS_MODE_NONE    0   // 不做镜头校正
-#define RAWENGINE_LENS_MODE_AUTO    1   // 从 EXIF 自动匹配 lensfun 数据库
-#define RAWENGINE_LENS_MODE_MANUAL  2   // 用户手动指定相机+镜头
-
 #ifdef __cplusplus
 extern "C"
 {
 #endif
 
-int RAWENGINE_API rawengine_init();
-// 返回三位版本号字符串，例如 "1.0.0"（静态存储，无需释放）
-const char* RAWENGINE_API rawengine_get_version();
-// Initialize using an explicit directory containing the RawTherapee runtime
-// resources (profiles, ICC/DCP data, and JSON databases).
-int RAWENGINE_API rawengine_init_with_resource_path(const char* resource_path);
-int RAWENGINE_API rawengine_decode(const char* filename, void** buffer, int* length, int* widht, int* height, int preview_type, const RawEngineLensParams* lens_params);
-int RAWENGINE_API rawengine_free(void* buffer);
+// 当前导出 API 版本，与 RTE_API_VERSION 一致。
+int RAWENGINE_API rte_api_version(void);
 
-// 初始化默认镜头参数（AUTO 模式 + 畸变校正开启）
-void RAWENGINE_API rawengine_lens_params_default(RawEngineLensParams* params);
+// 引擎初始化。options 为 NULL 或 resource_path 为 NULL/空时，
+// 按模块所在目录自动推断资源路径（profiles、ICC/DCP 数据、JSON 数据库）。
+int RAWENGINE_API rte_engine_init(const rte_engine_options* options);
 
-// 查询 lensfun 数据库中所有相机，结果需用 rawengine_free_cameras 释放
-int RAWENGINE_API rawengine_get_cameras(RawEngineCameraInfo** cameras, int* count);
-int RAWENGINE_API rawengine_free_cameras(RawEngineCameraInfo* cameras, int count);
+// 解码 RAW 文件，输出 8bit RGBA。
+// options 为 NULL 时等价于 { scale=RTE_SCALE_FULL, lens=NULL }。
+// 成功返回 0（错误码见 raw_engine_error_def.h），out 需用 rte_image_buffer_free 释放。
+int RAWENGINE_API rte_decode(const char* filename,
+                             const rte_decode_options* options,
+                             rte_image_buffer* out);
 
-// 查询 lensfun 数据库中所有镜头，结果需用 rawengine_free_lenses 释放
-int RAWENGINE_API rawengine_get_lenses(RawEngineLensInfo** lenses, int* count);
-int RAWENGINE_API rawengine_free_lenses(RawEngineLensInfo* lenses, int count);
+// 释放 rte_decode 输出的缓冲区并清零结构体。
+int RAWENGINE_API rte_image_buffer_free(rte_image_buffer* buffer);
 
-// 从文件 EXIF 自动识别相机和镜头，返回在 get_cameras/get_lenses 列表中的索引
-// camera_index/lens_index 为 -1 表示未识别到
-int RAWENGINE_API rawengine_detect_lens(const char* filename, int* camera_index, int* lens_index);
+// ===== 参数默认值 =====
+
+// 镜头参数默认值：AUTO 模式 + 畸变校正开启
+void RAWENGINE_API rte_lens_options_default(rte_lens_options* options);
+
+// 去噪参数默认值（字段默认值见 rte_denoise_options 注释）
+void RAWENGINE_API rte_denoise_options_default(rte_denoise_options* options);
+
+// ===== lensfun 相机/镜头数据库查询 =====
+
+// 查询所有相机，结果需用 rte_camera_list_free 释放
+int RAWENGINE_API rte_camera_list(rte_camera_entry** out, int* count);
+int RAWENGINE_API rte_camera_list_free(rte_camera_entry* list, int count);
+
+// 查询所有镜头，结果需用 rte_lens_list_free 释放
+int RAWENGINE_API rte_lens_list(rte_lens_entry** out, int* count);
+int RAWENGINE_API rte_lens_list_free(rte_lens_entry* list, int count);
+
+// 从文件 EXIF 自动识别相机和镜头，索引对应 list 接口返回的下标，-1 = 未识别
+int RAWENGINE_API rte_detect_lens(const char* filename, rte_lens_detection* out);
 
 #ifdef __cplusplus
 }
-
 #endif
 
 #endif
