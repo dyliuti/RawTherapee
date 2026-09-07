@@ -1315,6 +1315,8 @@ struct LensProfParamsEdited {
     bool useDist;
     bool useVign;
     bool useCA;
+    bool distortionAmount;
+    bool vignetteAmount;
 
     bool useLensfun;
     bool lfAutoMatch;

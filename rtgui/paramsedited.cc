@@ -585,6 +585,8 @@ void ParamsEdited::set(bool v)
     lensProf.useDist = v;
     lensProf.useVign = v;
     lensProf.useCA = v;
+    lensProf.distortionAmount = v;
+    lensProf.vignetteAmount = v;
     lensProf.useLensfun = v;
     lensProf.lfAutoMatch = v;
     lensProf.lfCameraMake = v;
@@ -1372,6 +1374,8 @@ void ParamsEdited::initFrom(const std::vector<rtengine::procparams::ProcParams>&
         lensProf.useDist = lensProf.useDist && p.lensProf.useDist == other.lensProf.useDist;
         lensProf.useVign = lensProf.useVign && p.lensProf.useVign == other.lensProf.useVign;
         lensProf.useCA = lensProf.useCA && p.lensProf.useCA == other.lensProf.useCA;
+        lensProf.distortionAmount = lensProf.distortionAmount && p.lensProf.distortionAmount == other.lensProf.distortionAmount;
+        lensProf.vignetteAmount = lensProf.vignetteAmount && p.lensProf.vignetteAmount == other.lensProf.vignetteAmount;
         lensProf.useLensfun = lensProf.useLensfun && p.lensProf.useLensfun() == other.lensProf.useLensfun();
         lensProf.lfAutoMatch = lensProf.lfAutoMatch && p.lensProf.lfAutoMatch() == other.lensProf.lfAutoMatch();
         lensProf.lfCameraMake = lensProf.lfCameraMake && p.lensProf.lfCameraMake == other.lensProf.lfCameraMake;
@@ -3993,6 +3997,14 @@ void ParamsEdited::combine(rtengine::procparams::ProcParams& toEdit, const rteng
 
     if (lensProf.useCA) {
         toEdit.lensProf.useCA = mods.lensProf.useCA;
+    }
+
+    if (lensProf.distortionAmount) {
+        toEdit.lensProf.distortionAmount = mods.lensProf.distortionAmount;
+    }
+
+    if (lensProf.vignetteAmount) {
+        toEdit.lensProf.vignetteAmount = mods.lensProf.vignetteAmount;
     }
 
     if (lensProf.lfCameraMake) {
@@ -8826,7 +8838,7 @@ bool RAWParamsEdited::isUnchanged() const
 
 bool LensProfParamsEdited::isUnchanged() const
 {
-    return lcMode && lcpFile && useVign && lfLens;
+    return lcMode && lcpFile && useVign && distortionAmount && vignetteAmount && lfLens;
 }
 
 bool RetinexParamsEdited::isUnchanged() const

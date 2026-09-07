@@ -66,12 +66,19 @@ public:
     Glib::ustring getDisplayString() const;
 
 private:
-    LFModifier(lfModifier *m, bool swap_xy, int flags);
+    LFModifier(
+        lfModifier *m,
+        bool swap_xy,
+        int flags,
+        double distortion_amount,
+        double vignette_amount);
 
     friend class LFDatabase;
     lfModifier *data_;
     bool swap_xy_;
     int flags_;
+    double distortion_amount_;
+    double vignette_amount_;
 };
 
 class LFCamera final
@@ -138,7 +145,8 @@ public:
 private:
     std::unique_ptr<LFModifier> getModifier(const LFCamera &camera, const LFLens &lens,
                                             float focalLen, float aperture, float focusDist,
-                                            int width, int height, bool swap_xy) const;
+                                            int width, int height, bool swap_xy,
+                                            double distortion_amount, double vignette_amount) const;
     LFDatabase();
     bool LoadDirectory(const char *dirname);
 

@@ -18,8 +18,10 @@
  *  along with RawTherapee.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include <algorithm>
 #include <cctype>
 #include <iostream>
+#include <vector>
 
 #include "imagedata.h"
 #include "procparams.h"
@@ -172,7 +174,7 @@ LFModifier::operator bool() const
 
 bool LFModifier::hasDistortionCorrection() const
 {
-    return (flags_ & LF_MODIFY_DISTORTION);
+    return (flags_ & LF_MODIFY_DISTORTION) && distortion_amount_ > 0.0;
 }
 
 bool LFModifier::hasCACorrection() const
@@ -182,29 +184,31 @@ bool LFModifier::hasCACorrection() const
 
 bool LFModifier::hasVignettingCorrection() const
 {
-    return (flags_ & LF_MODIFY_VIGNETTING);
+    return (flags_ & LF_MODIFY_VIGNETTING) && vignette_amount_ > 0.0;
 }
 
 void LFModifier::correctDistortion(double &x, double &y, int cx, int cy) const
 {
-    if (!data_) {
+    if (!data_ || distortion_amount_ <= 0.0) {
         return;
     }
 
     float pos[2];
-    float xx = x + cx;
-    float yy = y + cy;
+    float xx = static_cast<float>(x + cx);
+    float yy = static_cast<float>(y + cy);
     if (swap_xy_) {
         std::swap(xx, yy);
     }
     if (data_->ApplyGeometryDistortion(xx, yy, 1, 1, pos)) {  // This is thread-safe
-        x = pos[0];
-        y = pos[1];
+        double corrected_x = pos[0];
+        double corrected_y = pos[1];
         if (swap_xy_) {
-            std::swap(x, y);
+            std::swap(corrected_x, corrected_y);
         }
-        x -= cx;
-        y -= cy;
+        corrected_x -= cx;
+        corrected_y -= cy;
+        x += distortion_amount_ * (corrected_x - x);
+        y += distortion_amount_ * (corrected_y - y);
     }
 }
 
@@ -241,13 +245,18 @@ void LFModifier::correctDistortionAndCA(double &x, double &y, int cx, int cy, in
     // lensfun applies it to all the three channels simultaneously. This means
     // we do the work 3 times, because each time we discard 2 of the 3
     // channels. We could consider caching the info to speed this up
+    const double original_x = x;
+    const double original_y = y;
     x += cx;
     y += cy;
 
     float pos[6];
+    float distortion_pos[2];
     if (swap_xy_) {
         std::swap(x, y);
     }
+    const double lensfun_x = x;
+    const double lensfun_y = y;
     data_->ApplySubpixelGeometryDistortion(x, y, 1, 1, pos);  // This is thread-safe
     x = pos[2*channel];
     y = pos[2*channel+1];
@@ -256,21 +265,63 @@ void LFModifier::correctDistortionAndCA(double &x, double &y, int cx, int cy, in
     }
     x -= cx;
     y -= cy;
+
+    if (distortion_amount_ != 1.0 &&
+        data_->ApplyGeometryDistortion(
+            static_cast<float>(lensfun_x),
+            static_cast<float>(lensfun_y),
+            1,
+            1,
+            distortion_pos)) {
+        double distortion_x = distortion_pos[0];
+        double distortion_y = distortion_pos[1];
+        if (swap_xy_) {
+            std::swap(distortion_x, distortion_y);
+        }
+        distortion_x -= cx;
+        distortion_y -= cy;
+
+        // Preserve the CA delta while scaling only the geometric distortion.
+        x += (distortion_amount_ - 1.0) * (distortion_x - original_x);
+        y += (distortion_amount_ - 1.0) * (distortion_y - original_y);
+    }
 }
 
 #ifdef _OPENMP
 void LFModifier::processVignette(int width, int height, float** rawData) const
 {
-    #pragma omp parallel for schedule(dynamic,16)
+    if (!data_ || vignette_amount_ <= 0.0) {
+        return;
+    }
 
-    for (int y = 0; y < height; ++y) {
-        data_->ApplyColorModification(rawData[y], 0, y, width, 1, LF_CR_1(INTENSITY), 0);
+    #pragma omp parallel
+    {
+        std::vector<float> original(width);
+        #pragma omp for schedule(dynamic,16)
+        for (int y = 0; y < height; ++y) {
+            std::copy(rawData[y], rawData[y] + width, original.begin());
+            data_->ApplyColorModification(rawData[y], 0, y, width, 1, LF_CR_1(INTENSITY), 0);
+            for (int x = 0; x < width; ++x) {
+                rawData[y][x] = original[x] + vignette_amount_ * (rawData[y][x] - original[x]);
+            }
+        }
     }
 }
 #else
 void LFModifier::processVignette(int width, int height, float** rawData) const
 {
-    data_->ApplyColorModification(rawData[0], 0, 0, width, height, LF_CR_1(INTENSITY), width * sizeof(float));
+    if (!data_ || vignette_amount_ <= 0.0) {
+        return;
+    }
+
+    std::vector<float> original(width);
+    for (int y = 0; y < height; ++y) {
+        std::copy(rawData[y], rawData[y] + width, original.begin());
+        data_->ApplyColorModification(rawData[y], 0, y, width, 1, LF_CR_1(INTENSITY), 0);
+        for (int x = 0; x < width; ++x) {
+            rawData[y][x] = original[x] + vignette_amount_ * (rawData[y][x] - original[x]);
+        }
+    }
 }
 
 #endif
@@ -278,16 +329,40 @@ void LFModifier::processVignette(int width, int height, float** rawData) const
 #ifdef _OPENMP
 void LFModifier::processVignette3Channels(int width, int height, float** rawData) const
 {
-    #pragma omp parallel for schedule(dynamic,16)
+    if (!data_ || vignette_amount_ <= 0.0) {
+        return;
+    }
 
-    for (int y = 0; y < height; ++y) {
-        data_->ApplyColorModification(rawData[y], 0, y, width, 1, LF_CR_3(RED, GREEN, BLUE), 0);
+    const int row_size = width * 3;
+    #pragma omp parallel
+    {
+        std::vector<float> original(row_size);
+        #pragma omp for schedule(dynamic,16)
+        for (int y = 0; y < height; ++y) {
+            std::copy(rawData[y], rawData[y] + row_size, original.begin());
+            data_->ApplyColorModification(rawData[y], 0, y, width, 1, LF_CR_3(RED, GREEN, BLUE), 0);
+            for (int x = 0; x < row_size; ++x) {
+                rawData[y][x] = original[x] + vignette_amount_ * (rawData[y][x] - original[x]);
+            }
+        }
     }
 }
 #else
 void LFModifier::processVignette3Channels(int width, int height, float** rawData) const
 {
-    data_->ApplyColorModification(rawData[0], 0, 0, width, height, LF_CR_3(RED, GREEN, BLUE), width * 3 * sizeof(float));
+    if (!data_ || vignette_amount_ <= 0.0) {
+        return;
+    }
+
+    const int row_size = width * 3;
+    std::vector<float> original(row_size);
+    for (int y = 0; y < height; ++y) {
+        std::copy(rawData[y], rawData[y] + row_size, original.begin());
+        data_->ApplyColorModification(rawData[y], 0, y, width, 1, LF_CR_3(RED, GREEN, BLUE), 0);
+        for (int x = 0; x < row_size; ++x) {
+            rawData[y][x] = original[x] + vignette_amount_ * (rawData[y][x] - original[x]);
+        }
+    }
 }
 
 #endif
@@ -321,10 +396,17 @@ Glib::ustring LFModifier::getDisplayString() const
 }
 
 
-LFModifier::LFModifier(lfModifier *m, bool swap_xy, int flags):
+LFModifier::LFModifier(
+    lfModifier *m,
+    bool swap_xy,
+    int flags,
+    double distortion_amount,
+    double vignette_amount):
     data_(m),
     swap_xy_(swap_xy),
-    flags_(flags)
+    flags_(flags),
+    distortion_amount_(distortion_amount),
+    vignette_amount_(vignette_amount)
 {
 }
 
@@ -704,7 +786,8 @@ LFLens LFDatabase::findLens(const LFCamera &camera, const Glib::ustring &name, b
 
 std::unique_ptr<LFModifier> LFDatabase::getModifier(const LFCamera &camera, const LFLens &lens,
                                     float focalLen, float aperture, float focusDist,
-                                    int width, int height, bool swap_xy) const
+                                    int width, int height, bool swap_xy,
+                                    double distortion_amount, double vignette_amount) const
 {
     std::unique_ptr<LFModifier> ret;
     if (data_) {
@@ -716,7 +799,12 @@ std::unique_ptr<LFModifier> LFDatabase::getModifier(const LFCamera &camera, cons
                 flags |= LF_MODIFY_VIGNETTING;
             }
             flags = mod->Initialize(lens.data_, LF_PF_F32, focalLen, aperture, focusDist > 0 ? focusDist : 1000, 0.0, LF_RECTILINEAR, flags, false);
-            ret.reset(new LFModifier(mod, swap_xy, flags));
+            ret.reset(new LFModifier(
+                mod,
+                swap_xy,
+                flags,
+                distortion_amount,
+                vignette_amount));
         }
     }
     return ret;
@@ -777,7 +865,9 @@ std::unique_ptr<LFModifier> LFDatabase::findModifier(
         idata->getFocusDist(),
         width,
         height,
-        swap_xy
+        swap_xy,
+        lensProf.distortionAmount,
+        lensProf.vignetteAmount
     );
 
     if (settings->verbose) {

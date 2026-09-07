@@ -879,6 +879,8 @@ struct LensProfParams {
     LcMode lcMode;
     Glib::ustring lcpFile;
     bool useDist, useVign, useCA;
+    double distortionAmount;
+    double vignetteAmount;
     Glib::ustring lfCameraMake;
     Glib::ustring lfCameraModel;
     Glib::ustring lfLens;

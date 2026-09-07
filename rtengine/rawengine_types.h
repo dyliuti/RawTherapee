@@ -16,7 +16,7 @@
 
 // ===== API 版本 =====
 // 结构体带 struct_size 字段做前向兼容；不兼容的行为变更递增此版本。
-#define RTE_API_VERSION 1
+#define RTE_API_VERSION 2
 
 // ===== 解码输出尺寸档位 =====
 // FULL: 原始全尺寸直出；其余档位等比缩放到长边不超过对应像素，只缩不放，
@@ -40,10 +40,12 @@ typedef struct rte_lens_options {
     int             struct_size;        // 必须填 sizeof(rte_lens_options)
     rte_lens_mode   mode;               // RTE_LENS_*
     int             enable_distortion;  // 1=启用畸变校正
+    int             enable_vignette;    // 1=启用光学暗角补偿
+    int             distortion_amount;  // 0..200，100=完整 Profile 校正
+    int             vignette_amount;    // 0..200，100=完整 Profile 补偿
     const char*     camera_make;        // MANUAL 模式: 如 "Canon"（其余模式传 NULL）
     const char*     camera_model;       // MANUAL 模式: 如 "EOS 5D Mark IV"
     const char*     lens_name;          // MANUAL 模式: 如 "Canon EF 50mm f/1.4 USM"
-    int             reserved[4];        // 预留，必须置 0
 } rte_lens_options;
 
 // 去噪参数结构（当前引擎尚未接入去噪流程，仅提供参数结构与默认值，

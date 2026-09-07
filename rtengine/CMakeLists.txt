@@ -303,7 +303,7 @@ set_source_files_properties(raw_engine.cc PROPERTIES
 # Three-digit library version (Windows file properties / macOS Mach-O + Info.plist).
 # Override with -DRAWENGINE_VERSION_MAJOR=1 -DRAWENGINE_VERSION_MINOR=2 -DRAWENGINE_VERSION_PATCH=3
 set(RAWENGINE_VERSION_MAJOR 1 CACHE STRING "RawEngine major version")
-set(RAWENGINE_VERSION_MINOR 0 CACHE STRING "RawEngine minor version")
+set(RAWENGINE_VERSION_MINOR 1 CACHE STRING "RawEngine minor version")
 set(RAWENGINE_VERSION_PATCH 0 CACHE STRING "RawEngine patch version")
 set(RAWENGINE_VERSION "${RAWENGINE_VERSION_MAJOR}.${RAWENGINE_VERSION_MINOR}.${RAWENGINE_VERSION_PATCH}")
 message(STATUS "RawEngine version: ${RAWENGINE_VERSION}")
@@ -354,7 +354,7 @@ else()
     )
 endif()
 
-# Windows: VERSIONINFO resource so Explorer Properties -> Details shows 1.0.0
+# Windows: VERSIONINFO resource so Explorer Properties -> Details shows the RawEngine version
 # macOS: Mach-O current_version + embedded Info.plist (otool -L / mdls)
 if(NOT RAWENGINE_STATIC)
     configure_file(

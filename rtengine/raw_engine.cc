@@ -922,10 +922,18 @@ bool is_sony_ycbcr(const Glib::ustring& fname) { return !checkSonyDecoder(fname.
 inline void disable_lens_all(rtengine::procparams::ProcParams& p) {
     p.lensProf.lcMode  = rtengine::procparams::LensProfParams::LcMode::NONE;
     p.lensProf.useDist = false; p.lensProf.useVign = false; p.lensProf.useCA   = false;
+    p.lensProf.distortionAmount = 1.0;
+    p.lensProf.vignetteAmount = 1.0;
 }
 void enable_lens_auto(rtengine::procparams::ProcParams& p) {
     p.lensProf.lcMode  = rtengine::procparams::LensProfParams::LcMode::LENSFUNAUTOMATCH;
     p.lensProf.useDist = true;  p.lensProf.useVign = true;  p.lensProf.useCA   = false;
+    p.lensProf.distortionAmount = 1.0;
+    p.lensProf.vignetteAmount = 1.0;
+}
+
+inline double lens_amount(const int value) {
+    return std::max(0, std::min(200, value)) / 100.0;
 }
 
 static void apply_lens_override(const rte_lens_options* lp, rtengine::procparams::ProcParams& p) {
@@ -940,8 +948,10 @@ static void apply_lens_override(const rte_lens_options* lp, rtengine::procparams
     case RTE_LENS_AUTO:
         p.lensProf.lcMode  = rtengine::procparams::LensProfParams::LcMode::LENSFUNAUTOMATCH;
         p.lensProf.useDist = (lp->enable_distortion != 0);
-        p.lensProf.useVign = false;
+        p.lensProf.useVign = (lp->enable_vignette != 0);
         p.lensProf.useCA   = false;
+        p.lensProf.distortionAmount = lens_amount(lp->distortion_amount);
+        p.lensProf.vignetteAmount = lens_amount(lp->vignette_amount);
         break;
     case RTE_LENS_MANUAL:
         p.lensProf.lcMode  = rtengine::procparams::LensProfParams::LcMode::LENSFUNMANUAL;
@@ -949,8 +959,10 @@ static void apply_lens_override(const rte_lens_options* lp, rtengine::procparams
         p.lensProf.lfCameraModel = lp->camera_model ? lp->camera_model : "";
         p.lensProf.lfLens        = lp->lens_name    ? lp->lens_name    : "";
         p.lensProf.useDist = (lp->enable_distortion != 0);
-        p.lensProf.useVign = false;
+        p.lensProf.useVign = (lp->enable_vignette != 0);
         p.lensProf.useCA   = false;
+        p.lensProf.distortionAmount = lens_amount(lp->distortion_amount);
+        p.lensProf.vignetteAmount = lens_amount(lp->vignette_amount);
         break;
     }
 }
@@ -3031,6 +3043,8 @@ void build_rules() {
             p.lensProf.useDist = true; 
             p.lensProf.useVign = true; 
             p.lensProf.useCA   = true;
+            p.lensProf.distortionAmount = 1.0;
+            p.lensProf.vignetteAmount = 1.0;
             // disable_lens_all(p);
             set_icm_params(p);
             use_fast_demosaic(p);
@@ -3119,6 +3133,8 @@ void build_rules() {
             p.lensProf.useDist = true; 
             p.lensProf.useVign = false; 
             p.lensProf.useCA   = false;
+            p.lensProf.distortionAmount = 1.0;
+            p.lensProf.vignetteAmount = 1.0;
             // disable_lens_all(p);
             set_icm_params(p);
             use_fast_demosaic(p);
@@ -3211,6 +3227,8 @@ void build_rules() {
             p.lensProf.useDist = true; 
             p.lensProf.useVign = true; 
             p.lensProf.useCA   = true;
+            p.lensProf.distortionAmount = 1.0;
+            p.lensProf.vignetteAmount = 1.0;
             // disable_lens_all(p);
             set_icm_params(p);
             use_fast_demosaic(p);
@@ -3768,6 +3786,9 @@ void RAWENGINE_API rte_lens_options_default(rte_lens_options* options) {
     options->struct_size = (int)sizeof(rte_lens_options);
     options->mode = RTE_LENS_AUTO;
     options->enable_distortion = 1;
+    options->enable_vignette = 1;
+    options->distortion_amount = 100;
+    options->vignette_amount = 100;
 }
 
 #ifdef __cplusplus

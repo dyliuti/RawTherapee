@@ -2311,7 +2311,9 @@ LensProfParams::LensProfParams() :
     lcMode(LcMode::NONE),
     useDist(true),
     useVign(true),
-    useCA(false)
+    useCA(false),
+    distortionAmount(1.0),
+    vignetteAmount(1.0)
 {
 }
 
@@ -2325,7 +2327,9 @@ bool LensProfParams::operator ==(const LensProfParams& other) const
         && lfCameraModel == other.lfCameraModel
         && lfLens == other.lfLens
         && useDist == other.useDist
-        && useVign == other.useVign;
+        && useVign == other.useVign
+        && distortionAmount == other.distortionAmount
+        && vignetteAmount == other.vignetteAmount;
 }
 
 bool LensProfParams::operator !=(const LensProfParams& other) const
@@ -4517,6 +4521,8 @@ int ProcParams::save(const Glib::ustring& fname, const Glib::ustring& fname2, bo
         saveToKeyfile(!pedited || pedited->lensProf.useDist, "LensProfile", "UseDistortion", lensProf.useDist, keyFile);
         saveToKeyfile(!pedited || pedited->lensProf.useVign, "LensProfile", "UseVignette", lensProf.useVign, keyFile);
         saveToKeyfile(!pedited || pedited->lensProf.useCA, "LensProfile", "UseCA", lensProf.useCA, keyFile);
+        saveToKeyfile(!pedited || pedited->lensProf.distortionAmount, "LensProfile", "DistortionAmount", lensProf.distortionAmount, keyFile);
+        saveToKeyfile(!pedited || pedited->lensProf.vignetteAmount, "LensProfile", "VignetteAmount", lensProf.vignetteAmount, keyFile);
         saveToKeyfile(!pedited || pedited->lensProf.lfCameraMake, "LensProfile", "LFCameraMake", lensProf.lfCameraMake, keyFile);
         saveToKeyfile(!pedited || pedited->lensProf.lfCameraModel, "LensProfile", "LFCameraModel", lensProf.lfCameraModel, keyFile);
         saveToKeyfile(!pedited || pedited->lensProf.lfLens, "LensProfile", "LFLens", lensProf.lfLens, keyFile);
@@ -6016,6 +6022,10 @@ int ProcParams::load(const Glib::ustring& fname, ParamsEdited* pedited)
             assignFromKeyfile(keyFile, "LensProfile", "UseDistortion", lensProf.useDist, pedited->lensProf.useDist);
             assignFromKeyfile(keyFile, "LensProfile", "UseVignette", lensProf.useVign, pedited->lensProf.useVign);
             assignFromKeyfile(keyFile, "LensProfile", "UseCA", lensProf.useCA, pedited->lensProf.useCA);
+            assignFromKeyfile(keyFile, "LensProfile", "DistortionAmount", lensProf.distortionAmount, pedited->lensProf.distortionAmount);
+            assignFromKeyfile(keyFile, "LensProfile", "VignetteAmount", lensProf.vignetteAmount, pedited->lensProf.vignetteAmount);
+            lensProf.distortionAmount = std::max(0.0, std::min(2.0, lensProf.distortionAmount));
+            lensProf.vignetteAmount = std::max(0.0, std::min(2.0, lensProf.vignetteAmount));
 
             if (keyFile.has_key("LensProfile", "LFCameraMake")) {
                 lensProf.lfCameraMake = keyFile.get_string("LensProfile", "LFCameraMake");
