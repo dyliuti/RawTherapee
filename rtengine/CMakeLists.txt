@@ -130,6 +130,14 @@ if(LENSFUN_HAS_LOAD_DIRECTORY)
     )
 endif()
 
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "16.0")
+    # GCC 16 exits without diagnostics when optimizing this translation unit at -O3.
+    set_source_files_properties(
+        iplocallab.cc PROPERTIES
+        COMPILE_FLAGS "-O0"
+    )
+endif()
+
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "12.0")
     # procparams.cc takes a long time to compile with optimizations starting
     # with GCC 12.1 due to PTA (see issue #6548)
@@ -306,7 +314,7 @@ set_source_files_properties(raw_engine.cc PROPERTIES
 # Override with -DRAWENGINE_VERSION_MAJOR=1 -DRAWENGINE_VERSION_MINOR=2 -DRAWENGINE_VERSION_PATCH=3
 set(RAWENGINE_VERSION_MAJOR 1 CACHE STRING "RawEngine major version")
 set(RAWENGINE_VERSION_MINOR 1 CACHE STRING "RawEngine minor version")
-set(RAWENGINE_VERSION_PATCH 0 CACHE STRING "RawEngine patch version")
+set(RAWENGINE_VERSION_PATCH 1 CACHE STRING "RawEngine patch version")
 set(RAWENGINE_VERSION "${RAWENGINE_VERSION_MAJOR}.${RAWENGINE_VERSION_MINOR}.${RAWENGINE_VERSION_PATCH}")
 message(STATUS "RawEngine version: ${RAWENGINE_VERSION}")
 
