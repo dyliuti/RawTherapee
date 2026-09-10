@@ -41,6 +41,9 @@ int LibRaw::parse_tiff_ifd(INT64 base)
     for (i = 0; i < 4; i++)
       cc[j][i] = i == j;
 
+  memset(cm,0,sizeof(cm));
+  memset(fm,0,sizeof(fm));
+
   if (libraw_internal_data.unpacker_data.ifd0_offset == -1LL)
     libraw_internal_data.unpacker_data.ifd0_offset = base;
 
@@ -914,7 +917,14 @@ int LibRaw::parse_tiff_ifd(INT64 base)
       }
       break;
     case 0x8606: /* 34310, Leaf metadata */
-      parse_mos(ftell(ifp));
+	{
+      // libraw_internal_data.unpacker_data.CR3_Version is not used in MOS parser
+		short crs = libraw_internal_data.unpacker_data.CR3_Version;
+		libraw_internal_data.unpacker_data.CR3_Version = 64;  // typical value is 7, so 64 is enough
+        parse_mos(ftell(ifp));
+        libraw_internal_data.unpacker_data.CR3_Version = crs;
+	}
+	// fallthrough
     case 0x85ff: // 34303
       strcpy(make, "Leaf");
       break;
@@ -1523,6 +1533,7 @@ int LibRaw::parse_tiff_ifd(INT64 base)
         unsigned MakN_order, m_sorder = order;
         unsigned MakN_length;
         unsigned pos_in_original_raw;
+		memset(mbuf, 0, sizeof(mbuf));
         fread(mbuf, 1, 6, ifp);
 
         if (!strcmp(mbuf, "Adobe"))
@@ -2248,8 +2259,6 @@ void LibRaw::apply_tiff()
       else if ((((INT64(raw_width) * 3LL / 2LL) + 15LL) / 16LL) * 16LL * INT64(raw_height) == tiff_ifd[raw].bytes)
       {
         load_raw = &LibRaw::nikon_load_padded_packed_raw;
-        load_flags = (((INT64(raw_width) * 3ULL / 2ULL) + 15ULL) / 16ULL) *
-                     16ULL; // bytes per row
       }
       else if ((!strncmp(model, "NIKON Z 9", 9) || !strncmp(model, "NIKON Z 8", 9) || !strcmp(model, "NIKON Z f")
 		  || !strcmp(model, "NIKON Z6_3")) &&

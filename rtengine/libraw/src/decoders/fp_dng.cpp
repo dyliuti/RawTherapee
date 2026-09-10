@@ -345,18 +345,36 @@ void LibRaw::deflate_dng_load_raw()
   if (imgdata.idata.filters && ifd->samples > 1)
     throw LIBRAW_EXCEPTION_DECODE_RAW;
 
+  int _bytesps = ifd->bps >> 3;
+  if (_bytesps < 2 || _bytesps > 4)
+    throw LIBRAW_EXCEPTION_DECODE_RAW; // Only 16, 24 and 32 bits are supported
+
   tile_stripe_data_t tiles;
   tiles.init(ifd, imgdata.sizes, libraw_internal_data.unpacker_data, libraw_internal_data.unpacker_data.order,
       libraw_internal_data.internal_data.input);
 
+  if (tiles.tBytes.size() < 1)
+	  throw LIBRAW_EXCEPTION_IO_CORRUPT;
+
+  // Ensure less then 2GB per compressed tile
+  INT64 maxcomprlen = tiles.tBytes[0];
+  for (int i = 1; i < tiles.tBytes.size(); i++)
+	  maxcomprlen = MAX(maxcomprlen, tiles.tBytes[i]);
+
+  if(maxcomprlen >= (1LL << 31) || maxcomprlen < 0)
+	  throw LIBRAW_EXCEPTION_TOOBIG;
+  
+  // Max bytes: 2^16 raw width * 2^2 bytes/pixel * 2^2 channels = 2^20, so check against 2^22
+  INT64 rowbytes = INT64(MAX(tiles.tileWidth, imgdata.sizes.raw_width)) * 4ULL * INT64(ifd->samples);
+  if (rowbytes > (1LL << 22))
+    throw LIBRAW_EXCEPTION_TOOBIG;
+
   if (ifd->sample_format == 3)
   {
-    INT64 raw_bytes = tiles.tileCnt * tiles.tileWidth * tiles.tileHeight * ifd->samples * sizeof(float);
+    INT64 raw_bytes = INT64(tiles.tileCnt) * INT64(tiles.tileWidth) * INT64(tiles.tileHeight) * INT64(ifd->samples) * sizeof(float);
     if (raw_bytes > INT64(imgdata.rawparams.max_raw_memory_mb) * INT64(1024 * 1024))
       throw LIBRAW_EXCEPTION_TOOBIG;
-    float_raw_image = (float *)calloc(tiles.tileCnt * tiles.tileWidth * tiles.tileHeight * ifd->samples, sizeof(float));
-    if (!float_raw_image)
-      throw LIBRAW_EXCEPTION_ALLOC;
+    float_raw_image = (float *)calloc(raw_bytes, 1);
   }
   else
     throw LIBRAW_EXCEPTION_DECODE_RAW; // Only float deflated supported
@@ -376,12 +394,15 @@ void LibRaw::deflate_dng_load_raw()
     break;
   }
 
-  unsigned tilePixels = tiles.tileWidth * tiles.tileHeight;
+  INT64 tilePixels =  INT64(tiles.tileWidth) * INT64(tiles.tileHeight);
   unsigned pixelSize = sizeof(float) * ifd->samples;
-  unsigned tileBytes = tilePixels * pixelSize;
-  unsigned tileRowBytes = tiles.tileWidth * pixelSize;
+  INT64 tileBytes = tilePixels * INT64(pixelSize);
+  INT64 tileRowBytes = INT64(tiles.tileWidth) * INT64(pixelSize);
 
-  if(INT64(tiles.maxBytesInTile) > INT64(imgdata.rawparams.max_raw_memory_mb) * INT64(1024 * 1024) )
+  if(INT64(tiles.maxBytesInTile) > INT64(imgdata.rawparams.max_raw_memory_mb) * 1024LL * 1024LL )
+    throw LIBRAW_EXCEPTION_TOOBIG;
+
+  if (tileBytes + tileRowBytes > INT64(imgdata.rawparams.max_raw_memory_mb) * 1024LL * 1024LL)
     throw LIBRAW_EXCEPTION_TOOBIG;
 
   std::vector<uchar> cBuffer(tiles.maxBytesInTile,0);
@@ -391,8 +412,13 @@ void LibRaw::deflate_dng_load_raw()
     {
       for (size_t x = 0; x < imgdata.sizes.raw_width; x += tiles.tileWidth, ++t)
       {
+		if(t >= tiles.tOffsets.size()) // should not happen but check anyway
+          throw LIBRAW_EXCEPTION_IO_CORRUPT; 
+
         libraw_internal_data.internal_data.input->seek(tiles.tOffsets[t], SEEK_SET);
-        libraw_internal_data.internal_data.input->read(cBuffer.data(), 1, tiles.tBytes[t]);
+        int bytesread = libraw_internal_data.internal_data.input->read(cBuffer.data(), 1, tiles.tBytes[t]);
+		if (bytesread < tiles.tBytes[t])
+			derror();
         unsigned long dstLen = tileBytes;
         int err =
             uncompress(uBuffer.data() + tileRowBytes, &dstLen, cBuffer.data(), (unsigned long)tiles.tBytes[t]);
@@ -496,9 +522,18 @@ void LibRaw::convertFloatToInt(float dmin /* =4096.f */,
   else
     return;
 
-  ushort *raw_alloc = (ushort *)malloc(
-      imgdata.sizes.raw_height * imgdata.sizes.raw_width *
-      libraw_internal_data.unpacker_data.tiff_samples * sizeof(ushort));
+  INT64 pixcnt = INT64(imgdata.sizes.raw_height) * INT64(imgdata.sizes.raw_width)
+	  * INT64(libraw_internal_data.unpacker_data.tiff_samples);
+
+  if (pixcnt * sizeof(ushort) > INT64(imgdata.rawparams.max_raw_memory_mb) * 1024LL * 1024LL)
+    throw LIBRAW_EXCEPTION_TOOBIG;
+
+  ushort *raw_alloc =
+#ifdef LIBRAW_CALLOC_RAWSTORE
+		(ushort *)calloc(pixcnt, sizeof(ushort));
+#else
+		(ushort *)malloc(pixcnt * sizeof(ushort));
+#endif
   float tmax = float(MAX(imgdata.color.maximum, 1));
   float datamax = imgdata.color.fmaximum;
 
@@ -522,9 +557,7 @@ void LibRaw::convertFloatToInt(float dmin /* =4096.f */,
   else
     imgdata.rawdata.color.fnorm = imgdata.color.fnorm = 0.f;
 
-  for (size_t i = 0; i < imgdata.sizes.raw_height * imgdata.sizes.raw_width *
-                             libraw_internal_data.unpacker_data.tiff_samples;
-       ++i)
+  for (size_t i = 0; i < pixcnt; ++i)
   {
     float val = MAX(data[i], 0.f);
     raw_alloc[i] = (ushort)(val * multip);
@@ -618,12 +651,17 @@ void LibRaw::uncompressed_fp_dng_load_raw()
     tiles.init(ifd, imgdata.sizes, libraw_internal_data.unpacker_data, libraw_internal_data.unpacker_data.order,
         libraw_internal_data.internal_data.input);
 
+	// Max bytes: 2^16 raw width * 2^2 bytes/pixel * 2^2 channels = 2^20, so check against 2^22
+	INT64 rowbytes = INT64(MAX(tiles.tileWidth, imgdata.sizes.raw_width)) * INT64(MAX(bytesps,4)) * INT64(ifd->samples);
+	if(rowbytes > (1LL << 22))
+      throw LIBRAW_EXCEPTION_TOOBIG;
+
 	INT64 allocsz = INT64(tiles.tileCnt) * INT64(tiles.tileWidth) * INT64(tiles.tileHeight) * INT64(ifd->samples) * INT64(sizeof(float));
 	if (allocsz > INT64(imgdata.rawparams.max_raw_memory_mb) * INT64(1024 * 1024))
 		throw LIBRAW_EXCEPTION_TOOBIG;
 
     if (ifd->sample_format == 3)
-        float_raw_image = (float *)calloc(tiles.tileCnt * tiles.tileWidth * tiles.tileHeight *ifd->samples, sizeof(float));
+        float_raw_image = (float *)calloc(allocsz,1);
     else
         throw LIBRAW_EXCEPTION_DECODE_RAW; // Only float supported
 
@@ -636,10 +674,13 @@ void LibRaw::uncompressed_fp_dng_load_raw()
     {
         for (unsigned x = 0; x < imgdata.sizes.raw_width  && t < (unsigned)tiles.tileCnt; x += tiles.tileWidth, ++t)
         {
-            libraw_internal_data.internal_data.input->seek(tiles.tOffsets[t], SEEK_SET);
+			if (t >= tiles.tOffsets.size()) // should not happen but check anyway
+				throw LIBRAW_EXCEPTION_IO_CORRUPT;
+			libraw_internal_data.internal_data.input->seek(tiles.tOffsets[t], SEEK_SET);
             size_t rowsInTile = y + tiles.tileHeight > imgdata.sizes.raw_height ? imgdata.sizes.raw_height - y : tiles.tileHeight;
             size_t colsInTile = x + tiles.tileWidth > imgdata.sizes.raw_width ? imgdata.sizes.raw_width - x : tiles.tileWidth;
 
+			// inrowbytes is less then 2^22 (see above) so conversion to int is safe
             size_t inrowbytes = colsInTile * bytesps * ifd->samples;
             int fullrowbytes = tiles.tileWidth *bytesps * ifd->samples;
             size_t outrowbytes = colsInTile * sizeof(float) * ifd->samples;
@@ -649,7 +690,9 @@ void LibRaw::uncompressed_fp_dng_load_raw()
                 unsigned char *dst = fullrowbytes > int(inrowbytes) ? rowbuf.data(): // last tile in row, use buffer
                     (unsigned char *)&float_raw_image
                     [((y + row) * imgdata.sizes.raw_width + x) * ifd->samples];
-                libraw_internal_data.internal_data.input->read(dst, 1, fullrowbytes);
+                int bytesread = libraw_internal_data.internal_data.input->read(dst, 1, fullrowbytes);
+				if (bytesread < fullrowbytes)
+					derror();
                 if (bytesps == 2 && difford)
                     libraw_swab(dst, fullrowbytes);
                 else if (bytesps == 3 && (libraw_internal_data.unpacker_data.order == 0x4949)) // II-16bit

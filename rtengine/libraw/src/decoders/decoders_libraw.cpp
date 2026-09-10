@@ -298,17 +298,23 @@ void LibRaw::fuji_14bit_load_raw()
 void LibRaw::nikon_load_padded_packed_raw() // 12 bit per pixel, padded to 16
                                             // bytes
 {
+	unsigned bytesperrow = (((unsigned(S.raw_width) * 3u / 2u) + 15u) / 16u) * 16u; // bytes per row
+
   // libraw_internal_data.unpacker_data.load_flags -> row byte count
-  if (libraw_internal_data.unpacker_data.load_flags < 2000 ||
-      libraw_internal_data.unpacker_data.load_flags > 64000)
-    return;
+  if (bytesperrow < 2000 || bytesperrow > 64000)
+    throw LIBRAW_EXCEPTION_IO_CORRUPT;
+
   unsigned char *buf =
-      (unsigned char *)calloc(libraw_internal_data.unpacker_data.load_flags,1);
+      (unsigned char *)calloc(bytesperrow,1);
   for (int row = 0; row < S.raw_height; row++)
   {
     checkCancel();
-    libraw_internal_data.internal_data.input->read(
-        buf, libraw_internal_data.unpacker_data.load_flags, 1);
+    int readed = libraw_internal_data.internal_data.input->read(
+        buf, 1, bytesperrow);
+
+	if (readed < (int)bytesperrow)
+		derror();
+
     for (int icol = 0; icol < S.raw_width / 2; icol++)
     {
       imgdata.rawdata.raw_image[(row)*S.raw_width + (icol * 2)] =
@@ -743,13 +749,16 @@ struct iiq_bitstream_t
 	uint64_t curr;
 	uint32_t *input;
 	uint8_t used;
-	iiq_bitstream_t(uint32_t *img_input): curr(0),input(img_input),used(0){}
+	size_t pos, maxpos;
+	iiq_bitstream_t(uint32_t *img_input, size_t inpsz): curr(0),input(img_input),used(0),pos(0),maxpos(inpsz){}
 
 	void fill()
     {
       if (used <= 32)
       {
         uint64_t bitpump_next = *input++;
+		pos++;
+		if (pos > maxpos) throw LIBRAW_EXCEPTION_IO_EOF;
         curr = (curr << 32) | bitpump_next;
         used += 32;
       }
@@ -778,13 +787,13 @@ struct iiq_bitstream_t
 
 };
 
-void decode_S_type(int32_t out_width, uint32_t *img_input, ushort *outbuf /*, int bit_depth*/)
+void decode_S_type(int32_t out_width, uint32_t *img_input, ushort *outbuf, size_t datalen /*, int bit_depth*/)
 {
 #if 0
 	if (((bit_depth - 12) & 0xFFFFFFFD) != 0)
 		return 0;
 #endif
-	iiq_bitstream_t stream(img_input);
+	iiq_bitstream_t stream(img_input,datalen);
 
 	const int pix_corr_shift = 2; // 16 - bit_depth;
 	unsigned int bit_check[2] = { 0, 0 };
@@ -901,7 +910,7 @@ void LibRaw::phase_one_load_raw_s()
 	stripes[imgdata.sizes.raw_height].offset = libraw_internal_data.unpacker_data.data_offset + INT64(libraw_internal_data.unpacker_data.data_size);
 	std::sort(stripes.begin(), stripes.end());
 	INT64 maxsz = imgdata.sizes.raw_width * 3 + 2; // theor max: 17 bytes per 8 pix + row header
-	std::vector<uint8_t> datavec(maxsz);
+	std::vector<uint8_t> datavec(maxsz+4);
 
 	for (unsigned row = 0; row < imgdata.sizes.raw_height; row++)
 	{
@@ -915,7 +924,7 @@ void LibRaw::phase_one_load_raw_s()
 		if(libraw_internal_data.internal_data.input->read(datavec.data(), 1, readsz) != readsz)
 			derror(); // TODO: check read state
 
-		decode_S_type(imgdata.sizes.raw_width, (uint32_t *)datavec.data(), datap /*, 14 */);
+		decode_S_type(imgdata.sizes.raw_width, (uint32_t *)datavec.data(), datap, readsz /*, 14 */);
 	}
 }
 

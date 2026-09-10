@@ -41,9 +41,12 @@
 #ifdef _OPENMP
 #include <omp.h>
 #endif
+<<<<<<< HEAD
 #ifndef RAWENGINE_ONLY
 #include "rtgui/widgets/basic/thresholdselector.h"
 #endif
+=======
+>>>>>>> origin/dev
 #include "imagesource.h"
 #include "simde_helper.h"
 

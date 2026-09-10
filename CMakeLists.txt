@@ -21,7 +21,7 @@ endif()
 
 project(RawTherapee)
 
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -29,11 +29,15 @@ include(cmake/StandardProjectSettings.cmake)
 rt_force_out_of_source_builds()
 rt_basic_build_settings()
 
-if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION
-                                            VERSION_LESS "4.9")
-    message(
-        FATAL_ERROR
-            "Building RawTherapee requires using GCC version 4.9 or higher!")
+if(CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang"
+        AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS "10")
+    message(FATAL_ERROR "Building RawTherapee requires using AppleClang 10 or higher!")
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang"
+        AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS "8")
+    message(FATAL_ERROR "Building RawTherapee requires using Clang 8 or higher!")
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
+        AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS "8.1")
+    message(FATAL_ERROR "Building RawTherapee requires using GCC version 8.1 or higher!")
 endif()
 
 # Warning for GCC vectorization issues, which causes problems #5749 and #6384:
@@ -197,6 +201,7 @@ option(WITH_MYFILE_MMAP "Build using memory mapped file" ON)
 option(WITH_LTO "Build with link-time optimizations" OFF)
 option(WITH_SAN "Build with run-time sanitizer" OFF)
 option(WITH_PROF "Build with profiling instrumentation" OFF)
+option(WITH_SYSTEM_FMT "Build using system FMT library." OFF)
 option(WITH_SYSTEM_KLT "Build using system KLT library." OFF)
 option(WITH_SYSTEM_LIBRAW "Build using system LibRaw library." OFF)
 option(OPTION_OMP "Build with OpenMP support" ON)

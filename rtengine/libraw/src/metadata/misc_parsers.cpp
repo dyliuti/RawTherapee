@@ -166,6 +166,8 @@ void LibRaw::parse_qt(INT64 end)
   unsigned size;
   INT64 save;
   char tag[4];
+  if (libraw_internal_data.unpacker_data.CR3_Version-- < 1)
+	  throw LIBRAW_EXCEPTION_IO_CORRUPT;
 
   order = 0x4d4d;
   while (ftell(ifp) + 7 < end)
@@ -277,7 +279,7 @@ void LibRaw::parse_rollei()
   memset(&t, 0, sizeof t);
   do
   {
-    line[0] = 0;
+	memset(line, 0, sizeof(line));
     if (!fgets(line, 128, ifp))
       break;
     line[127] = 0;
@@ -353,6 +355,7 @@ void LibRaw::parse_sinar_ia()
   {
     off = get4();
     get4();
+	memset(str, 0, sizeof(str));
     fread(str, 8, 1, ifp);
     str[7] = 0; // Ensure end of string
     if (!strcmp(str, "META"))

@@ -61,6 +61,9 @@ int LibRaw::raw2image(void)
 
   CHECK_ORDER_LOW(LIBRAW_PROGRESS_LOAD_RAW);
 
+  if (!imgdata.rawdata.raw_image && !imgdata.rawdata.color3_image && !imgdata.rawdata.color4_image)
+	  return LIBRAW_OUT_OF_ORDER_CALL;
+
   try
   {
     raw2image_start();
@@ -86,17 +89,16 @@ int LibRaw::raw2image(void)
     }
 
     // free and re-allocate image bitmap
-	int extra = P1.filters ? (P1.filters == 9 ? 6 : 2) : 0;
+	INT64 extra = P1.filters ? (P1.filters == 9 ? 6LL : 2LL) : 0LL;
+	INT64 allocate_sz = (INT64(S.iheight) + extra) * (INT64(S.iwidth) + extra);
     if (imgdata.image)
     {
-      imgdata.image = (ushort(*)[4])realloc(
-          imgdata.image, (S.iheight+extra) * (S.iwidth+extra) * sizeof(*imgdata.image));
-      memset(imgdata.image, 0, (S.iheight+extra) * (S.iwidth+extra) * sizeof(*imgdata.image));
+      imgdata.image = (ushort(*)[4])realloc(imgdata.image, allocate_sz * sizeof(*imgdata.image));
+      memset(imgdata.image, 0, allocate_sz * sizeof(*imgdata.image));
     }
     else
       imgdata.image =
-          (ushort(*)[4])calloc((S.iheight+extra) * (S.iwidth+extra), sizeof(*imgdata.image));
-
+          (ushort(*)[4])calloc(allocate_sz, sizeof(*imgdata.image));
 
     libraw_decoder_info_t decoder_info;
     get_decoder_info(&decoder_info);
@@ -313,6 +315,8 @@ int LibRaw::raw2image_ex(int do_subtract_black)
 {
 
   CHECK_ORDER_LOW(LIBRAW_PROGRESS_LOAD_RAW);
+  if (!imgdata.rawdata.raw_image && !imgdata.rawdata.color3_image && !imgdata.rawdata.color4_image)
+    return LIBRAW_OUT_OF_ORDER_CALL;
 
   try
   {
@@ -406,7 +410,7 @@ int LibRaw::raw2image_ex(int do_subtract_black)
       alloc_height = (t_alloc_height + IO.shrink) >> IO.shrink;
       alloc_width = (t_alloc_width + IO.shrink) >> IO.shrink;
     }
-    int alloc_sz = alloc_width * alloc_height;
+    INT64 alloc_sz = INT64(alloc_width) * INT64(alloc_height);
 
     if (imgdata.image)
     {

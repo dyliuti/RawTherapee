@@ -332,6 +332,8 @@ void LibRaw::setSonyBodyFeatures(unsigned long long id) {
        LIBRAW_SONY_Tag2010None, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff},
       {SonyID_ILCE_1, sbfILCE_FF,
        LIBRAW_SONY_Tag2010None, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff},
+      {SonyID_ILCE_1M2, sbfILCE_FF,
+       LIBRAW_SONY_Tag2010None, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff},
       {SonyID_ILME_FX3, sbfILCE_FF,
        LIBRAW_SONY_Tag2010None, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff},
       {SonyID_ILME_FX2, sbfILCE_FF,
@@ -446,6 +448,7 @@ void LibRaw::setSonyBodyFeatures(unsigned long long id) {
     }
     break;
   case SonyID_ILME_FX2:
+  case SonyID_ILCE_1M2:
   case SonyID_ZV_E1:
   case SonyID_ILCE_6700:
   case SonyID_ILCE_7CR:
@@ -2335,6 +2338,9 @@ void LibRaw::parseSonySRF(unsigned len)
       offset += srf_buf[int(offset)] << 2;
 
 	  int ioffset = int(offset);
+	  
+	  if (ioffset + 3 >= len)
+        goto restore_after_parseSonySRF;
       /* master key is stored in big endian */
       MasterKey = ((unsigned)srf_buf[ioffset] << 24) |
           ((unsigned)srf_buf[ioffset + 1] << 16) |
