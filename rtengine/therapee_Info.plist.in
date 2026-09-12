@@ -5,17 +5,17 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleDisplayName</key>
-    <string>RawEngine</string>
+    <string>therapee</string>
     <key>CFBundleExecutable</key>
     <string>therapee</string>
     <key>CFBundleGetInfoString</key>
-    <string>RawEngine @RAWENGINE_VERSION@</string>
+    <string>therapee @RAWENGINE_VERSION@</string>
     <key>CFBundleIdentifier</key>
     <string>com.rawengine.therapee</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>RawEngine</string>
+    <string>therapee</string>
     <key>CFBundlePackageType</key>
     <string>DYLB</string>
     <key>CFBundleShortVersionString</key>

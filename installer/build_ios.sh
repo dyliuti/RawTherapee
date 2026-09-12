@@ -78,7 +78,11 @@ build_slice() {
     local build_dir="$BUILD_ROOT/$slice"
     local deps_prefix="$IOS_DEPS_ROOT/$slice"
     local sdk_path
-    local archive="$build_dir/rtengine/libRawEngine.a"
+    # cmake 侧的 rawengine 静态库目标名是 RawEngine（rtengine/CMakeLists.txt
+    # OUTPUT_NAME），合并后的产物直接落成 libtherapee.a，与 PhotoEditor 侧
+    # rawtherapee.cmake 期望的文件名一致，不再需要事后手动改名。
+    local built_archive="$build_dir/rtengine/libRawEngine.a"
+    local archive="$build_dir/rtengine/libtherapee.a"
     sdk_path="$(xcrun --sdk "$sdk" --show-sdk-path)"
 
     echo "[cmake] Building $slice ($sdk/$arch)"
@@ -108,8 +112,8 @@ build_slice() {
 
     local engine_archive="$build_dir/rtengine/librtengine.a"
     local libraw_archive="$build_dir/rtengine/libraw/lib/.libs/libraw_r.a"
-    if [[ ! -f "$archive" || ! -f "$engine_archive" ]]; then
-        echo "[ERROR] Static library not found: $archive"
+    if [[ ! -f "$built_archive" || ! -f "$engine_archive" ]]; then
+        echo "[ERROR] Static library not found: $built_archive"
         exit 1
     fi
     if [[ ! -f "$libraw_archive" ]]; then
@@ -131,19 +135,17 @@ build_slice() {
         [[ "$(basename "$dependency_lib")" == "libturbojpeg.a" ]] && continue
         dependency_libs+=("$dependency_lib")
     done
-    local merged_archive="$build_dir/rtengine/libRawEngine.merged.a"
-    libtool -static -o "$merged_archive" \
-        "$archive" "$engine_archive" "$libraw_archive" "${dependency_libs[@]}"
-    mv "$merged_archive" "$archive"
+    libtool -static -o "$archive" \
+        "$built_archive" "$engine_archive" "$libraw_archive" "${dependency_libs[@]}"
     printf '%s\n' "$archive"
 }
 
 build_slice iphoneos arm64 ios-arm64
-DEVICE_LIB="$BUILD_ROOT/ios-arm64/rtengine/libRawEngine.a"
+DEVICE_LIB="$BUILD_ROOT/ios-arm64/rtengine/libtherapee.a"
 
 if [[ "$DEVICE_ONLY" -eq 0 ]]; then
     build_slice iphonesimulator arm64 ios-arm64-simulator
-    SIMULATOR_LIB="$BUILD_ROOT/ios-arm64-simulator/rtengine/libRawEngine.a"
+    SIMULATOR_LIB="$BUILD_ROOT/ios-arm64-simulator/rtengine/libtherapee.a"
 fi
 
 rm -rf "$XCFRAMEWORK_DIR"
