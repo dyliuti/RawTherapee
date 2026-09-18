@@ -16,6 +16,7 @@
  *  along with RawTherapee.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include <glib.h>
 #include <glibmm/convert.h>
 #include <glibmm/miscutils.h>
 
@@ -56,6 +57,14 @@ Glib::ustring getExtension (const Glib::ustring& filename)
 Glib::ustring fname_to_utf8(const std::string &fname)
 {
 #ifdef _WIN32
+
+    // PhotoEditor 侧统一以 UTF-8 传入路径（QString::toUtf8()），g_fopen 在 Windows 上也期望 UTF-8。
+    // 旧实现无条件 locale_to_utf8，会把已经是 UTF-8 的非 ASCII 路径当成本地(GBK)编码再转一次，
+    // 结果中文/非 ASCII 路径的 RAW 打不开（换成纯英文路径才正常）。
+    // 因此：入参本身就是合法 UTF-8 时直接透传；仅在确实不是 UTF-8（老式本地编码）时才回退旧逻辑。
+    if (fname.empty() || g_utf8_validate(fname.c_str(), -1, nullptr)) {
+        return Glib::ustring(fname);
+    }
 
     try {
         return Glib::locale_to_utf8(fname);
