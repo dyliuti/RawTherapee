@@ -1622,6 +1622,42 @@ void set_tone_curve_params(rtengine::procparams::ProcParams& p)
 // 构建规则（严格保持你现有分支行为）
 void build_rules() {
     std::vector<ModelRule>().swap(_model_rules);
+    // 规则 0：Hasselblad（.3FR/.FFF）
+    // 无专用规则时会走 apply_default_rule 的直方图匹配(histmatching)，而哈苏 RAW 的
+    // 内嵌缩略图本身偏暗，匹配后整图偏暗、与预期不符。这里改用「自动曝光 + 标准
+    // FILMLIKE 色调曲线」的处理档（不做直方图匹配），由相机白平衡/白电平正常出图。
+    _model_rules.emplace_back(
+        [](const DecodeCtx& c) {
+            return to_lowercase(c.make).find("hasselblad") != std::string::npos
+                || c.extLower == "3fr" || c.extLower == "fff";
+        },
+        [](const DecodeCtx& c, rtengine::procparams::ProcParams& p) {
+            (void)c;
+            disable_lens_all(p);
+            // 哈苏 3FR/FFF 影调修复：
+            // 之前用 autoexp(自动曝光) 会把这类有意压暗的低调片强行提亮到中性亮度，
+            // 影调与原图(相机内嵌渲染)差别很大。正确做法是「直方图匹配相机内嵌预览的影调
+            // (保留低调/moody) + 相机色彩配置(修色差)」，经 rawengine-cli 对比相机渲染确认最贴近。
+            p.icm.inputProfile = "(cameraICC)";        // 相机色彩(DCP/矩阵)，修正色差
+            p.icm.toneCurve = true;
+            p.icm.applyHueSatMap = true;
+            p.icm.applyLookTable = false;
+            p.icm.applyBaselineExposureOffset = true;
+            p.icm.workingProfile = "ProPhoto";
+            p.icm.outputProfile  = "sRGB";
+            p.raw.bayersensor.method = RAWParams::BayerSensor::getMethodString(
+                        RAWParams::BayerSensor::Method::AMAZE);
+            p.raw.bayersensor.ccSteps = 0;
+            p.toneCurve.histmatching = true;           // 关键：匹配相机影调，而非 autoexp
+            p.toneCurve.fromHistMatching = false;
+            p.toneCurve.autoexp = false;
+            p.toneCurve.hrenabled = true;
+            p.toneCurve.clampOOG = true;
+            p.toneCurve.curveMode = ToneCurveMode::FILMLIKE;
+            use_fast_demosaic(p);
+            set_dirpyr_denoise(p);
+        },
+        100);
     // 规则 1：EOS R6m2
     _model_rules.emplace_back(
         [](const DecodeCtx& c){ return ieq(c.model, "EOS R6m2"); },
@@ -3609,6 +3645,24 @@ static int rawengine_decode_impl(const char* filename, rte_scale_mode scale,
 
         // 用户传入镜头参数时，覆盖规则系统设置的镜头校正
         apply_lens_override(lens_params, currentParams);
+    }
+
+    // 方向对齐（跟随标准 EXIF）：个别相机(如部分 Canon CR2)的 raw 内部方向(dcraw flip)
+    // 与标准 EXIF orientation 不一致，会让 RawTherapee 相对 EXIF 多转 90°。这里把最终方向
+    // 纠正到标准 EXIF：coarse.rotate += (exifDeg - rawAutoDeg) mod 360。二者一致的文件修正量
+    // 为 0、不受影响；仅方向不一致的异常文件被拉回到 EXIF。
+    if (isRaw && ii && ii->getImageSource()) {
+        auto exifDegOf = [](int o) -> int {
+            switch (o) { case 6: return 90; case 3: return 180; case 8: return 270; default: return 0; }
+        };
+        const int rawAuto = ((ii->getImageSource()->getRotateDegree() % 360) + 360) % 360;
+        const int exifDeg = exifDegOf(read_exif_orientation(inputFile));
+        const int correction = ((exifDeg - rawAuto) % 360 + 360) % 360;
+        if (correction != 0) {
+            std::fprintf(stderr, "[ORIENT] align to EXIF: rawAuto=%d exifDeg=%d correction=%d file=%s\n",
+                         rawAuto, exifDeg, correction, perf_file.c_str());
+            currentParams.coarse.rotate = (currentParams.coarse.rotate + correction) % 360;
+        }
     }
 
     // demosaic 算法覆盖：便于对比不同算法的解码耗时与画质

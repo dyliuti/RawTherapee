@@ -1418,15 +1418,30 @@ float** RawImage::compress_image(unsigned int frameNum, bool freeImage)
 
         const auto image_width = get_maker() == "Sigma" ? raw_width : iwidth; // Foveon: Image has all raw data.
 
+        // 防越界保护：某些 Canon sRAW/mRAW 的 top_margin/left_margin/iwidth 与 image
+        // 缓冲区(按 iheight*iwidth 分配)不匹配，原始 3 通道拷贝会越界读 image[] 触发
+        // compress_image 崩溃(EXC_BAD_ACCESS)。这里对非 Sigma(Foveon 用 raw_width 布局，
+        // 不在此保护范围)按 image 实际像素数做上界，越界处填 0，避免整进程崩溃。
+        const bool is_sigma_layout = (get_maker() == "Sigma");
+        const size_t image_pixels = static_cast<size_t>(iheight) * static_cast<size_t>(iwidth);
+
 #ifdef _OPENMP
         #pragma omp parallel for
 #endif
 
         for (int row = 0; row < height; row++)
             for (int col = 0; col < width; col++) {
-                this->data[row][3 * col + 0] = image[(row + top_margin) * image_width + col + left_margin][0];
-                this->data[row][3 * col + 1] = image[(row + top_margin) * image_width + col + left_margin][1];
-                this->data[row][3 * col + 2] = image[(row + top_margin) * image_width + col + left_margin][2];
+                const size_t idx = static_cast<size_t>(row + top_margin) * static_cast<size_t>(image_width)
+                                   + static_cast<size_t>(col + left_margin);
+                if (is_sigma_layout || idx < image_pixels) {
+                    this->data[row][3 * col + 0] = image[idx][0];
+                    this->data[row][3 * col + 1] = image[idx][1];
+                    this->data[row][3 * col + 2] = image[idx][2];
+                } else {
+                    this->data[row][3 * col + 0] = 0.f;
+                    this->data[row][3 * col + 1] = 0.f;
+                    this->data[row][3 * col + 2] = 0.f;
+                }
             }
     }
 
