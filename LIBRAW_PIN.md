@@ -28,6 +28,15 @@ upstream LibRaw（含 master 与任何正式版）**从不包含**这些，是 R
   不套用 → 哈苏 RAW 会缺少平场校正（暗角/亮度不均不被修正）。
   当前 pin `116924e5` 上已用 `patch -p1` 干净套用、编译通过、ILCE-7M5 解码验证正常。
 - 说明：RT 当年在 0.22.2 上私加的相机（ILCE-1M2/A1 II、X2D II 100C、DMC-TZ82 等）在此 master 快照里**已自带**，无需回搬。
+- `rtengine/libraw/configure.ac` 的 autotools 兼容改动（整体替换 LibRaw 时会被冲掉，需重新套用）——
+  在 MSYS2 的 `autoconf 2.73` + pkgconf `pkg.m4` 下，上游 configure.ac 会构建失败，已就地改：
+  - OpenMP 段：用核心宏 `AC_OPENMP` 取代 autoconf-archive 的 `AX_OPENMP`
+    （`AX_OPENMP` 2024.10 用 `m4_default([$1],…)` 包裹 action，把里面的 `AC_SUBST`/`AC_MSG_WARN`
+    再引用一层 → "overquoted macro" → autoreconf 失败）。
+  - zlib / lcms 段：`PKG_CHECK_MODULES` 的 action 参数只传纯 shell 变量（`have_xxx=yes/no`），
+    把 `AC_SUBST`/`AC_MSG_WARN` 移到宏外的 `if` 里（本机 pkg.m4 不 rescan action 参数里的宏，
+    会把它们原样漏进 `configure`）。
+  - 这些是构建期兼容修，不改 LibRaw 解码行为，跨平台安全（mac 亦可）。
 
 ## 各平台重建备注（踩过的坑）
 - **mac arm64**：`build_arm`（`/opt/homebrew`，Ninja）→ `therapee.dylib`；拷进 `mac/arm64/`，把 `/opt/homebrew/*` 依赖 `install_name_tool -change` 回 `@rpath/<name>` 再 adhoc 重签。
@@ -36,7 +45,19 @@ upstream LibRaw（含 master 与任何正式版）**从不包含**这些，是 R
   产物拷进 `mac/intel/`，同样把 `/usr/local/*`+`/opt/homebrew/*` 依赖改 `@rpath` 再重签。
 - **iOS (ios-arm64 device)**：`installer/build_ios.sh --device-only`（依赖 `installer/output_ios_deps/`，由 `build_ios_deps.sh` 预先交叉编译）。产物 `libtherapee.a` 直接覆盖
   `mac/ios/RawEngine.xcframework/ios-arm64/libtherapee.a`（静态库，无需 @rpath/签名）。
-- **Windows**：需在 Windows 工具链下重建 `therapee.lib`（本机无法交叉构建）。
+- **Windows**：需在 Windows 工具链下重建 `therapee.dll` / `therapee.lib`（本机无法交叉构建）。
+  - 用 MSYS2 **ucrt64**（本机在 `C:\pack\app\code\msys2`）。入口 `installer/build.bat` → `installer/build.sh`。
+  - **必须让 build 走 vendored（pinned+patch）LibRaw，而不是系统 libraw**：`build.sh` 会在
+    `pkg-config --exists 'libraw_r>=0.21'` 命中系统包时自动 `WITH_SYSTEM_LIBRAW=ON`；MSYS2 装了
+    `mingw-w64-ucrt-x86_64-libraw`（0.22.1，`libraw_r-25.dll`，不含 A7 V / 哈苏补丁）就会误用。
+    已给 `build.sh` 加环境变量开关，构建时显式：`WITH_SYSTEM_LIBRAW=OFF`。
+  - `WITH_SYSTEM_LIBRAW=OFF` 时 `cmake/Dependencies.cmake` 把 vendored `libraw_r.a` **静态**链进
+    `therapee.dll`（约 12.1MB），**不再依赖也不再随附 `libraw_r-*.dll`**。
+  - 还需：`export MSYSTEM=UCRT64`（`LibRaw.cmake` 用 `sh -l -c "./configure"`，登录 shell 会按
+    MSYSTEM 重置 PATH，不设则丢掉 `/ucrt64/bin`，gcc 找不到 as/ld → "C compiler cannot create executables"）。
+  - 依赖：`pacman -S autoconf-archive`（LibRaw `configure.ac` 的 `AX_OPENMP` 需要；否则 autoreconf 失败）。
+  - 产物在 `installer/output/{bin,lib}`；替换到 `PhotoEditor/src/3rdparty/extra/rawtherapee/windows/{bin,lib}`
+    时只覆盖 `*.dll` + `therapee.lib`，并删掉旧的 `libraw_r-25.dll`（静态化后不再需要）。
 
 ## 下游同步（重要）
 - PhotoEditor 通过 `src/3rdparty/extra/rawtherapee/{mac/arm64,mac/intel,mac/ios,windows}` 里的

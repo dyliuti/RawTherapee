@@ -31,13 +31,14 @@ AC_ARG_ENABLE([openmp],
 	esac],[openmp=true])
 
 if test x$openmp = xtrue ; then
-	AX_OPENMP([
-		CXXFLAGS="$CXXFLAGS $OPENMP_CFLAGS"
-		CFLAGS="$CFLAGS $OPENMP_CFLAGS"
-		AC_SUBST([PC_OPENMP],[" $OPENMP_CFLAGS"])		
-	],[
-		AC_MSG_WARN([OpenMP support cannot be enabled because your system doesn't support it.])		
-	])
+	# 用 autoconf 内置的 AC_OPENMP（核心宏）替代 autoconf-archive 的 AX_OPENMP。
+	# autoconf-archive 2024.10 的 AX_OPENMP 在本机 autoconf 下会破坏 m4 引用层级，
+	# 导致其后的 AC_SUBST/AC_MSG_WARN 报 "overquoted macro" 而 autoreconf 失败。
+	# AC_OPENMP 会探测并 AC_SUBST OPENMP_CFLAGS（-fopenmp 等）。
+	AC_OPENMP
+	CXXFLAGS="$CXXFLAGS $OPENMP_CFLAGS"
+	CFLAGS="$CFLAGS $OPENMP_CFLAGS"
+	AC_SUBST([PC_OPENMP],[" $OPENMP_CFLAGS"])
 fi
 
 # check for libjpeg v8
@@ -72,13 +73,16 @@ AC_ARG_ENABLE([zlib],
 	esac],[zlib=true])
 
 if test x$zlib = xtrue; then
-	PKG_CHECK_MODULES([ZLIB],[zlib],[
+	# 只给 PKG_CHECK_MODULES 传纯 shell 结果变量，把 AC_SUBST/AC_MSG_WARN 移到宏外：
+	# 本机 pkgconf 的 pkg.m4 + autoconf 会让 action 参数里的宏漏进 configure（overquoted）。
+	PKG_CHECK_MODULES([ZLIB],[zlib],[have_zlib=yes],[have_zlib=no])
+	if test x$have_zlib = xyes; then
 		CPPFLAGS="$CPPFLAGS $ZLIB_CFLAGS -DUSE_ZLIB"
 		LIBS="$LIBS $ZLIB_LIBS"
 		AC_SUBST([PACKAGE_REQUIRES],[zlib])
-	],
+	else
 		AC_MSG_WARN([zlib support cannot be enabled])
-	)
+	fi
 fi
 
 # check if we want LCMS support
@@ -91,19 +95,22 @@ AC_ARG_ENABLE([lcms],
 	esac],[lcms=true])
 
 if test x$lcms = xtrue; then
-	PKG_CHECK_MODULES([LCMS2],[lcms2],[
+	# 同上：PKG_CHECK_MODULES 的 action 只传 shell 变量，宏调用移到宏外。
+	PKG_CHECK_MODULES([LCMS2],[lcms2],[have_lcms2=yes],[have_lcms2=no])
+	if test x$have_lcms2 = xyes; then
 		CPPFLAGS="$CPPFLAGS $LCMS2_CFLAGS -DUSE_LCMS2"
 		LIBS="$LIBS $LCMS2_LIBS"
-	        AC_SUBST([PACKAGE_REQUIRES],[lcms2])
-	],[
-	PKG_CHECK_MODULES([LCMS],[lcms],[
-		CPPFLAGS="$CPPFLAGS $LCMS_CFLAGS -DUSE_LCMS"
-		LIBS="$LIBS $LCMS_LIBS"
-	        AC_SUBST([PACKAGE_REQUIRES],[lcms])
-	],[
-		AC_MSG_WARN([LCMS support cannot be enabled])
-	])
-	])
+		AC_SUBST([PACKAGE_REQUIRES],[lcms2])
+	else
+		PKG_CHECK_MODULES([LCMS],[lcms],[have_lcms=yes],[have_lcms=no])
+		if test x$have_lcms = xyes; then
+			CPPFLAGS="$CPPFLAGS $LCMS_CFLAGS -DUSE_LCMS"
+			LIBS="$LIBS $LCMS_LIBS"
+			AC_SUBST([PACKAGE_REQUIRES],[lcms])
+		else
+			AC_MSG_WARN([LCMS support cannot be enabled])
+		fi
+	fi
 fi
 
 # check if we want build examples

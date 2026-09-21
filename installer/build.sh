@@ -113,7 +113,11 @@ if [[ $SKIP_BUILD -eq 0 ]]; then
         -G Ninja
         -DCMAKE_BUILD_TYPE=Release
     )
-    if pkg-config --exists 'libraw_r >= 0.21'; then
+    # 允许通过环境变量强制指定 LibRaw 来源：打包 pinned+RT patch 的 vendored LibRaw
+    # 时须置 OFF，否则会误用 MSYS2/homebrew 系统 libraw_r（不含 A7 V / 哈苏补丁）。
+    if [[ -n "${WITH_SYSTEM_LIBRAW:-}" ]]; then
+        CMAKE_ARGS+=(-DWITH_SYSTEM_LIBRAW=${WITH_SYSTEM_LIBRAW})
+    elif pkg-config --exists 'libraw_r >= 0.21'; then
         CMAKE_ARGS+=(-DWITH_SYSTEM_LIBRAW=ON)
     else
         CMAKE_ARGS+=(-DWITH_SYSTEM_LIBRAW=OFF)
