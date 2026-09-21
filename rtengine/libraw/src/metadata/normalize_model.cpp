@@ -107,6 +107,7 @@ void LibRaw::GetNormalizedModel()
       { CanonID_EOS_R7,            "EOS R7"},
       { CanonID_EOS_R10,           "EOS R10"},
       { CanonID_EOS_M50_Mark_II,   "EOS M50 Mark II"}, // M50m2, Kiss M2
+      { CanonID_EOS_R50_V,         "EOS R50 V"},
       { CanonID_EOS_R50,           "EOS R50"},
       { CanonID_EOS_R6m2,          "EOS R6 Mark II"},
       { CanonID_EOS_R8,            "EOS R8"},
@@ -399,6 +400,7 @@ void LibRaw::GetNormalizedModel()
       { SonyID_ILX_LR1,        "ILX-LR1"},
       { SonyID_ZV_E10M2,       "ZV-E10M2"},
       { SonyID_ILME_FX2,       "ILME-FX2"},
+      { SonyID_ILCE_7M5,       "ILCE-7M5"},
 };
 
   static const char *orig;

@@ -94,6 +94,7 @@ it under the terms of the one of two licenses as you choose:
 #define CanonID_EOS_R7            (0x80000000ULL + 0x464ULL)
 #define CanonID_EOS_R10           (0x80000000ULL + 0x465ULL)
 #define CanonID_EOS_M50_Mark_II   (0x80000000ULL + 0x468ULL)
+#define CanonID_EOS_R50_V         (0x80000000ULL + 0x516ULL)
 #define CanonID_EOS_R50           (0x80000000ULL + 0x480ULL)
 #define CanonID_EOS_R6m2          (0x80000000ULL + 0x481ULL)
 #define CanonID_EOS_R8            (0x80000000ULL + 0x487ULL)
@@ -344,4 +345,5 @@ it under the terms of the one of two licenses as you choose:
 #define SonyID_ZV_E10M2         0x18fULL
 #define SonyID_ILME_FX2         0x196ULL
 #define SonyID_ILCE_1M2         0x190ULL
+#define SonyID_ILCE_7M5         0x197ULL
 #endif
