@@ -11,7 +11,7 @@ else()
     set(SHELL "sh")
 endif()
 
-if(WIN32)
+if(CMAKE_HOST_WIN32)
     # MSYS2 has a broken setup and apparently requires to run shells as login
     # shell in order to get its emulation layers set up properly so that
     # auto(re)conf works properly
@@ -52,6 +52,24 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     string(APPEND LIBRAW_C_FLAGS " -isysroot ${CMAKE_OSX_SYSROOT} ${IOS_MIN_FLAG}")
     string(APPEND LIBRAW_CXX_FLAGS " -isysroot ${CMAKE_OSX_SYSROOT} ${IOS_MIN_FLAG}")
     set(CONFIGURE_FLAGS "${CONFIGURE_FLAGS} --host=aarch64-apple-darwin --disable-shared --enable-static")
+endif()
+if(ANDROID)
+    # Cross build the bundled LibRaw for Android arm64 via the NDK clang.
+    # Inject the Android target triple and sysroot so autotools' configure
+    # compiles for the device rather than the Windows host, and force a
+    # static archive (libraw_r.a) that is linked into libtherapee.so.
+    string(APPEND LIBRAW_C_FLAGS " --target=aarch64-linux-android${ANDROID_PLATFORM_LEVEL} --sysroot=${CMAKE_SYSROOT} -fPIC")
+    string(APPEND LIBRAW_CXX_FLAGS " --target=aarch64-linux-android${ANDROID_PLATFORM_LEVEL} --sysroot=${CMAKE_SYSROOT} -fPIC")
+    set(CONFIGURE_FLAGS "${CONFIGURE_FLAGS} --host=aarch64-linux-android --disable-shared --enable-static")
+    # pkg-config on this Windows host resolves zlib/lcms2/jpeg to the msys2
+    # mingw64 prefix, which drags in Win32-only headers (_mingw.h) and breaks
+    # the Android compile. LibRaw's use of these is optional, and RawTherapee
+    # links its own arm64 lcms2/zlib, so disable them in the bundled LibRaw.
+    set(CONFIGURE_FLAGS "${CONFIGURE_FLAGS} --disable-lcms --disable-zlib --disable-jpeg --disable-jasper")
+    # libtool's configure needs the binutils; point them at the NDK's llvm
+    # tools (plain `nm`/`ar` are absent in the msys2 shell used here).
+    get_filename_component(_ndk_bin "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    set(CONFIGURE_FLAGS "${CONFIGURE_FLAGS} NM=${_ndk_bin}/llvm-nm AR=${_ndk_bin}/llvm-ar RANLIB=${_ndk_bin}/llvm-ranlib STRIP=${_ndk_bin}/llvm-strip")
 endif()
 set(CONFIGURE_FLAGS "${CONFIGURE_FLAGS} CC=\"${CMAKE_C_COMPILER}\"")
 set(CONFIGURE_FLAGS "${CONFIGURE_FLAGS} CXX=\"${CMAKE_CXX_COMPILER}\"")

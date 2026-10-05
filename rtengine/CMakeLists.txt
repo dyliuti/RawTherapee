@@ -171,6 +171,13 @@ if(NOT WITH_SYSTEM_KLT)
     set(KLT_LIBRARIES)
 endif()
 
+# SVG rendering (svgrender.cc) is only used by the desktop GUI and requires an
+# SVG backend (librsvg/lunasvg). The raw engine never calls it, so drop it from
+# RAWENGINE_ONLY builds to avoid pulling an SVG backend on Android.
+if(RAWENGINE_ONLY)
+    list(REMOVE_ITEM RTENGINESOURCEFILES svgrender.cc)
+endif()
+
 add_library(rtengine STATIC "${RTENGINESOURCEFILES}")
 
 add_dependencies(rtengine UpdateInfo)
@@ -255,18 +262,20 @@ if(OpenMP_CXX_FOUND)
     target_link_libraries(rtengine PUBLIC OpenMP::OpenMP_CXX)
 endif()
 
-if("${SVG_BACKEND}" STREQUAL "librsvg")
-    target_link_libraries(rtengine PUBLIC PkgConfig::RSVG)
-    target_compile_definitions(rtengine PUBLIC "SVG_BACKEND_RSVG")
-elseif("${SVG_BACKEND}" STREQUAL "lunasvg")
-    if(WITH_SYSTEM_LUNASVG)
-        target_link_libraries(rtengine PUBLIC PkgConfig::LUNASVG)
+if(NOT RAWENGINE_ONLY)
+    if("${SVG_BACKEND}" STREQUAL "librsvg")
+        target_link_libraries(rtengine PUBLIC PkgConfig::RSVG)
+        target_compile_definitions(rtengine PUBLIC "SVG_BACKEND_RSVG")
+    elseif("${SVG_BACKEND}" STREQUAL "lunasvg")
+        if(WITH_SYSTEM_LUNASVG)
+            target_link_libraries(rtengine PUBLIC PkgConfig::LUNASVG)
+        else()
+            target_link_libraries(rtengine PUBLIC lunasvg::lunasvg)
+        endif()
+        target_compile_definitions(rtengine PUBLIC "SVG_BACKEND_LUNASVG")
     else()
-        target_link_libraries(rtengine PUBLIC lunasvg::lunasvg)
+        message(FATAL_ERROR "Unknown SVG rendering backend")
     endif()
-    target_compile_definitions(rtengine PUBLIC "SVG_BACKEND_LUNASVG")
-else()
-    message(FATAL_ERROR "Unknown SVG rendering backend")
 endif()
 
 # It may be nice to store library version too
@@ -357,9 +366,15 @@ if(RAWENGINE_STATIC)
         POSITION_INDEPENDENT_CODE ON
     )
 else()
+    # Emit a lib-prefixed shared library on every platform
+    # (libtherapee.so / libtherapee.dll / libtherapee.dylib) so the file name
+    # matches the embedded SONAME / install-name / import-lib name. This is
+    # required on Android (APK only loads lib*.so) and keeps naming consistent
+    # on desktop. IMPORT_PREFIX makes the Windows import lib libtherapee.lib too.
     set_target_properties(rawengine PROPERTIES
         OUTPUT_NAME "therapee"
-        PREFIX ""
+        PREFIX "lib"
+        IMPORT_PREFIX "lib"
         POSITION_INDEPENDENT_CODE ON
     )
 endif()

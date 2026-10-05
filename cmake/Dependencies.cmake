@@ -16,7 +16,7 @@ macro(rt_setup_dependencies)
 
     find_package(JPEG REQUIRED)
     find_package(PNG REQUIRED)
-    if(CMAKE_SYSTEM_NAME STREQUAL "iOS" AND NOT TARGET CMath::CMath)
+    if((CMAKE_SYSTEM_NAME STREQUAL "iOS" OR ANDROID) AND NOT TARGET CMath::CMath)
         add_library(CMath::CMath INTERFACE IMPORTED)
         set_property(
             TARGET CMath::CMath
@@ -61,14 +61,19 @@ macro(rt_setup_dependencies)
     pkg_check_modules(EXIV2 REQUIRED IMPORTED_TARGET exiv2>=0.24)
     pkg_check_modules(EXPAT REQUIRED IMPORTED_TARGET expat>=2.1)
     pkg_check_modules(IPTCDATA REQUIRED IMPORTED_TARGET libiptcdata)
-    if("${SVG_BACKEND}" STREQUAL "librsvg")
-        pkg_check_modules(RSVG REQUIRED IMPORTED_TARGET librsvg-2.0>=2.52)
-    elseif("${SVG_BACKEND}" STREQUAL "lunasvg")
-        if(WITH_SYSTEM_LUNASVG)
-            pkg_check_modules(LUNASVG REQUIRED IMPORTED_TARGET lunasvg>=3.3.0)
+    # SVG rendering is only used by the desktop GUI (rtgui) icons, not by the
+    # raw engine. Skip it entirely for RAWENGINE_ONLY so Android builds don't
+    # need librsvg (Rust/GTK stack) or a FetchContent of lunasvg/plutovg.
+    if(NOT RAWENGINE_ONLY)
+        if("${SVG_BACKEND}" STREQUAL "librsvg")
+            pkg_check_modules(RSVG REQUIRED IMPORTED_TARGET librsvg-2.0>=2.52)
+        elseif("${SVG_BACKEND}" STREQUAL "lunasvg")
+            if(WITH_SYSTEM_LUNASVG)
+                pkg_check_modules(LUNASVG REQUIRED IMPORTED_TARGET lunasvg>=3.3.0)
+            endif()
+        else()
+            message(FATAL_ERROR "Unknown value for SVG_BACKEND")
         endif()
-    else()
-        message(FATAL_ERROR "Unknown value for SVG_BACKEND")
     endif()
 
     pkg_check_modules(LCMS REQUIRED IMPORTED_TARGET lcms2>=2.6)
