@@ -85,6 +85,25 @@ build_slice() {
     local archive="$build_dir/rtengine/libtherapee.a"
     sdk_path="$(xcrun --sdk "$sdk" --show-sdk-path)"
 
+    # OpenMP：iOS 默认无 libomp。若 deps 里提供了 iOS 版 libomp.a + omp.h（由
+    # build_ios_libomp.sh 装入 $deps_prefix），则放开 OpenMP（demosaic 多核加速）；
+    # 否则回退到单线程（OPTION_OMP=OFF），保证脚本不因缺依赖而失败。
+    local omp_args=()
+    if [[ -f "$deps_prefix/lib/libomp.a" && -f "$deps_prefix/include/omp.h" ]]; then
+        echo "[cmake] OpenMP enabled for $slice (libomp.a found)"
+        omp_args=(
+            -DOPTION_OMP=ON
+            "-DOpenMP_C_FLAGS=-Xclang -fopenmp -I$deps_prefix/include"
+            -DOpenMP_C_LIB_NAMES=omp
+            "-DOpenMP_CXX_FLAGS=-Xclang -fopenmp -I$deps_prefix/include"
+            -DOpenMP_CXX_LIB_NAMES=omp
+            "-DOpenMP_omp_LIBRARY=$deps_prefix/lib/libomp.a"
+        )
+    else
+        echo "[cmake] OpenMP disabled for $slice (no libomp.a in $deps_prefix; run build_ios_libomp.sh to enable)"
+        omp_args=(-DOPTION_OMP=OFF)
+    fi
+
     echo "[cmake] Building $slice ($sdk/$arch)"
     PKG_CONFIG_PATH= \
     PKG_CONFIG_LIBDIR="$deps_prefix/lib/pkgconfig:$deps_prefix/share/pkgconfig" \
@@ -104,7 +123,7 @@ build_slice() {
         -DFETCHCONTENT_SOURCE_DIR_FMT="$deps_prefix/share/rawengine/fmt-src" \
         -DRAWENGINE_ONLY=ON \
         -DRAWENGINE_STATIC=ON \
-        -DOPTION_OMP=OFF \
+        "${omp_args[@]}" \
         -DWITH_JXL=OFF \
         -DSVG_BACKEND=lunasvg \
         -DWITH_SYSTEM_LIBRAW=OFF

@@ -28,6 +28,13 @@
 
 #include <locale.h>
 #include <tiffio.h>
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
 #include "rtgui/paramsedited.h"
 
 #ifndef _WIN32
@@ -3338,6 +3345,12 @@ static int rawengine_init_impl(const char* explicit_resource_path) {
     setlocale(LC_NUMERIC, "C");
 
     Gio::init();
+
+#if defined(_OPENMP) && defined(TARGET_OS_IOS) && TARGET_OS_IOS
+    // iOS 放开 OpenMP 后限 4 线程：吃到多核 demosaic 加速，又不占满设备——给内嵌快图线程/UI 留核，
+    // 并控制 demosaic 的瞬时并发。桌面(_OPENMP 但非 iOS)不受影响，仍用全部核心。
+    omp_set_num_threads(4);
+#endif
 
     // In RawTherapee, options and paths are managed by the App singleton.
     // We set the lensfun paths and then call Options::load() which uses App::get().
