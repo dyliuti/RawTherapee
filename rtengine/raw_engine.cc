@@ -3346,9 +3346,10 @@ static int rawengine_init_impl(const char* explicit_resource_path) {
 
     Gio::init();
 
-#if defined(_OPENMP) && defined(TARGET_OS_IOS) && TARGET_OS_IOS
-    // iOS 放开 OpenMP 后限 4 线程：吃到多核 demosaic 加速，又不占满设备——给内嵌快图线程/UI 留核，
-    // 并控制 demosaic 的瞬时并发。桌面(_OPENMP 但非 iOS)不受影响，仍用全部核心。
+#if defined(_OPENMP) && ((defined(TARGET_OS_IOS) && TARGET_OS_IOS) || defined(__ANDROID__))
+    // 移动端(iOS/Android)放开 OpenMP 后限 4 线程：吃到多核 demosaic 加速，又不占满设备——
+    // 给内嵌快图线程/UI 留核，并控制 demosaic 的瞬时并发；移动端还能缓解发热/降频。
+    // 桌面(_OPENMP 但非移动端)不受影响，仍用全部核心。
     omp_set_num_threads(4);
 #endif
 
