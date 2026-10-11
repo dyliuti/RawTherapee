@@ -28,6 +28,13 @@
 
 #include <locale.h>
 #include <tiffio.h>
+#if defined(__ANDROID__)
+#include <android/log.h>
+#endif
+#if defined(_OPENMP)
+#include <omp.h>
+#endif
+
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -3347,9 +3354,9 @@ static int rawengine_init_impl(const char* explicit_resource_path) {
     Gio::init();
 
 #if defined(_OPENMP) && ((defined(TARGET_OS_IOS) && TARGET_OS_IOS) || defined(__ANDROID__))
-    // 移动端(iOS/Android)放开 OpenMP 后限 4 线程：吃到多核 demosaic 加速，又不占满设备——
-    // 给内嵌快图线程/UI 留核，并控制 demosaic 的瞬时并发；移动端还能缓解发热/降频。
-    // 桌面(_OPENMP 但非移动端)不受影响，仍用全部核心。
+    // 移动端(iOS/Android)放开 OpenMP 但限 4 线程。实测把线程提到 6/8 并不加快解码
+    // （load 是 libraw 单线程解包、process 内存带宽受限），反而多占核加剧首屏期间对 GUI/内嵌
+    // 快图线程的争用。限 4：拿到一定多核加速，又给 UI/内嵌预览留核。桌面(非移动端)不受影响。
     omp_set_num_threads(4);
 #endif
 
@@ -3531,6 +3538,23 @@ static int rawengine_init_impl(const char* explicit_resource_path) {
     }
 #endif
 
+    // RAWENGINE_ONLY 构建里 Options::load 不保证调用 rtengine::init，全局 rtengine::settings
+    // 可能为 null，首次全量 RAW 解码在 RawImage::loadRaw 读 settings->verbose 时会空指针崩溃。
+    // 这里显式初始化引擎：装上 settings 并建好 ICC/DCP/相机常数/Profile/LensFun 等 store。
+    // 幂等：已初始化则跳过。
+    if (!rtengine::settings) {
+        // Options::load 会把 lensfun 目录重置为空（options.cc 默认值），这里按资源根恢复，
+        // 保证 init 内部的 LFDatabase::init 加载到正确的 lensfun 库。
+        if (LENSFUN_DB_PATH[0] != '\0') {
+            options.rtSettings.lensfunDbDirectory = LENSFUN_DB_PATH;
+            options.rtSettings.lensfunDbBundleDirectory = LENSFUN_DB_PATH;
+        } else {
+            options.rtSettings.lensfunDbDirectory = Glib::build_filename(argv0, "lensfun");
+            options.rtSettings.lensfunDbBundleDirectory = "";
+        }
+        rtengine::init(&options.rtSettings, argv0, argv0, true);
+    }
+
     build_rules();
     return 0;
 }
@@ -3555,45 +3579,41 @@ int RAWENGINE_API rte_engine_init(const rte_engine_options* options)
 }
 
 
-// 通过环境变量 RAWENGINE_DEMOSAIC 覆盖 Bayer demosaic 算法，用于横向对比解码耗时/画质。
-// 未设置或取值非法时保持规则系统的原有选择。无论是否覆盖，都会把最终生效的算法打进 perf 日志，
-// 便于事后确认某次测试跑的到底是哪个算法。
-static void apply_demosaic_override(rtengine::procparams::ProcParams& p, const std::string& perf_file)
+// 按解码选项 rte_decode_options.demosaic 覆盖 Bayer 去马赛克算法（预览可选快速算法）。
+// DEFAULT 或未知值时保持规则系统的原有选择（通常 AMaZE）。无论是否覆盖，都会把最终生效的算法打进
+// perf 日志，便于事后确认本次用的是哪个算法。仅作用于 Bayer；X-Trans(富士)维持默认。
+static void apply_demosaic_override(rtengine::procparams::ProcParams& p, int demosaic,
+                                    const std::string& perf_file)
 {
     using BayerSensor = rtengine::procparams::RAWParams::BayerSensor;
 
-    const char* env_method = std::getenv("RAWENGINE_DEMOSAIC");
-    if (env_method && env_method[0] != '\0') {
-        std::string m(env_method);
-        std::transform(m.begin(), m.end(), m.begin(),
-                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    static const std::map<int, BayerSensor::Method> quality_map = {
+        {RTE_DEMOSAIC_FAST,          BayerSensor::Method::FAST},
+        {RTE_DEMOSAIC_VNG4,          BayerSensor::Method::VNG4},
+        {RTE_DEMOSAIC_RCD,           BayerSensor::Method::RCD},
+        {RTE_DEMOSAIC_DCB,           BayerSensor::Method::DCB},
+        {RTE_DEMOSAIC_LMMSE,         BayerSensor::Method::LMMSE},
+        {RTE_DEMOSAIC_IGV,           BayerSensor::Method::IGV},
+        {RTE_DEMOSAIC_AHD,           BayerSensor::Method::AHD},
+        {RTE_DEMOSAIC_EAHD,          BayerSensor::Method::EAHD},
+        {RTE_DEMOSAIC_HPHD,          BayerSensor::Method::HPHD},
+        {RTE_DEMOSAIC_AMAZE,         BayerSensor::Method::AMAZE},
+        {RTE_DEMOSAIC_AMAZEVNG4,     BayerSensor::Method::AMAZEVNG4},
+        {RTE_DEMOSAIC_RCDVNG4,       BayerSensor::Method::RCDVNG4},
+        {RTE_DEMOSAIC_DCBVNG4,       BayerSensor::Method::DCBVNG4},
+        {RTE_DEMOSAIC_AMAZEBILINEAR, BayerSensor::Method::AMAZEBILINEAR},
+        {RTE_DEMOSAIC_RCDBILINEAR,   BayerSensor::Method::RCDBILINEAR},
+        {RTE_DEMOSAIC_DCBBILINEAR,   BayerSensor::Method::DCBBILINEAR},
+        {RTE_DEMOSAIC_MONO,          BayerSensor::Method::MONO},
+        {RTE_DEMOSAIC_NONE,          BayerSensor::Method::NONE},
+    };
 
-        static const std::map<std::string, BayerSensor::Method> method_map = {
-            {"amaze",         BayerSensor::Method::AMAZE},
-            {"amazebilinear", BayerSensor::Method::AMAZEBILINEAR},
-            {"amazevng4",     BayerSensor::Method::AMAZEVNG4},
-            {"rcd",           BayerSensor::Method::RCD},
-            {"rcdbilinear",   BayerSensor::Method::RCDBILINEAR},
-            {"rcdvng4",       BayerSensor::Method::RCDVNG4},
-            {"dcb",           BayerSensor::Method::DCB},
-            {"dcbbilinear",   BayerSensor::Method::DCBBILINEAR},
-            {"dcbvng4",       BayerSensor::Method::DCBVNG4},
-            {"lmmse",         BayerSensor::Method::LMMSE},
-            {"igv",           BayerSensor::Method::IGV},
-            {"ahd",           BayerSensor::Method::AHD},
-            {"eahd",          BayerSensor::Method::EAHD},
-            {"hphd",          BayerSensor::Method::HPHD},
-            {"vng4",          BayerSensor::Method::VNG4},
-            {"fast",          BayerSensor::Method::FAST},
-            {"mono",          BayerSensor::Method::MONO},
-            {"none",          BayerSensor::Method::NONE},
-        };
-
-        const auto it = method_map.find(m);
-        if (it != method_map.end()) {
+    if (demosaic != RTE_DEMOSAIC_DEFAULT) {
+        const auto it = quality_map.find(demosaic);
+        if (it != quality_map.end()) {
             p.raw.bayersensor.method = BayerSensor::getMethodString(it->second);
         } else {
-            std::cerr << "RAWENGINE_DEMOSAIC: unknown value '" << m << "', keep default\n";
+            std::cerr << "rte demosaic: unknown quality " << demosaic << ", keep default\n";
         }
     }
 
@@ -3605,7 +3625,7 @@ static void apply_demosaic_override(rtengine::procparams::ProcParams& p, const s
 
 // 解码实现：rte_decode 的内部主体（选项已归一化）
 static int rawengine_decode_impl(const char* filename, rte_scale_mode scale,
-                                 const rte_lens_options* lens_params,
+                                 const rte_lens_options* lens_params, int demosaic, int force_raw,
                                  void** buffer, int* length, int* width, int* height)
 {
 
@@ -3618,6 +3638,9 @@ static int rawengine_decode_impl(const char* filename, rte_scale_mode scale,
 
     const std::string perf_file = inputFile.raw();
     const auto perf_total_start = rawperf::Clock::now();
+    // 解码各阶段耗时（毫秒），用于在 Android logcat 汇总一行，诊断 OMP 是否生效/热点在哪。
+    double dbg_ms_load = 0, dbg_ms_rules = 0, dbg_ms_process = 0, dbg_ms_torgba = 0;
+
 
     rtengine::InitialImage* ii = nullptr;
     rtengine::ProcessingJob* job = nullptr;
@@ -3629,10 +3652,17 @@ static int rawengine_decode_impl(const char* filename, rte_scale_mode scale,
      || ext.lowercase()=="tiff" || ext.lowercase()=="png") {
         isRaw = false;
     }
+    // force_raw：调用方（img_dec 已按内容/EXIF 判定为 RAW）强制按 RAW 解码，忽略上面的扩展名判定。
+    // 修复 ARW 等 TIFF-based RAW 被误命名为 .tiff/.jpg 时 isRaw=false → 按普通图读取而解码失败。
+    if (force_raw) {
+        isRaw = true;
+    }
 
     {
         rawperf::Timer t(perf_file, "load");           // 读文件 + libraw unpack + raw2image
+        const auto _s = rawperf::Clock::now();
         ii = rtengine::InitialImage::load(inputFile, isRaw, &errorCode, nullptr);
+        dbg_ms_load = rawperf::ms_since(_s);
     }
     if (errorCode) return RawEngineErrorLoadFail;
 
@@ -3655,16 +3685,17 @@ static int rawengine_decode_impl(const char* filename, rte_scale_mode scale,
 
     {
         rawperf::Timer t(perf_file, "rules");          // 规则匹配 + 参数装配（含 DCP 查找）
+        const auto _s = rawperf::Clock::now();
         apply_rules(ctx, currentParams);
 
         // 用户传入镜头参数时，覆盖规则系统设置的镜头校正
         apply_lens_override(lens_params, currentParams);
+        dbg_ms_rules = rawperf::ms_since(_s);
     }
 
-    // demosaic 算法覆盖：便于对比不同算法的解码耗时与画质
-    // 用法：设置环境变量 RAWENGINE_DEMOSAIC=rcd / amaze / amazebilinear / dcb / lmmse / fast ...
-    // 注意仅作用于 Bayer 传感器；X-Trans（富士）走 xtranssensor.method，不受影响。
-    apply_demosaic_override(currentParams, perf_file);
+    // demosaic 算法覆盖：由解码选项 rte_decode_options.demosaic 决定（DEFAULT=保持规则默认）。
+    // 预览可按需选快速算法(如 RCD)压 process 耗时；仅作用于 Bayer，X-Trans 走 xtranssensor.method 不受影响。
+    apply_demosaic_override(currentParams, demosaic, perf_file);
 
     // 预览 resize（后续规则可覆盖）
     if (scale != RTE_SCALE_FULL) {
@@ -3689,7 +3720,9 @@ static int rawengine_decode_impl(const char* filename, rte_scale_mode scale,
     rtengine::IImagefloat* resultImage = nullptr;
     {
         rawperf::Timer t(perf_file, "process_image"); // 整个 ImageProcessor 流水线（阶段细分见 simpleprocess.cc）
+        const auto _s = rawperf::Clock::now();
         resultImage = rtengine::processImage(job, errorCode, nullptr);
+        dbg_ms_process = rawperf::ms_since(_s);
     }
     if (!resultImage) {
         errors++; 
@@ -3703,6 +3736,7 @@ static int rawengine_decode_impl(const char* filename, rte_scale_mode scale,
     errorCode = 0;
     {
         rawperf::Timer t(perf_file, "to_rgba");        // float -> 8bit RGBA 拷贝
+        const auto _s_torgba = rawperf::Clock::now();
         const int img_w = resultImage->getWidth();
 
         const int img_h = resultImage->getHeight();
@@ -3735,6 +3769,7 @@ static int rawengine_decode_impl(const char* filename, rte_scale_mode scale,
                 errorCode = -1;
             }
         }
+        dbg_ms_torgba = rawperf::ms_since(_s_torgba);
     }
 
     // 结果兜底：与原逻辑一致
@@ -3771,6 +3806,24 @@ static int rawengine_decode_impl(const char* filename, rte_scale_mode scale,
                            rawperf::ms_since(perf_total_start), extra);
     }
 
+#if defined(__ANDROID__)
+    // 一行汇总打到 logcat（plain.log 可见），诊断 OMP 是否生效与各阶段热点。
+    // omp_max=运行时可用线程数（受 omp_set_num_threads(4) 限制）、omp_procs=设备逻辑核数。
+    {
+        int omp_max = 1, omp_procs = 1;
+#if defined(_OPENMP)
+        omp_max = omp_get_max_threads();
+        omp_procs = omp_get_num_procs();
+#endif
+        __android_log_print(ANDROID_LOG_INFO, "RTE_DECODE_PERF",
+            "decode %dx%d total=%.0fms load=%.0f rules=%.0f process=%.0f to_rgba=%.0f omp_max=%d omp_procs=%d",
+            width ? *width : 0, height ? *height : 0,
+            rawperf::ms_since(perf_total_start),
+            dbg_ms_load, dbg_ms_rules, dbg_ms_process, dbg_ms_torgba,
+            omp_max, omp_procs);
+    }
+#endif
+
     return errors > 0 ? -2 : 0;
 }
 
@@ -3784,12 +3837,18 @@ int RAWENGINE_API rte_decode(const char* filename, const rte_decode_options* opt
     std::memset(out, 0, sizeof(*out));
     if (!filename) return -1;
 
-    // 选项归一化：options 为 NULL 时走 { FULL, 无镜头校正 }
+    // 选项归一化：options 为 NULL 时走 { FULL, 无镜头校正, 默认去马赛克 }
     rte_scale_mode scale = RTE_SCALE_FULL;
     const rte_lens_options* lens = nullptr;
+    int demosaic = RTE_DEMOSAIC_DEFAULT;
+    int force_raw = 0;
     if (options) {
         scale = options->scale;
         lens  = options->lens;
+        // demosaic 字段复用自原 reserved[0]，结构体布局不变；老调用方传 0 即 DEFAULT。
+        demosaic = options->demosaic;
+        // force_raw：内容是 RAW 但扩展名被误写（如 .tiff）时强制按 RAW 解码。老调用方传 0 = 按扩展名。
+        force_raw = options->force_raw;
         // 非法档位回退 FULL，容错调用方传错值
         if (scale != RTE_SCALE_FULL && scale != RTE_SCALE_4K
             && scale != RTE_SCALE_3K && scale != RTE_SCALE_2K) {
@@ -3802,7 +3861,7 @@ int RAWENGINE_API rte_decode(const char* filename, const rte_decode_options* opt
     int width = 0;
     int height = 0;
 
-    const int ret = rawengine_decode_impl(filename, scale, lens,
+    const int ret = rawengine_decode_impl(filename, scale, lens, demosaic, force_raw,
                                           &buffer, &length, &width, &height);
     if (ret == 0 && buffer) {
         out->data   = buffer;

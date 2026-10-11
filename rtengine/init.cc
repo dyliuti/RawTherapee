@@ -37,6 +37,27 @@
 #include "metadata.h"
 #include "procparams.h"
 
+#ifdef __ANDROID__
+#include <android/log.h>
+#define RTE_INIT_SECTION_WARN(sec) \
+    __android_log_print(ANDROID_LOG_WARN, "RTE_INIT", "init section '%s' failed (optional resource skipped)", sec)
+#else
+#define RTE_INIT_SECTION_WARN(sec) ((void)0)
+#endif
+
+// 在 OpenMP 并行区（omp sections）内抛出的 C++ 异常不允许跨越并行区边界，
+// 否则运行时会直接 std::terminate -> abort。init() 里的各 store 初始化
+// （lensfun / icc / dcp / 暗场 / 平场等）在资源目录缺失时可能抛异常，
+// 因此每个 section 内部各自捕获：这些资源均为可选，失败只记日志、不影响
+// 基础 RAW 解码，也避免并行区逃逸异常导致进程崩溃。
+#define RTE_INIT_SECTION(sec, ...)         \
+    do {                                   \
+        try { __VA_ARGS__ }                \
+        catch (...) {                      \
+            RTE_INIT_SECTION_WARN(sec);    \
+        }                                  \
+    } while (0)
+
 namespace rtengine
 {
 
@@ -49,6 +70,11 @@ MyMutex *librawMutex = nullptr;
 int init (const Settings* s, const Glib::ustring& baseDir, const Glib::ustring& userSettingsDir, bool loadAll)
 {
     settings = s;
+#ifdef __ANDROID__
+    // 诊断：引擎实际使用的资源根（iccprofiles/lensfun/camconst 都在它下面查）。
+    // 若这里不是 AppDataLocation/resources/rtresources，说明 RT_RESOURCE_ROOT 没传进来。
+    __android_log_print(ANDROID_LOG_WARN, "RTE_INIT", "engine init baseDir='%s'", baseDir.c_str());
+#endif
     ProcParams::init();
     PerceptualToneCurve::init();
     RawImageSource::init();
@@ -60,7 +86,7 @@ int init (const Settings* s, const Glib::ustring& baseDir, const Glib::ustring& 
 #ifdef _OPENMP
 #pragma omp section
 #endif
-{
+RTE_INIT_SECTION("lensfun", {
     bool ok;
 
     if (s->lensfunDbDirectory.empty() || Glib::path_is_absolute(s->lensfunDbDirectory)) {
@@ -76,43 +102,43 @@ int init (const Settings* s, const Glib::ustring& baseDir, const Glib::ustring& 
             LFDatabase::init(Glib::build_filename(baseDir, s->lensfunDbBundleDirectory));
         }
     }
-}
+});
 #ifdef _OPENMP
 #pragma omp section
 #endif
-{
+RTE_INIT_SECTION("profilestore", {
     ProfileStore::getInstance()->init(loadAll);
-}
+});
 #ifdef _OPENMP
 #pragma omp section
 #endif
-{
+RTE_INIT_SECTION("iccstore", {
     ICCStore::getInstance()->init(s->iccDirectory, Glib::build_filename (baseDir, "iccprofiles"), loadAll);
-}
+});
 #ifdef _OPENMP
 #pragma omp section
 #endif
-{
+RTE_INIT_SECTION("dcpstore", {
     DCPStore::getInstance()->init(Glib::build_filename (baseDir, "dcpprofiles"), loadAll);
-}
+});
 #ifdef _OPENMP
 #pragma omp section
 #endif
-{
+RTE_INIT_SECTION("camconst", {
     CameraConstantsStore::getInstance()->init(baseDir, userSettingsDir);
-}
+});
 #ifdef _OPENMP
 #pragma omp section
 #endif
-{
+RTE_INIT_SECTION("darkframes", {
     DFManager::getInstance().init(s->darkFramesPath);
-}
+});
 #ifdef _OPENMP
 #pragma omp section
 #endif
-{
+RTE_INIT_SECTION("flatfields", {
     ffm.init(s->flatFieldsPath);
-}
+});
 }
 
     Color::init ();

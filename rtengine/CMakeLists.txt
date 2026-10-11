@@ -262,6 +262,12 @@ if(OpenMP_CXX_FOUND)
     target_link_libraries(rtengine PUBLIC OpenMP::OpenMP_CXX)
 endif()
 
+if(ANDROID)
+    # init.cc 用 __android_log_print 记录可选 store 初始化失败 (RTE_INIT)，符号在 liblog。
+    target_link_libraries(rtengine PUBLIC log)
+endif()
+
+
 if(NOT RAWENGINE_ONLY)
     if("${SVG_BACKEND}" STREQUAL "librsvg")
         target_link_libraries(rtengine PUBLIC PkgConfig::RSVG)

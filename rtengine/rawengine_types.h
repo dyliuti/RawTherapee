@@ -87,12 +87,41 @@ typedef struct rte_engine_options {
     int         reserved[4];    // 预留，必须置 0
 } rte_engine_options;
 
+// ===== 去马赛克档位（预览可选快速算法）=====
+// 作为解码选项按次传入(rte_decode_options.demosaic)，运行时切换、无需重编引擎库。
+// DEFAULT = 沿用规则/默认(通常 AMaZE)；其余为具体 Bayer 去马赛克算法，大致按速度→质量排序，
+// 预留足够梯度，后续改选项不必再动枚举/重编。仅作用于 Bayer 传感器；X-Trans 维持默认。
+typedef enum rte_demosaic_quality {
+    RTE_DEMOSAIC_DEFAULT       = 0,  // 规则/默认（非 Android 平台维持现状）
+    RTE_DEMOSAIC_FAST          = 1,  // 最快，质量最低
+    RTE_DEMOSAIC_VNG4          = 2,
+    RTE_DEMOSAIC_RCD           = 3,  // 速度/质量平衡（预览推荐）
+    RTE_DEMOSAIC_DCB           = 4,
+    RTE_DEMOSAIC_LMMSE         = 5,
+    RTE_DEMOSAIC_IGV           = 6,
+    RTE_DEMOSAIC_AHD           = 7,
+    RTE_DEMOSAIC_EAHD          = 8,
+    RTE_DEMOSAIC_HPHD          = 9,
+    RTE_DEMOSAIC_AMAZE         = 10, // 高质量（导出/全质量）
+    RTE_DEMOSAIC_AMAZEVNG4     = 11,
+    RTE_DEMOSAIC_RCDVNG4       = 12,
+    RTE_DEMOSAIC_DCBVNG4       = 13,
+    RTE_DEMOSAIC_AMAZEBILINEAR = 14,
+    RTE_DEMOSAIC_RCDBILINEAR   = 15,
+    RTE_DEMOSAIC_DCBBILINEAR   = 16,
+    RTE_DEMOSAIC_MONO          = 17,
+    RTE_DEMOSAIC_NONE          = 18,
+} rte_demosaic_quality;
+
 // ===== 解码选项与输出 =====
 typedef struct rte_decode_options {
     int                     struct_size;    // 必须填 sizeof(rte_decode_options)
     rte_scale_mode          scale;          // 输出尺寸档位
     const rte_lens_options* lens;           // 镜头校正参数，NULL = 不校正
-    int                     reserved[4];    // 预留，必须置 0
+    int                     demosaic;       // rte_demosaic_quality；0=DEFAULT（原 reserved[0]，布局不变）
+    int                     force_raw;      // 1=强制按 RAW 解码、忽略扩展名；0=按扩展名判定(默认，原 reserved[0]→现 reserved[1]，布局不变)
+                                            // 用于内容是 RAW 但扩展名被误写成 tiff/jpg/png 的情形（如 Android SAF 导入把 ARW 命名为 .tiff）
+    int                     reserved[2];    // 预留，必须置 0
 } rte_decode_options;
 
 typedef struct rte_image_buffer {
