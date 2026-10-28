@@ -2,7 +2,10 @@
 // Ported to use RawTherapee's own libraw and App/Options infrastructure.
 
 #include "raw_engine.h"
+#include "working_image_session.h"
+#include "simpleprocess_geometry.h"
 #include "rawperf.h"
+#include "rte_mem_census.h" // [MemCensus] 临时内存定位探针，定位完移除
 
 
 #ifdef __GNUC__
@@ -87,6 +90,10 @@
 #include <algorithm>
 #include <cctype>
 #include <map>
+#include <memory>
+#include <mutex>
+#include <set>
+#include <limits>
 
 #include <functional>
 #include <vector>
@@ -132,12 +139,52 @@ using namespace rtengine::procparams;
 namespace {
 bool fast_export = true;
 
+// Never acquire a caller's imgdecode lock: all ABI entry points that touch
+// engine-global state share this library lock, regardless of their caller.
+std::recursive_mutex& rawengine_mutex()
+{
+    static std::recursive_mutex mutex;
+    return mutex;
+}
+
+struct InitialImageRelease {
+    void operator()(rtengine::InitialImage* image) const {
+        if (image) image->decreaseRef();
+    }
+};
+using InitialImageOwner = std::unique_ptr<rtengine::InitialImage, InitialImageRelease>;
+struct WorkingSessionRelease {
+    void operator()(rtengine::WorkingImageSession* session) const {
+        rtengine::destroyWorkingImageSession(session);
+    }
+};
+struct BufferRelease {
+    void*& data;
+    ~BufferRelease() { std::free(data); }
+};
+
 std::map<std::string, std::string>& external_dcp_map()
 {
     static std::map<std::string, std::string> value;
     return value;
 }
 } // namespace
+
+struct rte_raw_session {
+    std::unique_ptr<rtengine::WorkingImageSession, WorkingSessionRelease> working;
+    InitialImageOwner initial;
+    bool crop_enabled = false;
+    bool fallback_crop = false;
+    int crop_x = 0, crop_y = 0, crop_w = 0, crop_h = 0;
+    int sensor_w = 0, sensor_h = 0, orientation = 1;
+    rte_raw_session_stage stage = RTE_RAW_SESSION_STAGE_POST_TRANSFORM;
+};
+
+static std::set<const rte_raw_session*>& rawengine_sessions()
+{
+    static std::set<const rte_raw_session*> sessions;
+    return sessions;
+}
 
 struct DecodeCtx {
     rtengine::InitialImage* ii = nullptr;
@@ -3570,12 +3617,30 @@ int RAWENGINE_API rte_api_version(void)
 #ifdef __cplusplus
 extern "C"
 #endif
+int RAWENGINE_API rte_raw_session_api_version(void)
+{
+    return RTE_RAW_SESSION_API_VERSION;
+}
+
+#ifdef __cplusplus
+extern "C"
+#endif
 int RAWENGINE_API rte_engine_init(const rte_engine_options* options)
 {
+    try {
+    std::lock_guard<std::recursive_mutex> lock(rawengine_mutex());
+    // Reinitializing stores under a retained processor would invalidate its state.
+    if (!rawengine_sessions().empty()) return -2;
+    if (options) {
+        for (int value : options->reserved) {
+            if (value) return -1;
+        }
+    }
     const char* resource_path = (options && options->resource_path && options->resource_path[0] != '\0')
         ? options->resource_path
         : nullptr;
     return rawengine_init_impl(resource_path);
+    } catch (...) { return -2; }
 }
 
 
@@ -3623,10 +3688,56 @@ static void apply_demosaic_override(rtengine::procparams::ProcParams& p, int dem
 
 }
 
-// 解码实现：rte_decode 的内部主体（选项已归一化）
+static int rawengine_to_rgba(rtengine::IImagefloat* image, void** buffer,
+                             int* length, int* width, int* height)
+{
+    auto* img = dynamic_cast<rtengine::Imagefloat*>(image);
+    if (!img) return -2;
+    const int w = img->getWidth(), h = img->getHeight();
+    // Public rte_image_buffer.size is int. Check BEFORE any multiplication.
+    if (w <= 0 || h <= 0 || w > std::numeric_limits<int>::max() / 4 / h) return -2;
+    const size_t bytes = size_t(w) * size_t(h) * 4;
+    std::vector<unsigned char> row(size_t(w) * 3);
+    std::unique_ptr<void, decltype(&std::free)> rgba(std::malloc(bytes), &std::free);
+    if (!rgba) return -2;
+    auto* dst = static_cast<unsigned char*>(rgba.get());
+    for (int y = 0; y < h; ++y) {
+        img->getScanline(y, row.data(), 8);
+        for (size_t x = 0; x < size_t(w); ++x) {
+            *dst++ = row[x * 3];
+            *dst++ = row[x * 3 + 1];
+            *dst++ = row[x * 3 + 2];
+            *dst++ = 255;
+        }
+    }
+    *buffer = rgba.release();
+    *length = static_cast<int>(bytes);
+    *width = w;
+    *height = h;
+    return 0;
+}
+
+static void rawengine_fallback_crop(rtengine::InitialImage* ii, bool crop_enabled,
+                                    void** buffer, int* length, int* width, int* height)
+{
+    if (crop_enabled) return;
+    const auto fname = ii->getMetaData()->getFileName();
+    rawperf::Timer t(fname.raw(), "fallback_crop");
+    CropBox cb = read_crop_from_exif(fname);
+    if (cb.ok) {
+        int fullW = 0, fullH = 0;
+        get_sensor_full_wh_robust(fname, ii, fullW, fullH);
+        final_fallback_fractional_crop(*width, *height, fullW, fullH,
+                                      cb.x, cb.y, cb.w, cb.h, read_exif_orientation(fname),
+                                      buffer, length, width, height, 96);
+    }
+}
+
+// 解码实现：decode/session 共用加载、规则、镜头、去马赛克和 job 装配。
 static int rawengine_decode_impl(const char* filename, rte_scale_mode scale,
                                  const rte_lens_options* lens_params, int demosaic, int force_raw,
-                                 void** buffer, int* length, int* width, int* height)
+                                 void** buffer, int* length, int* width, int* height,
+                                 rte_raw_session* session = nullptr)
 {
 
     unsigned errors = 0;
@@ -3643,6 +3754,7 @@ static int rawengine_decode_impl(const char* filename, rte_scale_mode scale,
 
 
     rtengine::InitialImage* ii = nullptr;
+    InitialImageOwner initialOwner;
     rtengine::ProcessingJob* job = nullptr;
     int errorCode = 0;
     bool isRaw = true;
@@ -3662,11 +3774,20 @@ static int rawengine_decode_impl(const char* filename, rte_scale_mode scale,
         rawperf::Timer t(perf_file, "load");           // 读文件 + libraw unpack + raw2image
         const auto _s = rawperf::Clock::now();
         ii = rtengine::InitialImage::load(inputFile, isRaw, &errorCode, nullptr);
+        initialOwner.reset(ii);
         dbg_ms_load = rawperf::ms_since(_s);
     }
+    rteMemCensus("decode_after_load(InitialImage)");
     if (errorCode) return RawEngineErrorLoadFail;
 
-    if (!ii) { errors++; std::cerr << "Error loading file: " << inputFile << std::endl; }
+    if (!ii) return RawEngineErrorLoadFail;
+
+    // Source sessions require an actual RAW decoder, not a suffix-derived flag.
+    // Keep legacy decode and V1 sessions compatible with ordinary RGB sources.
+    if (session && session->stage == RTE_RAW_SESSION_STAGE_PROPHOTO_SOURCE
+        && !dynamic_cast<rtengine::RawImageSource*>(ii->getImageSource())) {
+        return -2;
+    }
 
     rtengine::procparams::ProcParams currentParams;
 
@@ -3697,7 +3818,7 @@ static int rawengine_decode_impl(const char* filename, rte_scale_mode scale,
     // 预览可按需选快速算法(如 RCD)压 process 耗时；仅作用于 Bayer，X-Trans 走 xtranssensor.method 不受影响。
     apply_demosaic_override(currentParams, demosaic, perf_file);
 
-    // 预览 resize（后续规则可覆盖）
+    // Preview sizing is applied AFTER rules/lens overrides.
     if (scale != RTE_SCALE_FULL) {
         currentParams.resize.enabled = true;
         currentParams.resize.allowUpscaling = false;
@@ -3709,26 +3830,61 @@ static int rawengine_decode_impl(const char* filename, rte_scale_mode scale,
     }
 
 
+    // Both Session modes reject unsupported pipelines, without silent fallback.
+    if (session && currentParams.icm.workingProfile != "ProPhoto") {
+        return -2;
+    }
+    if (session) {
+        session->crop_enabled = currentParams.crop.enabled;
+        // Capture exactly once, before creating the processor. The native-pixel
+        // fallback cannot map a resized source canvas; do not silently skip it
+        // or apply it in the wrong coordinate frame. V1/FULL remain unchanged.
+        if (!session->crop_enabled) {
+            const auto fname = ii->getMetaData()->getFileName();
+            const CropBox cb = read_crop_from_exif(fname);
+            session->fallback_crop = cb.ok;
+            if (session->stage == RTE_RAW_SESSION_STAGE_PROPHOTO_SOURCE
+                && scale != RTE_SCALE_FULL
+                && !rtengine::source_preview::supported(1.0, false, cb.ok)) return -2;
+            if (cb.ok) {
+                session->crop_x = cb.x; session->crop_y = cb.y;
+                session->crop_w = cb.w; session->crop_h = cb.h;
+                get_sensor_full_wh_robust(fname, ii, session->sensor_w, session->sensor_h);
+                session->orientation = read_exif_orientation(fname);
+            }
+        }
+    }
     job = rtengine::ProcessingJob::create(ii, currentParams, fast_export);
     if (!job) {
         errors++; 
         std::cerr << "Error creating processing for: " << inputFile << std::endl;
-        ii->decreaseRef();
         return errors > 0 ? -2 : 0;
     }
 
+    if (session) {
+        // create consumes the job on ALL paths, including exceptions/failure.
+        session->working.reset(session->stage == RTE_RAW_SESSION_STAGE_PROPHOTO_SOURCE
+            ? rtengine::createProPhotoSourceSession(job, errorCode, nullptr, true)
+            : rtengine::createWorkingImageSession(job, errorCode, nullptr, true));
+        if (!session->working || errorCode) return -2;
+        session->initial = std::move(initialOwner);
+        return 0;
+    }
+
     rtengine::IImagefloat* resultImage = nullptr;
+    std::unique_ptr<rtengine::IImagefloat> resultOwner;
     {
         rawperf::Timer t(perf_file, "process_image"); // 整个 ImageProcessor 流水线（阶段细分见 simpleprocess.cc）
         const auto _s = rawperf::Clock::now();
         resultImage = rtengine::processImage(job, errorCode, nullptr);
+        resultOwner.reset(resultImage);
         dbg_ms_process = rawperf::ms_since(_s);
     }
+    rteMemCensus("decode_after_processImage", resultImage ? resultImage->getWidth() : 0,
+                 resultImage ? resultImage->getHeight() : 0);
     if (!resultImage) {
         errors++; 
         std::cerr << "Error processing: " << inputFile << std::endl;
-        rtengine::ProcessingJob::destroy(job);
-        ii->decreaseRef();
         return errors > 0 ? -2 : 0;
     }
 
@@ -3737,66 +3893,24 @@ static int rawengine_decode_impl(const char* filename, rte_scale_mode scale,
     {
         rawperf::Timer t(perf_file, "to_rgba");        // float -> 8bit RGBA 拷贝
         const auto _s_torgba = rawperf::Clock::now();
-        const int img_w = resultImage->getWidth();
-
-        const int img_h = resultImage->getHeight();
-        if (img_w < 1 || img_h < 1) {
-            errorCode = -1;
-        } else {
-            const int rowLen = img_w * 3; // 8 bps RGB
-            std::vector<unsigned char> rgbaVec(img_w * img_h * 4);
-            std::vector<unsigned char> rowBuf(rowLen);
-            try {
-                unsigned char* dst = rgbaVec.data();
-                for (int row = 0; row < img_h; ++row) {
-                    auto* fImg = dynamic_cast<rtengine::Imagefloat*>(resultImage);
-                    if (fImg) fImg->getScanline(row, rowBuf.data(), 8);
-                    for (int j = 0; j < rowLen; j += 3) {
-                        dst[0] = rowBuf[j];
-                        dst[1] = rowBuf[j + 1];
-                        dst[2] = rowBuf[j + 2];
-                        dst[3] = 255;
-                        dst += 4;
-                    }
-                }
-                *buffer = std::malloc(rgbaVec.size());
-                std::memcpy(*buffer, rgbaVec.data(), rgbaVec.size());
-                if (length) *length = static_cast<int>(rgbaVec.size());
-                *width  = img_w;
-                *height = img_h;
-            } catch (const std::exception& ex) {
-                std::cerr << "GET RGBA ERROR: " << ex.what() << std::endl;
-                errorCode = -1;
-            }
-        }
+        errorCode = rawengine_to_rgba(resultImage, buffer, length, width, height);
         dbg_ms_torgba = rawperf::ms_since(_s_torgba);
     }
+    rteMemCensus("decode_after_toRGBA");
 
     // 结果兜底：与原逻辑一致
-    if (!errorCode && !currentParams.crop.enabled) {
-        rawperf::Timer t(perf_file, "fallback_crop");  // EXIF 兜底裁剪（含 EXIF 二次读取）
-        const auto fname = ii->getMetaData()->getFileName();
-        CropBox cb = read_crop_from_exif(fname);
-        if (cb.ok) {
-            int fullW=0, fullH=0;
-            get_sensor_full_wh_robust(fname, ii, fullW, fullH);
-            int ori = read_exif_orientation(fname);
-            final_fallback_fractional_crop(*width, *height,
-                                           fullW, fullH,
-                                           cb.x, cb.y, cb.w, cb.h,
-                                           ori,
-                                           buffer, length, width, height,
-                                           /*max_delta_px=*/96);
-    
-        }
+    if (!errorCode) {
+        rawengine_fallback_crop(ii, currentParams.crop.enabled, buffer, length, width, height);
     }
     if (errorCode) { 
         errors++; 
         std::cerr << "Image To RGBA ERROR: " << errorCode << std::endl; 
     }
 
-    ii->decreaseRef();
-    delete resultImage;
+    initialOwner.reset();
+    rteMemCensus("decode_after_decreaseRef(ii)");
+    resultOwner.reset();
+    rteMemCensus("decode_after_deleteResultImage");
 
     {
         // 整个 rawengine_decode 的总耗时，作为各阶段之和的对账基准
@@ -3835,7 +3949,12 @@ int RAWENGINE_API rte_decode(const char* filename, const rte_decode_options* opt
 {
     if (!out) return -1;
     std::memset(out, 0, sizeof(*out));
-    if (!filename) return -1;
+    if (!filename || !*filename) return -1;
+    try {
+    std::lock_guard<std::recursive_mutex> lock(rawengine_mutex());
+    if (options && options->struct_size < static_cast<int>(sizeof(*options))) return -1;
+    if (options && options->lens
+        && options->lens->struct_size < static_cast<int>(sizeof(rte_lens_options))) return -1;
 
     // 选项归一化：options 为 NULL 时走 { FULL, 无镜头校正, 默认去马赛克 }
     rte_scale_mode scale = RTE_SCALE_FULL;
@@ -3857,22 +3976,344 @@ int RAWENGINE_API rte_decode(const char* filename, const rte_decode_options* opt
     }
 
     void* buffer = nullptr;
+    BufferRelease bufferOwner{buffer};
     int length = 0;
     int width = 0;
     int height = 0;
 
+    rteMemCensus("rte_decode_begin");
     const int ret = rawengine_decode_impl(filename, scale, lens, demosaic, force_raw,
                                           &buffer, &length, &width, &height);
+    rteMemCensus("rte_decode_afterImpl", width, height);
     if (ret == 0 && buffer) {
         out->data   = buffer;
         out->size   = length;
         out->width  = width;
         out->height = height;
+        buffer = nullptr;
         return 0;
     }
     // 失败路径：保证不泄漏半成品缓冲
-    if (buffer) std::free(buffer);
     return ret != 0 ? ret : -2;
+    } catch (...) { return -2; }
+}
+
+// Shared validation/open path; source mode requires RAW loading and its own factory.
+static int rawengine_session_open(const char* filename,
+                                  const rte_decode_options* options,
+                                  rte_raw_session** out, rte_raw_session_stage stage)
+{
+    if (!out) return -1;
+    *out = nullptr;
+    if (!filename || !*filename) return -1;
+    try {
+        std::lock_guard<std::recursive_mutex> lock(rawengine_mutex());
+        if (options) {
+            if (options->struct_size < static_cast<int>(sizeof(*options))) return -1;
+            if (options->scale != RTE_SCALE_FULL && options->scale != RTE_SCALE_4K
+                && options->scale != RTE_SCALE_3K && options->scale != RTE_SCALE_2K) return -2;
+            if (options->demosaic < RTE_DEMOSAIC_DEFAULT || options->demosaic > RTE_DEMOSAIC_NONE
+                || (options->force_raw != 0 && options->force_raw != 1)
+                || options->reserved[0] || options->reserved[1]) return -1;
+            const auto* lens = options->lens;
+            if (lens && (lens->struct_size < static_cast<int>(sizeof(*lens))
+                         || lens->mode < RTE_LENS_OFF || lens->mode > RTE_LENS_MANUAL
+                         || (lens->enable_distortion != 0 && lens->enable_distortion != 1)
+                         || (lens->enable_vignette != 0 && lens->enable_vignette != 1)
+                         || lens->distortion_amount < 0 || lens->distortion_amount > 200
+                         || lens->vignette_amount < 0 || lens->vignette_amount > 200)) return -1;
+            if (lens && lens->mode == RTE_LENS_MANUAL
+                && (!lens->camera_make || !*lens->camera_make
+                    || !lens->camera_model || !*lens->camera_model
+                    || !lens->lens_name || !*lens->lens_name)) return -1;
+        }
+        if (!rtengine::settings) return -2; // init must precede open
+        std::unique_ptr<rte_raw_session> session(new rte_raw_session);
+        session->stage = stage;
+        const int ret = rawengine_decode_impl(filename, options ? options->scale : RTE_SCALE_FULL,
+                                              options ? options->lens : nullptr,
+                                              options ? options->demosaic : 0,
+                                              stage == RTE_RAW_SESSION_STAGE_PROPHOTO_SOURCE
+                                                  ? 1 : (options ? options->force_raw : 0),
+                                              nullptr, nullptr, nullptr, nullptr, session.get());
+        if (ret) return ret;
+        rawengine_sessions().insert(session.get());
+        *out = session.release();
+        return 0;
+    } catch (...) { return -2; }
+}
+
+extern "C" int RAWENGINE_API rte_raw_session_open(const char* filename,
+                                                  const rte_decode_options* options,
+                                                  rte_raw_session** out)
+{
+    return rawengine_session_open(filename, options, out, RTE_RAW_SESSION_STAGE_POST_TRANSFORM);
+}
+
+extern "C" int RAWENGINE_API rte_raw_source_session_open(const char* filename,
+                                                         const rte_decode_options* options,
+                                                         rte_raw_session** out)
+{
+    return rawengine_session_open(filename, options, out, RTE_RAW_SESSION_STAGE_PROPHOTO_SOURCE);
+}
+
+extern "C" int RAWENGINE_API rte_raw_session_get_dimensions(const rte_raw_session* session,
+                                                            rte_raw_session_dimensions* out)
+{
+    if (!out) return -1;
+    const uint32_t size = out->struct_size;
+    if (size > sizeof(out->struct_size)) {
+        std::memset(reinterpret_cast<unsigned char*>(out) + sizeof(out->struct_size), 0,
+                    std::min<size_t>(size, sizeof(*out)) - sizeof(out->struct_size));
+    }
+    if (size < sizeof(*out)) return -1;
+    try {
+        std::lock_guard<std::recursive_mutex> lock(rawengine_mutex());
+        if (!session || !rawengine_sessions().count(session)) return -1;
+        const auto g = rtengine::getWorkingImageSessionGeometry(session->working.get());
+        out->native_width = g.nativeWidth;
+        out->native_height = g.nativeHeight;
+        out->retained_width = g.retainedWidth;
+        out->retained_height = g.retainedHeight;
+        out->resolution_scale = g.resolutionScale;
+        return 0;
+    } catch (...) { return -2; }
+}
+
+extern "C" int RAWENGINE_API rte_raw_session_get_stage(const rte_raw_session* session,
+                                                       rte_raw_session_stage* out)
+{
+    if (!out) return -1;
+    *out = RTE_RAW_SESSION_STAGE_UNKNOWN;
+    try {
+        std::lock_guard<std::recursive_mutex> lock(rawengine_mutex());
+        if (!session || !rawengine_sessions().count(session)) return -1;
+        *out = session->stage;
+        return 0;
+    } catch (...) { return -2; }
+}
+
+template<size_t N>
+static void rawengine_noise_text(char (&out)[N], const std::string& text)
+{
+    const size_t count = std::min(N - 1, text.size());
+    std::memcpy(out, text.data(), count);
+    out[count] = '\0';
+}
+
+extern "C" int RAWENGINE_API rte_raw_session_get_noise_info(const rte_raw_session* session,
+                                                           rte_raw_noise_info* out)
+{
+    if (!out) return -1;
+    const uint32_t size = out->struct_size;
+    if (size >= sizeof(out->struct_size)) {
+        std::memset(out, 0, std::min(size_t(size), sizeof(*out)));
+        out->struct_size = size;
+    }
+    if (size < sizeof(*out)) return -1;
+    try {
+        std::lock_guard<std::recursive_mutex> lock(rawengine_mutex());
+        if (!session || !rawengine_sessions().count(session)) return -1;
+        const auto model = rtengine::getWorkingImageSessionNoiseModel(session->working.get());
+        rte_raw_noise_info info{};
+        info.struct_size = size;
+        switch (model.profileQuality) {
+        case rtengine::raw_noise::ProfileQuality::Estimated:
+            info.profile_quality = RTE_NOISE_PROFILE_ESTIMATED; break;
+        case rtengine::raw_noise::ProfileQuality::Reference:
+            info.profile_quality = RTE_NOISE_PROFILE_REFERENCE; break;
+        case rtengine::raw_noise::ProfileQuality::Calibrated:
+            info.profile_quality = RTE_NOISE_PROFILE_CALIBRATED; break;
+        }
+        info.profile_matched = model.profile.matched;
+        info.working_model_valid = model.valid;
+        info.sensor_calibration_valid = model.sensor.valid;
+        info.render_metadata_valid = model.renderMetadataValid;
+        info.color_matrix_valid = model.colorMatrixValid;
+        info.profile_generic = model.profile.generic;
+        info.iso = model.iso;
+        info.profile_iso = model.profile.iso;
+        info.raw_code_scale = model.rawCodeScale;
+        for (size_t c = 0; c < 4; ++c) {
+            info.reference_a[c] = model.profile.a[c];
+            info.reference_b[c] = model.profile.b[c];
+            info.decoder_black_dn[c] = model.decoderBlackDN[c];
+            info.decoder_white_dn[c] = model.decoderWhiteDN[c];
+            info.preprocessing_black_dn[c] = model.preprocessingBlackDN[c];
+            info.preprocessing_white_dn[c] = model.preprocessingWhiteDN[c];
+            info.preprocessing_scale[c] = model.preprocessingScale[c];
+        }
+        for (size_t c = 0; c < 3; ++c) {
+            info.render_multiplier[c] = model.renderMultiplier[c];
+            for (size_t j = 0; j < 3; ++j) {
+                info.camera_to_working[c * 3 + j] = model.cameraToWorking[c][j];
+            }
+        }
+        info.baseline_exposure_ev = model.baselineExposureEV;
+        info.render_skip = model.renderSkip;
+        rawengine_noise_text(info.make, model.make);
+        rawengine_noise_text(info.model, model.model);
+        rawengine_noise_text(info.profile_make, model.profile.make);
+        rawengine_noise_text(info.profile_model, model.profile.model);
+        rawengine_noise_text(info.profile_mode, model.profile.mode);
+        rawengine_noise_text(info.working_profile, model.workingProfile);
+        rawengine_noise_text(info.reason, model.reason);
+        rawengine_noise_text(info.profile_reason, model.profileReason);
+        rawengine_noise_text(info.reference_reason, model.profile.reason);
+        rawengine_noise_text(info.sensor_reason, model.sensor.reason);
+        rawengine_noise_text(info.color_reason, model.colorReason);
+        rawengine_noise_text(info.fallback, model.fallback);
+        std::memcpy(out, &info, sizeof(info));
+        return 0;
+    } catch (...) { return -2; }
+}
+
+extern "C" int RAWENGINE_API rte_raw_session_get_reference_noise_model(
+    const rte_raw_session* session, rte_reference_noise_model* out)
+{
+    if (!out) return -1;
+    const uint32_t size = out->struct_size;
+    if (size >= sizeof(out->struct_size)) {
+        std::memset(out, 0, std::min(size_t(size), sizeof(*out)));
+        out->struct_size = size;
+    }
+    if (size < sizeof(*out)) return -1;
+    try {
+        std::lock_guard<std::recursive_mutex> lock(rawengine_mutex());
+        if (!session || !rawengine_sessions().count(session)) return -1;
+        const auto m = rtengine::getWorkingImageSessionNoiseModel(session->working.get());
+        const auto g = rtengine::getWorkingImageSessionGeometry(session->working.get());
+        const bool resized = !std::isfinite(g.resolutionScale) || g.resolutionScale != 1 ||
+            g.nativeWidth != g.retainedWidth || g.nativeHeight != g.retainedHeight ||
+            g.nativeWidth <= 0 || g.nativeHeight <= 0;
+        const auto r = rtengine::raw_noise::referenceWorkingNoise(m, resized);
+        rte_reference_noise_model info{};
+        info.struct_size = size;
+        info.version = RTE_REFERENCE_NOISE_MODEL_VERSION;
+        info.reference_usable = r.referenceUsable;
+        info.spatially_resampled = resized || m.renderSkip != 1;
+        info.native_width = g.nativeWidth;
+        info.native_height = g.nativeHeight;
+        info.retained_width = g.retainedWidth;
+        info.retained_height = g.retainedHeight;
+        info.resolution_scale = g.resolutionScale;
+        info.session_stage = session->stage;
+        info.render_skip = m.renderSkip;
+        info.stage3_gain = r.stage3Gain;
+        info.snapshot_hash = rtengine::raw_noise::referenceNoiseHash(m, r,
+            {{info.native_width, info.native_height, info.retained_width,
+              info.retained_height, info.session_stage}}, g.resolutionScale);
+        for (unsigned c = 0; c < 4; ++c) {
+            info.normalized_a[c] = r.normalizedA[c];
+            info.normalized_b[c] = r.normalizedB[c];
+            info.channel_gain[c] = r.gain[c];
+        }
+        for (unsigned i = 0; i < 3; ++i) for (unsigned j = 0; j < 3; ++j)
+            info.camera_to_working[i*3+j] = r.cameraToWorking[i][j];
+        rawengine_noise_text(info.reason, r.reason);
+        rawengine_noise_text(info.profile_make, m.profile.make);
+        rawengine_noise_text(info.profile_model, m.profile.model);
+        rawengine_noise_text(info.profile_mode, m.profile.mode);
+        rawengine_noise_text(info.working_profile, m.workingProfile);
+        std::memcpy(out, &info, sizeof(info));
+        return 0;
+    } catch (...) { return -2; }
+}
+
+static bool rawengine_linear(const rte_raw_session* session, const float*& data,
+                              int& width, int& height, size_t& count)
+{
+    data = rtengine::getWorkingImageSessionLinear(session->working.get(), width, height, count);
+    if (!data || width <= 0 || height <= 0) return false;
+    const size_t max = std::numeric_limits<size_t>::max();
+    if (size_t(width) > max / 3 / sizeof(float) / size_t(height)) return false;
+    return count == size_t(width) * size_t(height) * 3;
+}
+
+extern "C" int RAWENGINE_API rte_raw_session_get_linear(const rte_raw_session* session,
+                                                        rte_linear_rgb_view* view)
+{
+    if (!view) return -1;
+    const uint32_t size = view->struct_size;
+    // An undersized caller allocation cannot safely be cleared as a full view.
+    if (size < sizeof(*view)) {
+        if (size >= sizeof(view->struct_size)) {
+            std::memset(view, 0, size);
+            view->struct_size = size;
+        }
+        return -1;
+    }
+    std::memset(view, 0, sizeof(*view));
+    view->struct_size = size;
+    try {
+        std::lock_guard<std::recursive_mutex> lock(rawengine_mutex());
+        if (!session || !rawengine_sessions().count(session)) return -1;
+        const float* data = nullptr;
+        int width = 0, height = 0;
+        size_t count = 0;
+        if (!rawengine_linear(session, data, width, height, count)) return -2;
+        view->width = static_cast<uint32_t>(width);
+        view->height = static_cast<uint32_t>(height);
+        view->channels = 3;
+        view->data = data;
+        view->count = static_cast<uint64_t>(count);
+        view->row_stride_bytes = uint64_t(width) * 3 * sizeof(float);
+        return 0;
+    } catch (...) { return -2; }
+}
+
+extern "C" int RAWENGINE_API rte_raw_session_finish(rte_raw_session* session,
+                                                    const float* edited, uint64_t count,
+                                                    rte_image_buffer* out)
+{
+    if (!out) return -1;
+    std::memset(out, 0, sizeof(*out));
+    try {
+        std::lock_guard<std::recursive_mutex> lock(rawengine_mutex());
+        if (!session || !rawengine_sessions().count(session)) return -1;
+        const float* linear = nullptr;
+        int width = 0, height = 0;
+        size_t expected = 0;
+        if (!rawengine_linear(session, linear, width, height, expected)) return -2;
+        if ((!edited && count) || (edited && count != expected)
+            || count > std::numeric_limits<size_t>::max()) return -1;
+        if (edited) {
+            for (size_t i = 0; i < expected; ++i) {
+                if (!std::isfinite(edited[i])) return -1;
+            }
+        }
+        int error = 0;
+        std::unique_ptr<rtengine::IImagefloat> image(rtengine::finishWorkingImageSession(
+            session->working.get(), edited, static_cast<size_t>(count), error, nullptr));
+        if (!image || error) return -2;
+        void* buffer = nullptr;
+        BufferRelease bufferOwner{buffer};
+        int length = 0;
+        const int ret = rawengine_to_rgba(image.get(), &buffer, &length, &width, &height);
+        if (ret) return ret;
+        if (session->fallback_crop) {
+            final_fallback_fractional_crop(width, height, session->sensor_w, session->sensor_h,
+                session->crop_x, session->crop_y, session->crop_w, session->crop_h,
+                session->orientation, &buffer, &length, &width, &height, 96);
+        }
+        out->data = buffer;
+        out->size = length;
+        out->width = width;
+        out->height = height;
+        buffer = nullptr;
+        return 0;
+    } catch (...) { return -2; }
+}
+
+extern "C" int RAWENGINE_API rte_raw_session_close(rte_raw_session* session)
+{
+    if (!session) return 0;
+    try {
+        std::lock_guard<std::recursive_mutex> lock(rawengine_mutex());
+        if (!rawengine_sessions().erase(session)) return -1;
+        delete session;
+        return 0;
+    } catch (...) { return -2; }
 }
 
 #ifdef __cplusplus
@@ -3918,19 +4359,27 @@ void RAWENGINE_API rte_denoise_options_default(rte_denoise_options* options) {
 extern "C"
 #endif
 int RAWENGINE_API rte_camera_list(rte_camera_entry** out, int* count) {
+    if (out) *out = nullptr;
+    if (count) *count = 0;
     if (!out || !count) return -1;
     *out = nullptr;
     *count = 0;
 
+    try {
+    std::lock_guard<std::recursive_mutex> lock(rawengine_mutex());
     const rtengine::LFDatabase* db = rtengine::LFDatabase::getInstance();
     if (!db) return -1;
 
     std::vector<rtengine::LFCamera> cams = db->getCameras();
+    if (cams.size() > size_t(std::numeric_limits<int>::max())
+        || cams.size() > std::numeric_limits<size_t>::max() / sizeof(rte_camera_entry)) return -2;
     int n = (int)cams.size();
     if (n == 0) return 0;
 
-    rte_camera_entry* arr = (rte_camera_entry*)std::malloc(sizeof(rte_camera_entry) * n);
+    rte_camera_entry* arr = (rte_camera_entry*)std::calloc(size_t(n), sizeof(rte_camera_entry));
     if (!arr) return -1;
+    auto release = [n](rte_camera_entry* p) { rte_camera_list_free(p, n); };
+    std::unique_ptr<rte_camera_entry, decltype(release)> owner(arr, release);
 
     for (int i = 0; i < n; ++i) {
         std::string make = cams[i].getMake().raw();
@@ -3945,17 +4394,20 @@ int RAWENGINE_API rte_camera_list(rte_camera_entry** out, int* count) {
         arr[i].model = strdup(model.c_str());
         arr[i].display_name = strdup(display.c_str());
 #endif
+        if (!arr[i].make || !arr[i].model || !arr[i].display_name) return -2;
     }
 
-    *out = arr;
+    *out = owner.release();
     *count = n;
     return 0;
+    } catch (...) { return -2; }
 }
 
 #ifdef __cplusplus
 extern "C"
 #endif
 int RAWENGINE_API rte_camera_list_free(rte_camera_entry* list, int count) {
+    if (count < 0) return -1;
     if (!list) return 0;
     for (int i = 0; i < count; ++i) {
         std::free((void*)list[i].make);
@@ -3970,19 +4422,27 @@ int RAWENGINE_API rte_camera_list_free(rte_camera_entry* list, int count) {
 extern "C"
 #endif
 int RAWENGINE_API rte_lens_list(rte_lens_entry** out, int* count) {
+    if (out) *out = nullptr;
+    if (count) *count = 0;
     if (!out || !count) return -1;
     *out = nullptr;
     *count = 0;
 
+    try {
+    std::lock_guard<std::recursive_mutex> lock(rawengine_mutex());
     const rtengine::LFDatabase* db = rtengine::LFDatabase::getInstance();
     if (!db) return -1;
 
     std::vector<rtengine::LFLens> lens_list = db->getLenses();
+    if (lens_list.size() > size_t(std::numeric_limits<int>::max())
+        || lens_list.size() > std::numeric_limits<size_t>::max() / sizeof(rte_lens_entry)) return -2;
     int n = (int)lens_list.size();
     if (n == 0) return 0;
 
-    rte_lens_entry* arr = (rte_lens_entry*)std::malloc(sizeof(rte_lens_entry) * n);
+    rte_lens_entry* arr = (rte_lens_entry*)std::calloc(size_t(n), sizeof(rte_lens_entry));
     if (!arr) return -1;
+    auto release = [n](rte_lens_entry* p) { rte_lens_list_free(p, n); };
+    std::unique_ptr<rte_lens_entry, decltype(release)> owner(arr, release);
 
     for (int i = 0; i < n; ++i) {
         std::string name = lens_list[i].getLens().raw();
@@ -3994,17 +4454,20 @@ int RAWENGINE_API rte_lens_list(rte_lens_entry** out, int* count) {
         arr[i].name = strdup(name.c_str());
         arr[i].make = strdup(make.c_str());
 #endif
+        if (!arr[i].name || !arr[i].make) return -2;
     }
 
-    *out = arr;
+    *out = owner.release();
     *count = n;
     return 0;
+    } catch (...) { return -2; }
 }
 
 #ifdef __cplusplus
 extern "C"
 #endif
 int RAWENGINE_API rte_lens_list_free(rte_lens_entry* list, int count) {
+    if (count < 0) return -1;
     if (!list) return 0;
     for (int i = 0; i < count; ++i) {
         std::free((void*)list[i].name);
@@ -4026,12 +4489,17 @@ int RAWENGINE_API rte_detect_lens(const char* filename, rte_lens_detection* out)
     out->camera_index = -1;
     out->lens_index   = -1;
 
+    if (!filename || !*filename) return -1;
+    try {
+    std::lock_guard<std::recursive_mutex> lock(rawengine_mutex());
+
     int camera_index = -1;
     int lens_index   = -1;
     const int ret = rawengine_detect_lens_impl(filename, camera_index, lens_index);
     out->camera_index = camera_index;
     out->lens_index   = lens_index;
     return ret;
+    } catch (...) { return -2; }
 }
 
 static int rawengine_detect_lens_impl(const char* filename, int& camera_index, int& lens_index)

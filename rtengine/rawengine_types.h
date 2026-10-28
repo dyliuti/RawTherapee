@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <stddef.h>
 
 #if defined(_WIN32) || defined(_WIN64)
     #ifdef RAWENGINE_EXPORTS
@@ -17,6 +18,16 @@
 // ===== API 版本 =====
 // 结构体带 struct_size 字段做前向兼容；不兼容的行为变更递增此版本。
 #define RTE_API_VERSION 2
+
+// Additive Session ABI revision, independent of the legacy decode API version.
+// Query rte_raw_session_api_version() from the same deployed library; source
+// headers alone do not imply an older binary implements the Session symbols.
+// V2 adds source-session open and per-handle stage query; V1 open is unchanged.
+// V4 adds preview sessions and an independent spatial geometry snapshot.
+// V3 adds immutable noise evidence snapshots; existing layouts are unchanged.
+// V5 adds an independent reference approximation; all previous layouts unchanged.
+#define RTE_RAW_SESSION_API_VERSION 5
+#define RTE_REFERENCE_NOISE_MODEL_VERSION 1
 
 // ===== 解码输出尺寸档位 =====
 // FULL: 原始全尺寸直出；其余档位等比缩放到长边不超过对应像素，只缩不放，
@@ -130,3 +141,120 @@ typedef struct rte_image_buffer {
     int   width;
     int   height;
 } rte_image_buffer;
+
+// Additive ABI: does not reuse any reserved fields in existing options.
+typedef struct rte_raw_session rte_raw_session;
+
+// Stage of the borrowed linear view; independent of its unchanged V1 layout.
+typedef enum rte_raw_session_stage {
+    RTE_RAW_SESSION_STAGE_UNKNOWN = 0,
+    RTE_RAW_SESSION_STAGE_POST_TRANSFORM = 1, // V1 open: base/geometry baked in
+    RTE_RAW_SESSION_STAGE_PROPHOTO_SOURCE = 2 // V2 source open: before working base
+} rte_raw_session_stage;
+
+// Quality of SENSOR evidence only, independent of working_model_valid.
+typedef enum rte_noise_profile_quality {
+    RTE_NOISE_PROFILE_ESTIMATED = 0,
+    RTE_NOISE_PROFILE_REFERENCE = 1,
+    RTE_NOISE_PROFILE_CALIBRATED = 2
+} rte_noise_profile_quality;
+
+// V3 owned snapshot: no borrowed strings/pointers. All flags are 0/1.
+// Four-channel arrays are R,G1,B,G2. Reference A/B retain table units;
+// they are NOT normalized/calibrated working-RGB shot/read coefficients.
+// No ISO interpolation/extrapolation flags exist in the current provider.
+typedef struct rte_raw_noise_info {
+    uint32_t struct_size; // caller sets sizeof; >= current size accepted
+    uint32_t profile_quality; // rte_noise_profile_quality
+    uint32_t profile_matched;
+    uint32_t working_model_valid; // currently always false, independently
+    uint32_t sensor_calibration_valid;
+    uint32_t render_metadata_valid;
+    uint32_t color_matrix_valid;
+    uint32_t profile_generic;
+    double iso;
+    double profile_iso;
+    double raw_code_scale; // nominal RT scale, NOT ADC white DN
+    double reference_a[4];
+    double reference_b[4];
+    double decoder_black_dn[4];
+    double decoder_white_dn[4];
+    double preprocessing_black_dn[4];
+    double preprocessing_white_dn[4];
+    double preprocessing_scale[4];
+    double render_multiplier[3]; // actual WB/gain/baseline/skip^2 factors
+    double baseline_exposure_ev;
+    int32_t render_skip;
+    uint32_t reserved; // zero
+    double camera_to_working[9]; // row-major, valid only if color_matrix_valid
+    // UTF-8, NUL terminated, truncated to capacity-1 if necessary.
+    char make[128];
+    char model[128];
+    char profile_make[128];
+    char profile_model[128];
+    char profile_mode[128];
+    char working_profile[64];
+    char reason[256];
+    char profile_reason[256];
+    char reference_reason[256];
+    char sensor_reason[256];
+    char color_reason[256];
+    char fallback[256];
+} rte_raw_noise_info;
+
+// V5: engineering reference ONLY, never a calibrated working noise certificate.
+// Four channels R,G1,B,G2. A=table A/65535; B=table B/65535^2.
+// Input/output of map use nominal unit range (linear view /65535).
+// gain[c]=preprocessingScale[c]*renderMultiplier[RGB(c)]*(decoderWhite-Black)/65535.
+// camera_to_working = observed direct M * diag(gainR,mean(gainG1,gainG2),gainB).
+// This 3x3 approximation is NOT exact CFA/demosaic covariance. Do NOT apply WB
+// or exposure again: stage3_gain=1. No downsampling noise correction is claimed.
+// Only direct matrix, render_skip=1, non-resampled size is reference_usable.
+// DCP/ICC/invalid levels/nonfinite/singular fail closed, retaining A/B evidence.
+typedef struct rte_reference_noise_model {
+    uint32_t struct_size; // caller sets sizeof; larger tail untouched
+    uint32_t version;     // output RTE_REFERENCE_NOISE_MODEL_VERSION
+    uint32_t reference_usable; // independent of old working_model_valid=false
+    uint32_t spatially_resampled;
+    uint64_t snapshot_hash; // FNV-1a of params/full identities/size/scale/stage
+    double normalized_a[4];
+    double normalized_b[4];
+    double channel_gain[4];
+    double camera_to_working[9]; // row-major, zero when unusable
+    double stage3_gain; // always 1 for a successful query, including fallback
+    double resolution_scale; // spatial only; NOT a variance/gain correction
+    uint32_t native_width, native_height, retained_width, retained_height;
+    uint32_t session_stage;
+    int32_t render_skip;
+    char reason[256];
+    char profile_make[128], profile_model[128], profile_mode[128];
+    char working_profile[64];
+} rte_reference_noise_model;
+
+typedef struct rte_linear_rgb_view {
+    uint32_t     struct_size;       // caller sets sizeof(rte_linear_rgb_view)
+    uint32_t     width;
+    uint32_t     height;
+    uint32_t     channels;          // always 3, interleaved RGBRGB, row-major
+    const float* data;              // borrowed, immutable; never free this pointer
+    uint64_t     count;             // number of float elements, NOT bytes
+    uint64_t     row_stride_bytes;  // width * 3 * sizeof(float), tightly packed
+} rte_linear_rgb_view;
+
+// V4 additive geometry snapshot; existing linear/noise view ABIs unchanged.
+// Native = full oriented engine canvas before early resize (not masked sensor
+// dimensions). Retained = get_linear dimensions; source finish may crop it.
+// resolution_scale is spatial only, NOT calibrated sensor-noise propagation.
+typedef struct rte_raw_session_dimensions {
+    uint32_t struct_size;
+    uint32_t native_width;
+    uint32_t native_height;
+    uint32_t retained_width;
+    uint32_t retained_height;
+    uint32_t reserved;
+    double resolution_scale;
+} rte_raw_session_dimensions;
+
+// V1/V2 share this exact view layout. Channel encoding is linear ProPhoto in
+// native RT units (nominal white 65535); values are not normalized or clipped.
+// Processing boundary is queried separately with rte_raw_session_get_stage.

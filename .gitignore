@@ -24,6 +24,9 @@ build_arm/*
 build_ios/*
 build_arm_gui/*
 build_intel/*
+build_intel_gui/*
+build_jpeg80/*
+build_diag/*
 cmake-build*
 Build/*
 buildfile*
@@ -42,6 +45,8 @@ installer/.ios_deps*
 installer/.dlls_seen*
 installer/output_ios
 installer/output_ios_deps
+installer/output_ios_backup*
+installer/build_ios_libomp/
 
 rtdata/rawtherapee.desktop
 rtengine/librtengine.a

@@ -20,28 +20,19 @@ IOS_DEPS_ROOT="${IOS_DEPS_ROOT:-$SCRIPT_DIR/output_ios_deps}"
 IOS_DEPLOYMENT_TARGET="${IOS_DEPLOYMENT_TARGET:-13.0}"
 RAWENGINE_INSTALL_DIR="${RAWENGINE_INSTALL_DIR:-}"
 DO_CLEAN=0
-DEVICE_ONLY=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --clean) DO_CLEAN=1; shift ;;
-        --device-only) DEVICE_ONLY=1; shift ;;
         *) echo "[ERROR] Unknown option: $1"; exit 1 ;;
     esac
 done
 
+# 仅构建真机 slice (ios-arm64)，不构建 iOS 模拟器。
 if [[ ! -d "$IOS_DEPS_ROOT/ios-arm64" ]]; then
     echo "[ERROR] iOS dependency slices were not found below:"
     echo "        $IOS_DEPS_ROOT"
     echo "        Run installer/build_ios_deps.sh first."
-    exit 1
-fi
-if [[ "$DEVICE_ONLY" -eq 0 &&
-      ! -d "$IOS_DEPS_ROOT/ios-arm64-simulator" ]]; then
-    echo "[ERROR] iOS Simulator dependency slice was not found below:"
-    echo "        $IOS_DEPS_ROOT/ios-arm64-simulator"
-    echo "        Run installer/build_ios_deps.sh --slice ios-arm64-simulator first,"
-    echo "        or pass --device-only."
     exit 1
 fi
 
@@ -162,37 +153,18 @@ build_slice() {
 build_slice iphoneos arm64 ios-arm64
 DEVICE_LIB="$BUILD_ROOT/ios-arm64/rtengine/libtherapee.a"
 
-if [[ "$DEVICE_ONLY" -eq 0 ]]; then
-    build_slice iphonesimulator arm64 ios-arm64-simulator
-    SIMULATOR_LIB="$BUILD_ROOT/ios-arm64-simulator/rtengine/libtherapee.a"
-fi
-
 rm -rf "$XCFRAMEWORK_DIR"
-if [[ "$DEVICE_ONLY" -eq 1 ]]; then
-    xcodebuild -create-xcframework \
-        -library "$DEVICE_LIB" -headers "$OUTPUT_DIR/include" \
-        -output "$XCFRAMEWORK_DIR"
-else
-    xcodebuild -create-xcframework \
-        -library "$DEVICE_LIB" -headers "$OUTPUT_DIR/include" \
-        -library "$SIMULATOR_LIB" -headers "$OUTPUT_DIR/include" \
-        -output "$XCFRAMEWORK_DIR"
-fi
+xcodebuild -create-xcframework \
+    -library "$DEVICE_LIB" -headers "$OUTPUT_DIR/include" \
+    -output "$XCFRAMEWORK_DIR"
 
 if [[ -n "$RAWENGINE_INSTALL_DIR" ]]; then
     INSTALL_XCFRAMEWORK="$RAWENGINE_INSTALL_DIR/RawEngine.xcframework"
     mkdir -p "$RAWENGINE_INSTALL_DIR/include"
     rm -rf "$INSTALL_XCFRAMEWORK"
-    if [[ "$DEVICE_ONLY" -eq 1 ]]; then
-        xcodebuild -create-xcframework \
-            -library "$DEVICE_LIB" -headers "$OUTPUT_DIR/include" \
-            -output "$INSTALL_XCFRAMEWORK"
-    else
-        xcodebuild -create-xcframework \
-            -library "$DEVICE_LIB" -headers "$OUTPUT_DIR/include" \
-            -library "$SIMULATOR_LIB" -headers "$OUTPUT_DIR/include" \
-            -output "$INSTALL_XCFRAMEWORK"
-    fi
+    xcodebuild -create-xcframework \
+        -library "$DEVICE_LIB" -headers "$OUTPUT_DIR/include" \
+        -output "$INSTALL_XCFRAMEWORK"
     cp "$OUTPUT_DIR/include/"*.h "$RAWENGINE_INSTALL_DIR/include/"
     echo "Installed RawEngine integration package:"
     echo "  $RAWENGINE_INSTALL_DIR"
@@ -205,7 +177,7 @@ done
 for file in cammatrices.json dcraw.json rt.json; do
     [[ -f "$RTDATA_DIR/$file" ]] && cp "$RTDATA_DIR/$file" "$OUTPUT_DIR/resource/"
 done
-for build_dir in "$BUILD_ROOT/ios-arm64" "$BUILD_ROOT/ios-arm64-simulator"; do
+for build_dir in "$BUILD_ROOT/ios-arm64"; do
     if [[ -f "$build_dir/rtengine/camconst.json" ]]; then
         cp "$build_dir/rtengine/camconst.json" "$OUTPUT_DIR/resource/"
         break

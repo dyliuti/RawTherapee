@@ -18,6 +18,7 @@ set(RTENGINESOURCEFILES
     CA_correct_RT.cc
     calc_distort.cc
     camconst.cc
+    camera_noise_profiles.cc
     capturesharpening.cc
     cfa_linedn_RT.cc
     ciecam02.cc
@@ -416,3 +417,16 @@ endif()
 # raw_engine.cc. Only the dllexport-marked functions become DLL exports.
 target_link_libraries(rawengine PRIVATE rtengine)
 install(TARGETS rawengine DESTINATION "${BINDIR}")
+
+option(BUILD_CAMERA_NOISE_PROFILES_TEST "Build standalone reference camera noise tests" OFF)
+if(BUILD_CAMERA_NOISE_PROFILES_TEST)
+    enable_testing()
+    add_executable(camera_noise_profiles_test
+        ../tests/camera_noise_profiles_test.cpp
+        camera_noise_profiles.cc
+    )
+    target_include_directories(camera_noise_profiles_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    set_target_properties(camera_noise_profiles_test PROPERTIES
+        CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+    add_test(NAME camera_noise_profiles COMMAND camera_noise_profiles_test)
+endif()

@@ -29,6 +29,7 @@
 #include "iimage.h"
 #include "imagesource.h"
 #include "procparams.h"
+#include "raw_noise_model.h"
 
 #define HR_SCALE 2
 
@@ -109,6 +110,7 @@ protected:
     std::vector<double> histMatchingCache;
     const std::unique_ptr<procparams::ColorManagementParams> histMatchingParams;
     float minVals[3];
+    raw_noise::Model noiseModel;
 
     void processFalseColorCorrectionThread(Imagefloat* im, array2D<float> &rbconv_Y, array2D<float> &rbconv_I, array2D<float> &rbconv_Q, array2D<float> &rbout_I, array2D<float> &rbout_Q, const int row_from, const int row_to);
     void hlRecovery(const std::string &method, float* red, float* green, float* blue, int width, float* hlmax);
@@ -182,6 +184,11 @@ public:
 
     bool        isGainMapSupported() const override;
 
+    // Compiled reference profile plus last observed render/conversion metadata.
+    // Reference matching does not certify sensor units or working-RGB noise;
+    // DCP/ICC are never approximated by an arbitrary single matrix.
+    raw_noise::Model getRawNoiseModel() const;
+
     void        setProgressListener (ProgressListener* pl) override
     {
         plistener = pl;
@@ -205,6 +212,7 @@ public:
     static void init ();
     static void cleanup ();
     void setCurrentFrame(unsigned int frameNum) override {
+        noiseModel = raw_noise::Model{};
         if (numFrames == 2 && frameNum == 2 && riFrames.size() >= 1) { // special case for averaging of two frames
             currFrame = frameNum;
             ri = riFrames[0].get();

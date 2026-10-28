@@ -4,8 +4,7 @@
 #
 # Usage:
 #   bash build_ios_deps.sh
-#   bash build_ios_deps.sh --slice ios-arm64
-#   bash build_ios_deps.sh --slice ios-arm64-simulator --clean
+#   bash build_ios_deps.sh --slice ios-arm64 --clean
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -28,7 +27,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 case "$SELECTED_SLICE" in
-    ""|ios-arm64|ios-arm64-simulator) ;;
+    ""|ios-arm64) ;;
     *) echo "[ERROR] Unsupported slice: $SELECTED_SLICE"; exit 1 ;;
 esac
 
@@ -380,11 +379,7 @@ prepare_sources
 if [[ -z "$SELECTED_SLICE" || "$SELECTED_SLICE" == "ios-arm64" ]]; then
     build_slice ios-arm64
 fi
-if [[ -z "$SELECTED_SLICE" || "$SELECTED_SLICE" == "ios-arm64-simulator" ]]; then
-    build_slice ios-arm64-simulator
-fi
 
 echo ""
 echo "iOS dependency prefixes are ready:"
 echo "  $OUTPUT_ROOT/ios-arm64"
-echo "  $OUTPUT_ROOT/ios-arm64-simulator"

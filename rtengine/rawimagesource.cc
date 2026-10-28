@@ -18,6 +18,8 @@
  */
 #include <cassert>
 #include <cmath>
+
+#include "rte_mem_census.h" // [MemCensus] 临时内存定位探针，定位完移除
 #include <cstdlib>
 #include <iostream>
 
@@ -499,6 +501,9 @@ RawImageSource::RawImageSource()
 
 RawImageSource::~RawImageSource()
 {
+    // [MemCensus] 确认析构确实执行（成员 rawData/red/green/blue/riFrames 在本函数体之后才释放，
+    // 释放后的效果看 raw_engine.cc 的 decode_after_decreaseRef 探针）。
+    rteMemCensus(redCache ? "RawImageSource_dtor(cache=1)" : "RawImageSource_dtor(cache=0)", W, H);
 
     delete idata;
     delete redCache;
@@ -757,6 +762,7 @@ void RawImageSource::getWBMults(const ColorTemp &ctemp, const RAWParams &raw, st
 
 void RawImageSource::getImage(const ColorTemp &ctemp, int tran, Imagefloat* image, const PreviewProps &pp, const ToneCurveParams &hrp, const RAWParams &raw)
 {
+    noiseModel = raw_noise::Model{};
     assert(checkRawDataDimensions(rawData, *ri, W, H));
 
     MyMutex::MyLock lock(getImageMutex);
@@ -906,6 +912,30 @@ void RawImageSource::getImage(const ColorTemp &ctemp, int tran, Imagefloat* imag
     gm /= area;
     bm /= area;
 
+    // Observe the executed path rather than reconstructing it with
+    // getWBMults(): its WB calculation need not match this getImage().
+    noiseModel.renderSkip = skip;
+    noiseModel.baselineExposureEV = ri->getBaselineExposure();
+    noiseModel.renderMultiplier = {{rm, gm, bm}};
+    noiseModel.renderMetadataValid = skip > 0 && std::isfinite(expcomp) && expcomp > 0;
+    for (int c = 0; c < 4; ++c) {
+        noiseModel.decoderBlackDN[c] = ri->get_cblack(c);
+        noiseModel.decoderWhiteDN[c] = ri->get_white(c);
+        noiseModel.preprocessingBlackDN[c] = cblacksom[c];
+        noiseModel.preprocessingWhiteDN[c] = c_white[c];
+        noiseModel.preprocessingScale[c] = scale_mul[c];
+        noiseModel.renderMetadataValid = noiseModel.renderMetadataValid &&
+            std::isfinite(cblacksom[c]) && std::isfinite(c_white[c]) &&
+            c_white[c] > cblacksom[c] && std::isfinite(scale_mul[c]) && scale_mul[c] > 0;
+    }
+    for (double multiplier : noiseModel.renderMultiplier) {
+        noiseModel.renderMetadataValid = noiseModel.renderMetadataValid &&
+            std::isfinite(multiplier) && multiplier > 0;
+    }
+    // Demosaic, preprocessing corrections, clipping, highlight recovery and
+    // spatial averaging are not independent sensor samples. A colour matrix
+    // by itself cannot validate propagation of their noise/covariance.
+    noiseModel.reason = "sensor_to_working_noise_propagation_unverified";
 
 #ifdef _OPENMP
     #pragma omp parallel if(!d1x)       // omp disabled for D1x to avoid race conditions (see Issue 1088 http://code.google.com/p/rawtherapee/issues/detail?id=1088)
@@ -1107,15 +1137,74 @@ DCPProfile *RawImageSource::getDCP(const ColorManagementParams &cmp, DCPProfileA
 
 void RawImageSource::convertColorSpace(Imagefloat* image, const ColorManagementParams &cmp, const ColorTemp &wb)
 {
+    noiseModel.valid = false;
+    noiseModel.colorMatrixValid = false;
+    noiseModel.cameraToWorking = {};
+    noiseModel.workingProfile = cmp.workingProfile;
+    noiseModel.colorReason = "conversion_not_completed";
     cmsHPROFILE in;
     DCPProfile *dcpProf;
 
     if (!findInputProfile(cmp.inputProfile, embProfile, (static_cast<const FramesData*>(getMetaData()))->getCamera(), fileName, &dcpProf, in)) {
+        noiseModel.colorReason = "input_conversion_disabled";
         return;
     }
 
     double pre_mul[3] = { ri->get_pre_mul(0), ri->get_pre_mul(1), ri->get_pre_mul(2) };
     colorSpaceConversion_(image, cmp, wb, pre_mul, camProfile, imatrices.xyz_cam, in, dcpProf);
+    if (dcpProf) {
+        noiseModel.colorReason = "dcp_transform_not_certified_linear";
+    } else if (in) {
+        noiseModel.colorReason = "icc_transform_not_certified_linear";
+    } else {
+        // Exactly the branch and multiplication used by colorSpaceConversion_.
+        const TMatrix work = ICCStore::getInstance()->workingSpaceInverseMatrix(cmp.workingProfile);
+        bool finite = true;
+        for (int i = 0; i < 3; ++i) {
+            for (int j = 0; j < 3; ++j) {
+                double value = 0;
+                for (int k = 0; k < 3; ++k) {
+                    value += work[i][k] * imatrices.xyz_cam[k][j];
+                }
+                noiseModel.cameraToWorking[i][j] = value;
+                finite = finite && std::isfinite(value);
+            }
+        }
+        finite = finite && raw_noise::referenceMatrixUsable(noiseModel.cameraToWorking);
+        noiseModel.colorMatrixValid = finite;
+        noiseModel.colorReason = finite ? "" : "nonfinite_or_singular_color_matrix";
+        if (!finite) {
+            noiseModel.cameraToWorking = {};
+        }
+    }
+}
+
+raw_noise::Model RawImageSource::getRawNoiseModel() const
+{
+    raw_noise::Model result = noiseModel;
+    if (!ri) {
+        result = raw_noise::Model{};
+        result.reason = "source_not_loaded";
+        return result;
+    }
+    result.make = ri->get_maker();
+    result.model = ri->get_model();
+    if (getMetaData()) {
+        result.iso = getMetaData()->getISOSpeed();
+    }
+    // User-authorized reference data is compiled in; no runtime TSV access.
+    // A reference match is useful even without an exact physical readout mode.
+    // It does not assert SensorCalibration units or working-RGB validity.
+    raw_noise::setNoiseProfiles(result, raw_noise::lookupReferenceCameraProfile(
+        result.make, result.model, result.iso));
+    if (!result.renderMetadataValid) {
+        result.reason = "render_scaling_not_observed_or_invalid";
+    } else if (!result.colorMatrixValid) {
+        result.reason = result.colorReason;
+    } else {
+        result.reason = "sensor_to_working_noise_propagation_unverified";
+    }
+    return result;
 }
 
 void RawImageSource::colorSpaceConversion(Imagefloat* im, const ColorManagementParams& cmp, const ColorTemp &wb, double pre_mul[3], cmsHPROFILE embedded, cmsHPROFILE camprofile, double cam[3][3], const std::string &camName, const Glib::ustring &fileName)
@@ -1194,6 +1283,7 @@ void RawImageSource::vflip(Imagefloat* image)
 
 int RawImageSource::load(const Glib::ustring &fname, bool firstFrameOnly)
 {
+    noiseModel = raw_noise::Model{};
 
     MyTime t1, t2;
     t1.set();
@@ -1418,6 +1508,7 @@ int RawImageSource::load(const Glib::ustring &fname, bool firstFrameOnly)
     green(W, H);
     red(W, H);
     blue(W, H);
+    rteMemCensus("load_after_alloc_rgb_planes", W, H);
     //hpmap = allocArray<char>(W, H);
 
     if (plistener) {
@@ -1438,6 +1529,7 @@ int RawImageSource::load(const Glib::ustring &fname, bool firstFrameOnly)
 
 void RawImageSource::preprocess(const RAWParams &raw, const LensProfParams &lensProf, const CoarseTransformParams& coarse, float &reddeha, float &greendeha, float &bluedeha,  bool prepareDenoise)
 {
+    noiseModel = raw_noise::Model{};
 //    BENCHFUN
     MyTime t1, t2;
     t1.set();
@@ -1795,8 +1887,10 @@ void RawImageSource::preprocess(const RAWParams &raw, const LensProfParams &lens
 
 void RawImageSource::demosaic(const RAWParams &raw, bool autoContrast, double &contrastThreshold, bool cache)
 {
+    noiseModel = raw_noise::Model{};
     assert(checkRawDataDimensions(rawData, *ri, W, H));
 
+    rteMemCensus("demosaic_begin", W, H);
     MyTime t1, t2;
     t1.set();
 
@@ -1872,6 +1966,7 @@ void RawImageSource::demosaic(const RAWParams &raw, bool autoContrast, double &c
 
 
     rgbSourceModified = false;
+    rteMemCensus(cache ? "demosaic_end(cache=1)" : "demosaic_end(cache=0)", W, H);
 
     if (cache) {
         if (!redCache) {
@@ -2587,6 +2682,7 @@ void RawImageSource::retinex(const ColorManagementParams& cmp, const RetinexPara
 
 void RawImageSource::flush()
 {
+    noiseModel = raw_noise::Model{};
     for (auto &buffer : rawDataBuffer) {
         buffer.reset();
     }

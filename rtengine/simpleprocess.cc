@@ -19,6 +19,11 @@
 
 #include <glibmm/thread.h>
 #include <glibmm/ustring.h>
+#include <cmath>
+#include <limits>
+#include <vector>
+
+#include "rte_mem_census.h" // [MemCensus] 临时内存定位探针，定位完移除
 
 #include "cieimage.h"
 #include "clutstore.h"
@@ -40,6 +45,8 @@
 #include "rawperf.h"
 
 #include "rtengine.h"
+#include "working_image_session.h"
+#include "simpleprocess_geometry.h"
 #include "utils.h"
 
 #include "rtgui/multilangmgr.h"
@@ -58,6 +65,12 @@ void adjust_radius(const T &default_param, double scale_factor, T &param)
     param = default_param + delta;
 }
 
+
+// Internal boundary only; neither mode is a public C ABI value.
+enum class SessionMode {
+    PostTransformV1,
+    ProPhotoSource
+};
 
 class ImageProcessor
 {
@@ -108,6 +121,162 @@ public:
     {
     }
 
+    ~ImageProcessor()
+    {
+        release_denoise_scratch();
+        delete baseImg;
+        delete labView;
+        release_job();
+    }
+
+    ImageProcessor(const ImageProcessor&) = delete;
+    ImageProcessor& operator=(const ImageProcessor&) = delete;
+
+    bool prepare_session(SessionMode mode)
+    {
+        captureSessionNoise = true;
+        sessionMode = mode;
+        if (sessionMode == SessionMode::ProPhotoSource) {
+            // Only the new source mode bypasses RT's legacy RGB NR. Do this
+            // before init so preprocess and automatic NR analysis also see it.
+            job->pparams.dirpyrDenoise.enabled = false;
+        }
+        if (!stage_init()) {
+            return false;
+        }
+        nativeWidth = fw;
+        nativeHeight = fh;
+        const bool preview = job->fast && job->pparams.resize.enabled;
+        if (sessionMode == SessionMode::ProPhotoSource) {
+            release_denoise_scratch();
+            if (preview) {
+                // Keep the full canvas until geometry runs at finish. Cropping
+                // before distortion/rotation would change its coordinate frame.
+                auto& params = job->pparams;
+                const auto crop = params.crop;
+                int outw, outh;
+                const double scale = ipf_p->resizeScale(&params, fw, fh, outw, outh);
+                // Until scaled geometry is validated, reject it explicitly.
+                // needsTransform also covers metadata/LCP/lensfun and spatial
+                // effects, not just manual rotation/distortion. EXIF/coarse
+                // orientation is already applied by stage_init/getImage.
+                if (!source_preview::supported(scale,
+                        ipf_p->needsTransform(fw, fh, imgsrc->getRotateDegree(), imgsrc->getMetaData()), false)
+                    || params.framing.enabled || params.locallab.enabled) {
+                    errorCode = -2;
+                    return false;
+                }
+                source_preview::Crop scaled{};
+                const int canvasW = int(std::lround(fw * scale));
+                const int canvasH = int(std::lround(fh * scale));
+                if (canvasW < 1 || canvasH < 1) {
+                    errorCode = -2;
+                    return false;
+                }
+                if (crop.enabled && !source_preview::scaled_crop(fw, fh,
+                        {crop.x, crop.y, crop.w, crop.h}, scale, canvasW, canvasH, scaled)) {
+                    errorCode = -2;
+                    return false;
+                }
+                stage_to_working_space();
+                params.crop.enabled = false;
+                params.resize.dataspec = 0;
+                params.resize.scale = scale;
+                stage_early_resize();
+                // early resize resets crop/resize and scales spatial tools.
+                // Restore ONLY the scaled crop, never native resize state.
+                params.crop = crop;
+                if (crop.enabled) {
+                    params.crop.x = scaled.x;
+                    params.crop.y = scaled.y;
+                    params.crop.w = scaled.w;
+                    params.crop.h = scaled.h;
+                }
+            } else {
+                stage_to_working_space();
+            }
+        } else if (preview) {
+            // Exact legacy fast_pipeline order, including its adjusted params
+            // and pre-resize histogram. Do not substitute the normal pipeline.
+            stage_transform();
+            stage_early_resize();
+            stage_denoise();
+        } else {
+            stage_denoise();
+            stage_transform();
+        }
+        // The create listener must not outlive the create call.
+        pl = nullptr;
+        return true;
+    }
+
+    const Imagefloat* session_image() const { return baseImg; }
+    raw_noise::Model session_noise_model() const { return sessionNoiseModel; }
+    WorkingImageSessionGeometry session_geometry() const
+    {
+        return {nativeWidth, nativeHeight, fw, fh, sessionResolutionScale};
+    }
+
+    Imagefloat* finish_session(const float* edited, int& resultError,
+                               ProgressListener* listener) const
+    {
+        // Each finish starts with fresh mutable params, curves and ipf state.
+        // The retained processor/job/baseImg are never consumed by base
+        // operations or stage_finish. Derived exposure/WB values below are the
+        // create-time snapshot, not values mutated by a previous finish.
+        std::unique_ptr<ProcessingJobImpl> nextJob(
+            new ProcessingJobImpl(initialImage, job->pparams, false));
+        ImageProcessor next(nextJob.get(), resultError, listener, false);
+        nextJob.release();
+        next.initialImage = next.job->initialImage;
+        next.imgsrc = imgsrc;
+        next.fw = fw;
+        next.fh = fh;
+        next.tr = tr;
+        next.pp = pp;
+        next.currWB = currWB;
+        next.expcomp = expcomp;
+        next.bright = bright;
+        next.contr = contr;
+        next.black = black;
+        next.hlcompr = hlcompr;
+        next.hlcomprthresh = hlcomprthresh;
+        next.ipf_p.reset(new ImProcFunctions(&next.job->pparams, true));
+        if (sessionMode == SessionMode::PostTransformV1) {
+            next.hist16 = hist16;
+            for (int c = 0; c < 3; ++c) {
+                next.ipf_p->lumimul[c] = ipf_p->lumimul[c];
+            }
+        }
+        next.baseImg = baseImg->copy();
+        if (edited) {
+            bool changed = false;
+            for (int y = 0; y < fh; ++y) {
+                for (int x = 0; x < fw; ++x) {
+                    const std::size_t i = (std::size_t(y) * fw + x) * 3;
+                    changed = changed || edited[i] != baseImg->r(y, x)
+                        || edited[i + 1] != baseImg->g(y, x)
+                        || edited[i + 2] != baseImg->b(y, x);
+                    next.baseImg->r(y, x) = edited[i];
+                    next.baseImg->g(y, x) = edited[i + 1];
+                    next.baseImg->b(y, x) = edited[i + 2];
+                }
+            }
+            // V1 edits are already post-transform: preserve its analysis path.
+            // Source-mode analysis must follow gamut compression in base ops.
+            if (changed && sessionMode == SessionMode::PostTransformV1) {
+                next.ipf_p->firstAnalysis(next.baseImg, next.job->pparams, next.hist16);
+            }
+        }
+        if (sessionMode == SessionMode::ProPhotoSource) {
+            // Fresh histogram/lumimul and base operations on every finish,
+            // including nullptr and identical interleaved input. Never apply
+            // input-profile conversion or legacy dirpyrDenoise a second time.
+            next.stage_working_base_operations();
+        }
+        return next.stage_finish();
+    }
+
     Imagefloat *operator()()
     {
         if (!job->fast) {
@@ -118,6 +287,30 @@ public:
     }
 
 private:
+    void release_job()
+    {
+        if (job) {
+            if (initialImage && !job->initialImage) {
+                initialImage->decreaseRef();
+            }
+            delete job;
+            job = nullptr;
+        }
+        initialImage = nullptr;
+        imgsrc = nullptr;
+    }
+
+    void release_denoise_scratch()
+    {
+        delete calclum;
+        calclum = nullptr;
+        for (float** p : {&ch_M, &max_r, &max_b, &min_r, &min_b,
+                          &lumL, &chromC, &ry, &sk, &pcsk}) {
+            delete [] *p;
+            *p = nullptr;
+        }
+    }
+
     // perf 打点用的文件名；stage_init 之前 imgsrc 尚未就绪，回退到 job 上取
     std::string perf_name() const
     {
@@ -177,8 +370,11 @@ private:
             initialImage = InitialImage::load(job->fname, job->isRaw, &errorCode);
 
             if (errorCode) {
-                delete job;
                 return false; //return nullptr;
+            }
+            if (!initialImage) {
+                errorCode = WORKING_IMAGE_PROCESSING_FAILED;
+                return false;
             }
         }
 
@@ -463,9 +659,10 @@ private:
                 #pragma omp parallel
 #endif
                 {
-                    Imagefloat *origCropPart;//init auto noise
-                    origCropPart = new Imagefloat(crW, crH); //allocate memory
-                    Imagefloat *provicalc = new Imagefloat((crW + 1) / 2, (crH + 1) / 2);  //for denoise curves
+                    std::unique_ptr<Imagefloat> origCropOwner(new Imagefloat(crW, crH));
+                    Imagefloat* origCropPart = origCropOwner.get();
+                    std::unique_ptr<Imagefloat> provicalcOwner(new Imagefloat((crW + 1) / 2, (crH + 1) / 2));
+                    Imagefloat* provicalc = provicalcOwner.get();
                     int skipP = 1;
 #ifdef _OPENMP
                     #pragma omp for schedule(dynamic) collapse(2) nowait
@@ -560,8 +757,6 @@ private:
                         }
                     }
 
-                    delete provicalc;
-                    delete origCropPart;
                 }
 
                 int liss = settings->leveldnliss; //smooth result around mean
@@ -690,9 +885,11 @@ private:
 #endif
                 {
                     Imagefloat *origCropPart;//init auto noise
-                    origCropPart = new Imagefloat(crW, crH); //allocate memory
+                    std::unique_ptr<Imagefloat> origCropOwner(new Imagefloat(crW, crH));
+                    origCropPart = origCropOwner.get();
                     origCropPart->fill(0.f);
-                    Imagefloat *provicalc = new Imagefloat((crW + 1) / 2, (crH + 1) / 2);  //for denoise curves
+                    std::unique_ptr<Imagefloat> provicalcOwner(new Imagefloat((crW + 1) / 2, (crH + 1) / 2));
+                    Imagefloat* provicalc = provicalcOwner.get();
 
 #ifdef _OPENMP
                     #pragma omp for schedule(dynamic) collapse(2) nowait
@@ -732,8 +929,6 @@ private:
                         }
                     }
 
-                    delete provicalc;
-                    delete origCropPart;
                 }
                 float chM = 0.f;
                 float MaxR = 0.f;
@@ -865,6 +1060,12 @@ private:
             rawperf::Timer t(perf_name(), "get_image");   // 应用白平衡/曲线，输出到 baseImg
             imgsrc->getImage(currWB, tr, baseImg, pp, params.toneCurve, params.raw);
         }
+        // flush() below resets RawImageSource's model. Capture the actual main
+        // render now, not a later spot-removal/analysis render or post-flush state.
+        if (captureSessionNoise && imgsrc->isRAW()) {
+            sessionNoiseModel = static_cast<RawImageSource*>(imgsrc)->getRawNoiseModel();
+        }
+        rteMemCensus("process_after_getImage(baseImg)", fw, fh);
 
 
         if (pl) {
@@ -960,26 +1161,37 @@ private:
             ImProcFunctions &ipf = * (ipf_p.get());
             float nresi, highresi;
             int kall = 2;
-            ipf.RGB_denoise(kall, baseImg, baseImg, calclum, ch_M, max_r, max_b, imgsrc->isRAW(), denoiseParams, imgsrc->getDirPyrDenoiseExpComp(), noiseLCurve, noiseCCurve, nresi, highresi);
+            // RGB_denoise deletes its by-value calclum on the effective-curve
+            // and no-op paths. Weak curves are NOT consumed there. Mirror that
+            // ownership contract: never leave a dangling member for cleanup,
+            // but still reclaim weak-curve buffers that it leaves untouched.
+            const bool consumesCalclum =
+                (noiseLCurve && noiseLCurve.getSum() >= 7.f)
+                || (noiseCCurve && noiseCCurve.getSum() > 5.f)
+                || (denoiseParams.luma == 0 && denoiseParams.chroma == 0
+                    && !denoiseParams.median && !noiseLCurve && !noiseCCurve);
+            Imagefloat* denoiseLum = calclum;
+            if (consumesCalclum) {
+                calclum = nullptr;
+            }
+            ipf.RGB_denoise(kall, baseImg, baseImg, denoiseLum, ch_M, max_r, max_b, imgsrc->isRAW(), denoiseParams, imgsrc->getDirPyrDenoiseExpComp(), noiseLCurve, noiseCCurve, nresi, highresi);
 
         }
 
-//  delete calclum;
-        delete [] ch_M;
-        delete [] max_r;
-        delete [] max_b;
-        delete [] min_r;
-        delete [] min_b;
-        delete [] lumL;
-        delete [] chromC;
-        delete [] ry;
-        delete [] sk;
-        delete [] pcsk;
+        release_denoise_scratch();
     }
 
     void stage_transform()
     {
         rawperf::Timer perf_stage(perf_name(), "stage_transform");
+        stage_to_working_space();
+        stage_working_base_operations();
+    }
+
+    // Color conversion must precede any working-space session boundary.
+    // Film-negative INPUT/WORKING ordering is deliberately unchanged.
+    void stage_to_working_space()
+    {
         const procparams::ProcParams& params = job->pparams;
 
         //ImProcFunctions ipf (&params, true);
@@ -1004,7 +1216,28 @@ private:
             imgsrc->convertColorSpace(baseImg, params.icm, currWB);
         }
 
+        if (captureSessionNoise && imgsrc->isRAW()) {
+            const auto conversion = static_cast<RawImageSource*>(imgsrc)->getRawNoiseModel();
+            // Merge ONLY conversion observations. The source may have flushed
+            // its render metadata; replacing the snapshot would lose it.
+            sessionNoiseModel.colorMatrixValid = conversion.colorMatrixValid;
+            sessionNoiseModel.colorReason = conversion.colorReason;
+            sessionNoiseModel.workingProfile = conversion.workingProfile;
+            sessionNoiseModel.cameraToWorking = conversion.cameraToWorking;
+            // Neither reference evidence nor a matrix validates propagation
+            // through demosaic, NR, film negative or other configured tools.
+            sessionNoiseModel.valid = false;
+            sessionNoiseModel.reason = !sessionNoiseModel.renderMetadataValid
+                ? "render_scaling_not_observed_or_invalid"
+                : (!sessionNoiseModel.colorMatrixValid ? sessionNoiseModel.colorReason
+                   : "sensor_to_working_noise_propagation_unverified");
+        }
+    }
 
+    void stage_working_base_operations()
+    {
+        const procparams::ProcParams& params = job->pparams;
+        ImProcFunctions& ipf = *ipf_p;
         // perform first analysis
         hist16(65536);
 
@@ -1027,11 +1260,13 @@ private:
         if (ipf.needsTransform(fw, fh, imgsrc->getRotateDegree(), imgsrc->getMetaData())) {
             rawperf::Timer t(perf_name(), "geom_transform"); // 旋转/畸变/CA/暗角等几何与镜头校正
             Imagefloat* trImg = nullptr;
+            std::unique_ptr<Imagefloat> transformed;
 
             if (ipf.needsLuminanceOnly()) {
                 trImg = baseImg;
             } else {
-                trImg = new Imagefloat(fw, fh);
+                transformed.reset(new Imagefloat(fw, fh));
+                trImg = transformed.get();
             }
 
             ipf.transform(baseImg, trImg, 0, 0, 0, 0, fw, fh, fw, fh,
@@ -1039,7 +1274,7 @@ private:
 
             if (trImg != baseImg) {
                 delete baseImg;
-                baseImg = trImg;
+                baseImg = transformed.release();
             }
         }
     }
@@ -1649,7 +1884,7 @@ private:
         }
 
         if ((params.wavelet.enabled)){
-            LabImage *unshar = nullptr;
+            std::unique_ptr<LabImage> unshar;
             WaveletParams WaveParams = params.wavelet;
             WavCurve wavCLVCurve;
             WavCurve wavdenoise;
@@ -1660,7 +1895,7 @@ private:
             WavOpacityCurveBY waOpacityCurveBY;
             WavOpacityCurveW waOpacityCurveW;
             WavOpacityCurveWL waOpacityCurveWL;
-            LabImage *provradius = nullptr;
+            std::unique_ptr<LabImage> provradius;
             bool procont = WaveParams.expcontrast;
             bool prochro = WaveParams.expchroma;
             bool proedge = WaveParams.expedge;
@@ -1669,7 +1904,7 @@ private:
             bool pronois = WaveParams.expnoise;
 
             if (WaveParams.softrad > 0.f) {
-                provradius = new LabImage(*labView, true);
+                provradius.reset(new LabImage(*labView, true));
             }
 
             params.wavelet.getCurves(wavCLVCurve, wavdenoise, wavdenoiseh, wavblcurve, waOpacityCurveRG, waOpacityCurveSH, waOpacityCurveBY, waOpacityCurveW, waOpacityCurveWL);
@@ -1680,7 +1915,7 @@ private:
                 const Glib::ustring provis = params.wavelet.CLmethod;
                 params.wavelet.CLmethod = "all";
                 ipf.ip_wavelet(labView, labView, 2, WaveParams, wavCLVCurve, wavdenoise, wavdenoiseh, wavblcurve, waOpacityCurveRG, waOpacityCurveSH, waOpacityCurveBY, waOpacityCurveW,  waOpacityCurveWL, wavclCurve, 1);
-                unshar = new LabImage(*labView, true);
+                unshar.reset(new LabImage(*labView, true));
                 params.wavelet.CLmethod = provis;
 
                 WaveParams.expcontrast = false;
@@ -1704,8 +1939,7 @@ private:
                 if (WaveParams.softrad > 0.f) {
                     array2D<float> ble(fw, fh);
                     array2D<float> guid(fw, fh);
-                    Imagefloat *tmpImage = nullptr;
-                    tmpImage = new Imagefloat(fw, fh);
+                    std::unique_ptr<Imagefloat> tmpImage(new Imagefloat(fw, fh));
 #ifdef _OPENMP
                     #pragma omp parallel for
 #endif
@@ -1755,7 +1989,6 @@ private:
                             labView->L[ir][jr] = L;
                         }
 
-                    delete tmpImage;
                 }
 
             }
@@ -1789,11 +2022,11 @@ private:
                         labView->b[x][y] = (1.f + mC0) * (unshar->b[x][y]) - mC * labView->b[x][y];
                     }
 
-                delete unshar;
+                unshar.reset();
                 unshar    = NULL;
 
                 if (WaveParams.softrad > 0.f) {
-                    delete provradius;
+                    provradius.reset();
                     provradius    = NULL;
                 }
 
@@ -1930,7 +2163,8 @@ private:
             f_h = fh;
         }
 
-        CieImage *cieView = new CieImage(f_w, (f_h));
+        std::unique_ptr<CieImage> cieOwner(new CieImage(f_w, (f_h)));
+        CieImage* cieView = cieOwner.get();
 
         CurveFactory::curveLightBrightColor(
             params.colorappearance.curve,
@@ -1976,7 +2210,7 @@ private:
             ipf.ciecam_02float(cieView, float (adap), 1, 2, labView, &params, customColCurve1, customColCurvered, customColCurvegreen, customColCurveblue, customColCurve2, customColCurve3, dummy, dummy, CAMBrightCurveJ, CAMBrightCurveQ, CAMMean, 0, 1, true, d, dj, yb, 1);
         }
 
-        delete cieView;
+        cieOwner.reset();
         cieView = nullptr;
 
         bool exec = params.icm.wgamut != ColorManagementParams::Wwgamut::NONE  || params.icm.wgamgain != 0.f;
@@ -1998,7 +2232,8 @@ private:
                     {wiprof[1][0], wiprof[1][1], wiprof[1][2]},
                     {wiprof[2][0], wiprof[2][1], wiprof[2][2]}
                 };
-            Imagefloat* provcomp = new Imagefloat(GW, GH);
+            std::unique_ptr<Imagefloat> provcompOwner(new Imagefloat(GW, GH));
+            Imagefloat* provcomp = provcompOwner.get();
 
 #ifdef _OPENMP
         #   pragma omp parallel for
@@ -2045,7 +2280,6 @@ private:
                         Color::XYZ2Lab(x, y, z, labView->L[i][j], labView->a[i][j], labView->b[i][j]);
                     }
                 }
-                delete provcomp;
         }
 
 
@@ -2101,10 +2335,10 @@ private:
         bool labResize = params.resize.enabled && params.resize.method != "Nearest" &&
             (framingData.scale != 1.0 || params.prsharpening.enabled || framingData.enabled);
 
-        LabImage *tmplab = nullptr;
+        std::unique_ptr<LabImage> tmplab;
         if (params.crop.enabled) {
             if (labResize) { // crop lab data
-                tmplab = new LabImage(cw, ch);
+                tmplab.reset(new LabImage(cw, ch));
 
                 for (int row = 0; row < ch; row++) {
                     for (int col = 0; col < cw; col++) {
@@ -2115,7 +2349,7 @@ private:
                 }
 
                 delete labView;
-                labView = tmplab;
+                labView = tmplab.release();
                 cx = 0;
                 cy = 0;
             }
@@ -2126,10 +2360,10 @@ private:
             int imh = framingData.imgHeight;
             if (labView->W != imw || labView->H != imh) {
                 // resize image
-                tmplab = new LabImage(imw, imh);
-                ipf.Lanczos(labView, tmplab, framingData.scale);
+                tmplab.reset(new LabImage(imw, imh));
+                ipf.Lanczos(labView, tmplab.get(), framingData.scale);
                 delete labView;
-                labView = tmplab;
+                labView = tmplab.release();
             }
 
             cw = labView->W;
@@ -2155,7 +2389,8 @@ private:
         // if Default gamma mode: we use the profile selected in the "Output profile" combobox;
         // gamma come from the selected profile, otherwise it comes from "Free gamma" tool
 
-        Imagefloat* readyImg = ipf.lab2rgbOut(labView, cx, cy, cw, ch, params.icm);
+        std::unique_ptr<Imagefloat> readyOwner(ipf.lab2rgbOut(labView, cx, cy, cw, ch, params.icm));
+        Imagefloat* readyImg = readyOwner.get();
 
         if (settings->verbose) {
             printf("Output profile_: \"%s\"\n", params.icm.outputProfile.c_str());
@@ -2187,16 +2422,21 @@ private:
             if (readyImg->getWidth() != imw || readyImg->getHeight() != imh) {
                 // resize rgb data (gamma applied)
                 rawperf::Timer t(perf_name(), "resize");
-                Imagefloat* tempImage = new Imagefloat(imw, imh);
-                ipf.resize(readyImg, tempImage, framingData.scale);
-                delete readyImg;
-                readyImg = tempImage;
+                std::unique_ptr<Imagefloat> tempImage(new Imagefloat(imw, imh));
+                ipf.resize(readyImg, tempImage.get(), framingData.scale);
+                readyOwner = std::move(tempImage);
+                readyImg = readyOwner.get();
             }
 
         }
 
         if (framingData.enabled) {
             readyImg = ipf.drawFrame(readyImg, params.framing, framingData);
+            if (readyImg != readyOwner.get()) {
+                // drawFrame consumes its input only when returning a new image.
+                readyOwner.release();
+                readyOwner.reset(readyImg);
+            }
         }
 
         Exiv2Metadata info(imgsrc->getFileName());
@@ -2252,11 +2492,9 @@ private:
 //    if( settings->verbose )
 //           printf("Total:- %d usec\n", t2.etime(t1));
 
-        if (!job->initialImage) {
-            initialImage->decreaseRef();
-        }
-
-        delete job;
+        rteMemCensus("process_before_deleteJob");
+        release_job();
+        rteMemCensus("process_after_deleteJob");
 
         if (pl) {
             pl->setProgress(0.75);
@@ -2273,7 +2511,7 @@ private:
             hist16.reset();
             hist16C.reset();
         */
-        return readyImg;
+        return readyOwner.release();
     }
 
     void stage_early_resize()
@@ -2286,6 +2524,7 @@ private:
 
         int imw, imh;
         double scale_factor = ipf.resizeScale(&params, fw, fh, imw, imh);
+        sessionResolutionScale = scale_factor;
 
         std::unique_ptr<LabImage> tmplab(new LabImage(fw, fh));
         ipf.rgb2lab(*baseImg, *tmplab, params.icm.workingProfile);
@@ -2416,6 +2655,12 @@ private:
     int& errorCode;
     ProgressListener* pl;
     bool flush;
+    SessionMode sessionMode = SessionMode::PostTransformV1;
+    bool captureSessionNoise = false; // no extra source retention/legacy work
+    raw_noise::Model sessionNoiseModel;
+    int nativeWidth = 0;
+    int nativeHeight = 0;
+    double sessionResolutionScale = 1.0;
 
     // internal state
     std::unique_ptr<ImProcFunctions> ipf_p;
@@ -2486,6 +2731,127 @@ private:
 };
 
 } // namespace
+
+class WorkingImageSession
+{
+public:
+    // Processor keeps an error reference, so it must refer to session storage,
+    // never the caller's create stack. Destruction order also matters here.
+    int error = 0;
+    std::unique_ptr<ImageProcessor> processor;
+    std::vector<float> linearRGB;
+    int width = 0;
+    int height = 0;
+};
+
+static WorkingImageSession* createSession(
+    ProcessingJob* pjob, int& errorCode, ProgressListener* listener, bool flush,
+    SessionMode mode)
+{
+    errorCode = 0;
+    std::unique_ptr<ProcessingJobImpl> job(static_cast<ProcessingJobImpl*>(pjob));
+    if (!job) {
+        errorCode = WORKING_IMAGE_INVALID_ARGUMENT;
+        return nullptr;
+    }
+    if (job->pparams.icm.workingProfile != "ProPhoto") {
+        errorCode = WORKING_IMAGE_UNSUPPORTED_PIPELINE;
+        return nullptr;
+    }
+    try {
+        std::unique_ptr<WorkingImageSession> session(new WorkingImageSession);
+        session->processor.reset(new ImageProcessor(job.get(), session->error, listener, flush));
+        job.release();
+        if (!session->processor->prepare_session(mode)) {
+            errorCode = session->error ? session->error : WORKING_IMAGE_PROCESSING_FAILED;
+            return nullptr;
+        }
+        const Imagefloat* image = session->processor->session_image();
+        session->width = image->getWidth();
+        session->height = image->getHeight();
+        const std::size_t w = session->width;
+        const std::size_t h = session->height;
+        if (!w || !h || w > std::numeric_limits<std::size_t>::max() / 3 / h) {
+            errorCode = WORKING_IMAGE_PROCESSING_FAILED;
+            return nullptr;
+        }
+        session->linearRGB.resize(w * h * 3);
+        for (int y = 0; y < session->height; ++y) {
+            for (int x = 0; x < session->width; ++x) {
+                const std::size_t i = (std::size_t(y) * w + x) * 3;
+                session->linearRGB[i] = image->r(y, x);
+                session->linearRGB[i + 1] = image->g(y, x);
+                session->linearRGB[i + 2] = image->b(y, x);
+            }
+        }
+        return session.release();
+    } catch (...) {
+        errorCode = WORKING_IMAGE_PROCESSING_FAILED;
+        return nullptr;
+    }
+}
+
+WorkingImageSession* createWorkingImageSession(
+    ProcessingJob* pjob, int& errorCode, ProgressListener* listener, bool flush)
+{
+    return createSession(pjob, errorCode, listener, flush, SessionMode::PostTransformV1);
+}
+
+WorkingImageSession* createProPhotoSourceSession(
+    ProcessingJob* pjob, int& errorCode, ProgressListener* listener, bool flush)
+{
+    return createSession(pjob, errorCode, listener, flush, SessionMode::ProPhotoSource);
+}
+
+const float* getWorkingImageSessionLinear(
+    const WorkingImageSession* session, int& width, int& height,
+    std::size_t& floatCount)
+{
+    width = session ? session->width : 0;
+    height = session ? session->height : 0;
+    floatCount = session ? session->linearRGB.size() : 0;
+    return session ? session->linearRGB.data() : nullptr;
+}
+
+raw_noise::Model getWorkingImageSessionNoiseModel(const WorkingImageSession* session)
+{
+    return session ? session->processor->session_noise_model() : raw_noise::Model{};
+}
+
+WorkingImageSessionGeometry getWorkingImageSessionGeometry(const WorkingImageSession* session)
+{
+    return session ? session->processor->session_geometry() : WorkingImageSessionGeometry{};
+}
+
+IImagefloat* finishWorkingImageSession(
+    WorkingImageSession* session, const float* editedRGB, std::size_t floatCount,
+    int& errorCode, ProgressListener* listener)
+{
+    errorCode = 0;
+    if (!session || (editedRGB ? floatCount != session->linearRGB.size() : floatCount != 0)) {
+        errorCode = WORKING_IMAGE_INVALID_ARGUMENT;
+        return nullptr;
+    }
+    if (editedRGB) {
+        for (std::size_t i = 0; i < floatCount; ++i) {
+            if (!std::isfinite(editedRGB[i])) {
+                errorCode = WORKING_IMAGE_INVALID_ARGUMENT;
+                return nullptr;
+            }
+        }
+    }
+    try {
+        return session->processor->finish_session(editedRGB, errorCode, listener);
+    } catch (...) {
+        errorCode = WORKING_IMAGE_PROCESSING_FAILED;
+        return nullptr;
+    }
+}
+
+void destroyWorkingImageSession(WorkingImageSession* session)
+{
+    delete session;
+}
 
 
 IImagefloat* processImage(ProcessingJob* pjob, int& errorCode, ProgressListener* pl, bool flush)
